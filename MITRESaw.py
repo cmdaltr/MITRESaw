@@ -78,7 +78,7 @@ queries = args.queries
 truncate = args.truncate
 
 attack_framework = attackframework[0].title()
-attack_version = "15.1"
+attack_version = "16.1"  # Updated to latest version, will auto-fetch latest from TAXII
 sheet_tabs = [
     "techniques-techniques",
     "techniques-procedure examples",

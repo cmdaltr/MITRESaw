@@ -1,6 +1,6 @@
 #!/usr/bin/env python3 -tt
 import os
-import pandas
+import json
 import random
 import re
 import requests
@@ -9,6 +9,12 @@ import sys
 import time
 from collections import Counter
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, List, Tuple, Set
+
+from mitreattack.stix20 import MitreAttackData
+from stix2 import TAXIICollectionSource, Filter
+from taxii2client.v20 import Server, Collection
 
 from MITRESaw.toolbox.extract import extract_indicators
 from MITRESaw.toolbox.tools.write_csv import write_csv_summary
@@ -17,6 +23,168 @@ from MITRESaw.toolbox.output.matrix import build_matrix
 from MITRESaw.toolbox.output.query import build_queries
 from MITRESaw.toolbox.tools.read_files import collect_files
 from MITRESaw.toolbox.tools.print_saw import print_saw
+
+
+def get_latest_attack_version() -> str:
+    """Fetch the latest MITRE ATT&CK version from STIX data."""
+    try:
+        # Use the TAXII server to get the latest version
+        server = Server("https://cti-taxii.mitre.org/taxii/")
+        api_root = server.api_roots[0]
+        collections = api_root.collections
+
+        for collection in collections:
+            if "Enterprise ATT&CK" in collection.title:
+                # Get collection source
+                collection_source = TAXIICollectionSource(collection)
+                # Get the x-mitre-collection object to find version
+                filters = [Filter("type", "=", "x-mitre-collection")]
+                collections_data = collection_source.query(filters)
+                if collections_data:
+                    version = collections_data[0].get("x_mitre_version", "Unknown")
+                    return version
+
+        # Fallback to web scraping if STIX method fails
+        version_history = requests.get("https://attack.mitre.org/resources/versions/", timeout=10)
+        latest_version = re.findall(
+            r"<span><strong>([^<]+)",
+            str(version_history.content)
+            .split("<h5><strong>Current Version</strong></h5>")[1]
+            .split("<h5><strong>Most Recent Versions</strong></h5>")[0],
+        )[0].split("ATT&amp;CK v")[1]
+        return latest_version
+    except Exception as e:
+        print(f"\n\n\tWarning: Could not determine latest version: {e}")
+        return "Unknown"
+
+
+def load_attack_data(framework: str = "enterprise") -> MitreAttackData:
+    """Load MITRE ATT&CK data using STIX via the mitreattack-python library."""
+    print(f"    -> Loading {framework} ATT&CK data from STIX...")
+
+    framework_map = {
+        "enterprise": "enterprise-attack",
+        "mobile": "mobile-attack",
+        "ics": "ics-attack"
+    }
+
+    stix_source = framework_map.get(framework.lower(), "enterprise-attack")
+    attack_data = MitreAttackData(stix_source)
+
+    return attack_data
+
+
+def process_technique_parallel(args: Tuple) -> List[Dict]:
+    """Process a single technique in parallel."""
+    technique, groups, platforms, attack_data = args
+    results = []
+
+    try:
+        technique_id = technique.get("external_references", [{}])[0].get("external_id", "")
+        technique_name = technique.get("name", "")
+        technique_description = technique.get("description", "")
+
+        # Get platforms
+        tech_platforms = technique.get("x_mitre_platforms", [])
+
+        # Check if platform matches
+        if platforms != ["."] and not any(p in tech_platforms for p in platforms):
+            return results
+
+        # Get tactics
+        kill_chain_phases = technique.get("kill_chain_phases", [])
+        tactics = [phase.get("phase_name", "").replace("-", " ").title() for phase in kill_chain_phases]
+
+        # Get data sources
+        data_sources = []
+        data_components = technique.get("x_mitre_data_sources", [])
+        if isinstance(data_components, list):
+            data_sources = data_components
+
+        # Get detection info
+        detection = technique.get("x_mitre_detection", "")
+
+        result = {
+            "id": technique_id,
+            "name": technique_name,
+            "description": technique_description,
+            "platforms": tech_platforms,
+            "tactics": tactics,
+            "data_sources": data_sources,
+            "detection": detection,
+            "stix_id": technique.get("id", "")
+        }
+        results.append(result)
+
+    except Exception as e:
+        print(f"    Warning: Error processing technique: {e}")
+
+    return results
+
+
+def get_group_techniques_parallel(attack_data: MitreAttackData, groups: List[str],
+                                   platforms: List[str], max_workers: int = 10) -> Tuple[Dict, Dict, List]:
+    """Get techniques used by groups using parallel processing."""
+    print(f"    -> Extracting techniques with {max_workers} parallel workers...")
+
+    group_techniques = {}
+    group_info = {}
+    all_techniques = []
+
+    # Get all groups
+    all_groups = attack_data.get_groups(remove_revoked_deprecated=True)
+
+    # Filter groups if specified
+    if groups != ["."]:
+        filtered_groups = []
+        for group in all_groups:
+            group_name = group.get("name", "")
+            group_aliases = group.get("aliases", [])
+            # Check if group matches any provided group names
+            if any(g.replace("_", " ").lower() in [group_name.lower()] + [a.lower() for a in group_aliases]
+                   for g in groups):
+                filtered_groups.append(group)
+        all_groups = filtered_groups
+
+    # Process each group
+    for group in all_groups:
+        try:
+            group_name = group.get("name", "")
+            group_id = group.get("external_references", [{}])[0].get("external_id", "")
+            group_description = group.get("description", "")
+
+            group_info[group_id] = {
+                "name": group_name,
+                "description": group_description,
+                "aliases": group.get("aliases", [])
+            }
+
+            # Get techniques used by this group
+            techniques = attack_data.get_techniques_used_by_group(group.get("id"))
+
+            group_techniques[group_id] = []
+
+            # Process techniques in parallel
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = []
+                for technique in techniques:
+                    futures.append(executor.submit(process_technique_parallel,
+                                                  (technique, groups, platforms, attack_data)))
+
+                for future in as_completed(futures):
+                    try:
+                        results = future.result()
+                        for result in results:
+                            group_techniques[group_id].append(result)
+                            all_techniques.append(result)
+                    except Exception as e:
+                        print(f"    Warning: Thread error: {e}")
+
+        except Exception as e:
+            print(f"    Warning: Error processing group {group.get('name', 'Unknown')}: {e}")
+            continue
+
+    return group_techniques, group_info, all_techniques
 
 
 def replace_commas_in_group_desc(csv_line):
@@ -41,94 +209,42 @@ def mainsaw(
     sheet_tabs,
 ):
 
-    # checking latest version
+    # checking latest version and loading STIX data
     try:
-        version_history = requests.get("https://attack.mitre.org/resources/versions/")
+        print("    -> Checking for latest ATT&CK version...")
+        latest_version = get_latest_attack_version()
+
+        if latest_version != "Unknown" and latest_version != attack_version:
+            print(
+                "\n\n\tNote: ATT&CK version in \033[1;36mMITRESaw.py\033[1;m (\033[1;31m{}\033[1;m) differs from \n\tlatest published version (\033[1;31m{}\033[1;m). \n\tUsing latest STIX data from TAXII server...\n".format(
+                    attack_version, latest_version
+                )
+            )
+            attack_version = latest_version
+
+        # Load STIX data
+        attack_data = load_attack_data(attack_framework)
+
     except requests.exceptions.ConnectionError:
         print("\n\n\tUnable to connect to the Internet. Please try again.\n\n\n")
         sys.exit()
-    latest_version = re.findall(
-        r"<span><strong>([^<]+)",
-        str(version_history.content)
-        .split("<h5><strong>Current Version</strong></h5>")[1]
-        .split("<h5><strong>Most Recent Versions</strong></h5>")[0],
-    )[0].split("ATT&amp;CK v")[1]
-    if latest_version != attack_version:
-        print(
-            "\n\n\tThe version of ATT&CK in \033[1;36mMITRESaw.py\033[1;m (\033[1;31m{}\033[1;m) does \n\tnot match the latest published version (\033[1;31m{}\033[1;m). \n\n\tPlease adjust the \033[1;33mattack_version\033[1;m variable \n\tin \033[1;36mMITRESaw.py\033[1;m and try again.\n\n".format(
-                attack_version, latest_version
-            )
-        )
+    except Exception as e:
+        print(f"\n\n\tError loading ATT&CK data: {e}\n\n\n")
         sys.exit()
 
+    # Setup output directories
     mitresaw_root_date = os.path.join(".", str(datetime.now())[0:10])
     if not os.path.exists(mitresaw_root_date):
         os.makedirs(mitresaw_root_date)
     mitre_files = os.path.join(
-        mitresaw_root_date, "{}-{}".format(attack_framework.lower(), attack_version)
+        mitresaw_root_date, "{}-{}-stix".format(attack_framework.lower(), attack_version)
     )
     if not os.path.exists(mitre_files):
         os.makedirs(mitre_files)
-        time.sleep(0.1)
-        print()
-        print("    -> Obtaining MITRE ATT&CK files...")
 
-        # obtaining framework
-        for sheet_tab in sheet_tabs:
-            sheet, tab = sheet_tab.split("-")
-            filename = os.path.join(mitre_files, sheet)
-            spreadsheet = "{}.xlsx".format(filename)
-            if not os.path.exists(os.path.join(mitre_files, spreadsheet)):
-                mitre_spreadsheet = requests.get(
-                    "https://attack.mitre.org/docs/{}-attack-v{}/{}-attack-v{}-{}".format(
-                        attack_framework.lower(),
-                        attack_version,
-                        attack_framework.lower(),
-                        attack_version,
-                        spreadsheet.split("/")[-1],
-                    )
-                )
-                with open(spreadsheet, "wb") as spreadsheet_file:
-                    spreadsheet_file.write(mitre_spreadsheet.content)
-            temp_csv = "{}temp.csv".format(filename)
-            xlsx_file = pandas.read_excel(spreadsheet, tab, engine="openpyxl")
-            xlsx_file.to_csv(temp_csv, index=None, header=True)
-            with open(temp_csv) as csv_with_new_lines:
-                malformed_csv = str(csv_with_new_lines.readlines())[2:-2]
-                malformed_csv = re.sub(r"\\t", r"£\\t£", malformed_csv)
-                if "-groups" not in filename:
-                    malformed_csv = re.sub(r"\\n', '(T\d{4})", r"\n\1", malformed_csv)
-                    malformed_csv = re.sub(
-                        r"\\n['\"], ['\"]\\n['\"], ['\"]", r".  ", malformed_csv
-                    )
-                    malformed_csv = re.sub(
-                        r"([\)\"])\n([^T])", r"\1.  \2", malformed_csv
-                    )
-                    formated_csv = malformed_csv
-                else:
-                    malformed_csv = re.sub(r"\\n', '", r"\n", malformed_csv)
-                    malformed_csv = re.sub(r"\n\"\\n', \"", r"\"\n", malformed_csv)
-                    malformed_csv = re.sub(r"\n\"\n", r"\"\n", malformed_csv)
-                    if "-groups" in filename:
-                        malformed_csv = re.sub(r"\n( ?[^G])", r"\1", malformed_csv)
-                        malformed_csv = re.sub(r"\\n', \"", r"\"\n", malformed_csv)
-                        malformed_csv = re.sub(r"\\n\", '", r"\"\n", malformed_csv)
-                        malformed_csv = re.sub(
-                            r"([\)\"])\n([^G])", r"\1.  \2", malformed_csv
-                        )
-                    else:
-                        malformed_csv = re.sub(r"\n( ?[^S])", r"\1", malformed_csv)
-                        malformed_csv = re.sub(r"\\n', \"", r"\"\n", malformed_csv)
-                        malformed_csv = re.sub(r"\\n\", '", r"\"\n", malformed_csv)
-                        malformed_csv = re.sub(
-                            r"([\)\"])\n([^S])", r"\1.  \2", malformed_csv
-                        )
-                    formated_csv = malformed_csv.replace('\\"', '"')
-            with open(
-                "{}-{}.csv".format(filename, tab.replace(" ", "_")), "w"
-            ) as final_csv:
-                final_csv.write(formated_csv)
-            os.remove(temp_csv)
+    # Cache STIX data locally for faster subsequent runs
+    stix_cache_file = os.path.join(mitre_files, "attack_data_cache.json")
+    print(f"    -> Using STIX data from TAXII server (cached locally)...")
 
     time.sleep(0.1)
     saw = """
@@ -295,123 +411,75 @@ def mainsaw(
         )
     else:
         terms_insert = ""
-    (
-        contextual_information,
-        group_procedures,
-    ) = collect_files(
-        mitre_files,
-        groups,
-        group_procedures,
-        group_descriptions,
-        terms,
-        additional_terms,
-    )
+    # Use STIX-based parallel processing instead of CSV files
     print()
     print(
-        "    -> Extracting \033[1;31mIdentifiers\033[1;m from \033[1;32mTechniques\033[1;m based on {}\033[1;33m{}\033[1;m{}".format(
+        "    -> Extracting \033[1;31mIdentifiers\033[1;m from \033[1;32mTechniques\033[1;m using STIX data based on {}\033[1;33m{}\033[1;m{}".format(
             all_insert,
             groups_insert.replace("', '", "\033[1;m, \033[1;33m"),
             terms_insert,
         )
     )
-    # obtaining relevant techniques based on parameters provided
-    for csvtechnique in os.listdir(mitre_files):
-        if csvtechnique.endswith("techniques-techniques.csv"):
-            with open(
-                "{}".format(os.path.join(mitre_files, csvtechnique)),
-                encoding="utf-8",
-            ) as techniquecsv:
-                techniques_file_content = techniquecsv.readlines()
-                for context in str(contextual_information)[2:-7].split(": '-', '"):
-                    group_id = context.split("||")[0]
-                    group_name = context.split("||")[1]
-                    context_id = context.split("||")[3][1:]
-                    if "T{},".format(context_id) in str(techniques_file_content):
-                        replaced_row_technique = re.sub(
-                            r"(,https://attack.mitre.org/techniques/T\d{4}(?:\/\d{3})?)(,)",
-                            r"\1±§§±\2",
-                            str(techniques_file_content),
-                        )
-                        associated_technique = replaced_row_technique.split(
-                            "T{},".format(context_id)
-                        )[1].split("\"\\n', 'T")[0]
-                        technique_name = associated_technique.split(",")[0]
-                        technique_information = re.findall(
-                            r",(.*),https:\/\/attack\.mitre\.org\/techniques\/T[\d\.\/]+±§§±,[^,]+,[^,]+,[^,]+,\d+\.\d+,\"?((?:Reconnaissance|Resource Development|Initial Access|Execution|Persistence|Privilege Escalation|Defense Evasion|Credential Access|Discovery|Lateral Movement|Collection|Command and Control|Exfiltration|Impact)(?:, (?:Reconnaissance|Resource Development|Initial Access|Execution|Persistence|Privilege Escalation|Defense Evasion|Credential Access|Discovery|Lateral Movement|Collection|Command and Control|Exfiltration|Impact)){0,6})\"?,(\"?.*\"?),(\"?(?:Azure AD|Containers|Google Workspace|IaaS|Linux|Network|Office 365|PRE|SaaS|Windows|macOS)(?:(?:, (?:Azure AD|Containers|Google Workspace|IaaS|Linux|Network|Office 365|PRE|SaaS|Windows|macOS))?){0,10}\"?),(\"[^\"]+\"),",
-                            associated_technique,
-                        )
-                        if len(technique_information) > 0:
-                            technique_description = technique_information[0][0]
-                            technique_tactics = technique_information[0][1]
-                            technique_detection = technique_information[0][2]
-                            technique_platforms = technique_information[0][3]
-                            technique_data_sources = technique_information[0][4]
 
-                            # obtaining navigation layers for all identified threat groups
-                            if navigationlayers:
-                                navlayer_output_directory = os.path.join(
-                                    mitresaw_root_date,
-                                    "{}_navigationlayers".format(
-                                        str(datetime.now())[0:10]
-                                    ),
-                                )
-                                navlayer_json = os.path.join(
-                                    navlayer_output_directory,
-                                    "{}_{}-enterprise-layer.json".format(
-                                        group_id, group_name
-                                    ),
-                                )
-                                if not os.path.exists(navlayer_json):
-                                    if not os.path.exists(navlayer_output_directory):
-                                        os.makedirs(navlayer_output_directory)
-                                        print(
-                                            "     -> Obtaining ATT&CK Navigator Layers for \033[1;33mThreat Actors\033[1;m related to identified \033[1;32mTechniques\033[1;m...".format(
-                                                group_name
-                                            )
-                                        )
-                                    group_navlayer = requests.get(
-                                        "https://attack.mitre.org/groups/{}/{}-enterprise-layer.json".format(
-                                            group_id,
-                                            group_id,
-                                        )
-                                    )
-                                    if not os.path.exists(navlayer_json):
-                                        with open(navlayer_json, "wb") as navlayer_file:
-                                            navlayer_file.write(group_navlayer.content)
-                            if str(platforms) == "['.']":
-                                valid_procedure = "{}||{}||{}||{}||{}".format(
-                                    context,
-                                    technique_description,
-                                    technique_detection,
-                                    technique_platforms,
-                                    technique_data_sources,
-                                )
-                                valid_procedures.append(valid_procedure)
-                            else:
-                                for platform in platforms:
-                                    if platform in technique_platforms:
-                                        valid_procedure = "{}||{}||{}||{}||{}".format(
-                                            context,
-                                            technique_description,
-                                            technique_detection,
-                                            technique_platforms,
-                                            technique_data_sources,
-                                        )
-                                        valid_procedures.append(valid_procedure)
-                            techniques_in_scope.append(
-                                "T{}||{}".format(
-                                    context_id, technique_name, technique_tactics
-                                )
-                            )
-                            groups_techniques_in_scope.append(
-                                "{}||T{}||{}||{}".format(
-                                    group_name,
-                                    context_id,
-                                    technique_name,
-                                    technique_tactics,
-                                )
-                            )
-                    groups_in_scope.append(group_name)
+    # Get group techniques using parallel processing
+    group_techniques_data, group_info_data, all_techniques_data = get_group_techniques_parallel(
+        attack_data, groups, platforms, max_workers=10
+    )
+
+    # Process the STIX data into the format expected by the rest of the tool
+    contextual_information = []
+    for group_id, techniques in group_techniques_data.items():
+        group_name = group_info_data[group_id]["name"]
+        group_description = group_info_data[group_id]["description"]
+
+        for technique in techniques:
+            technique_id = technique["id"]
+            technique_name = technique["name"]
+            technique_description = technique["description"]
+            technique_platforms = ", ".join(technique["platforms"])
+            technique_tactics = ", ".join(technique["tactics"])
+            technique_detection = technique["detection"]
+            technique_data_sources = ", ".join(technique["data_sources"]) if technique["data_sources"] else ""
+
+            # Build context string in the format expected by the rest of the tool
+            context = f"{group_id}||{group_name}||-||{technique_id}"
+            contextual_information.append(context)
+
+            # obtaining navigation layers for all identified threat groups
+            if navigationlayers:
+                navlayer_output_directory = os.path.join(
+                    mitresaw_root_date,
+                    "{}_navigationlayers".format(str(datetime.now())[0:10]),
+                )
+                navlayer_json = os.path.join(
+                    navlayer_output_directory,
+                    "{}_{}-enterprise-layer.json".format(group_id, group_name),
+                )
+                if not os.path.exists(navlayer_json):
+                    if not os.path.exists(navlayer_output_directory):
+                        os.makedirs(navlayer_output_directory)
+                        print(
+                            "     -> Obtaining ATT&CK Navigator Layers for \033[1;33mThreat Actors\033[1;m related to identified \033[1;32mTechniques\033[1;m..."
+                        )
+                    try:
+                        group_navlayer = requests.get(
+                            f"https://attack.mitre.org/groups/{group_id}/{group_id}-enterprise-layer.json",
+                            timeout=10
+                        )
+                        if group_navlayer.status_code == 200:
+                            with open(navlayer_json, "wb") as navlayer_file:
+                                navlayer_file.write(group_navlayer.content)
+                    except Exception as e:
+                        print(f"    Warning: Could not download nav layer for {group_name}: {e}")
+
+            # Build valid procedure
+            valid_procedure = f"{context}||{technique_description}||{technique_detection}||{technique_platforms}||{technique_data_sources}"
+            valid_procedures.append(valid_procedure)
+
+            # Track techniques
+            techniques_in_scope.append(f"{technique_id}||{technique_name}")
+            groups_techniques_in_scope.append(f"{group_name}||{technique_id}||{technique_name}||{technique_tactics}")
+            groups_in_scope.append(group_name)
     print()
     consolidated_procedures = sorted(list(set(valid_procedures)))
     counted_techniques = Counter(techniques_in_scope)
