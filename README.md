@@ -61,11 +61,11 @@ MITRESaw has evolved to also produce search queries based on extracted indicator
 <br><br><br>
 
 ## Usage
-`python3 MITRESaw.py framework platforms searchterms threatgroups [-a] [-n] [-o] [-q] [-s] [-t]`
+`python3 MITRESaw.py framework platforms searchterms threatgroups [-a] [-c] [-n] [-o] [-q] [-s] [-t]`
 
 To display usage, simply run: `python3 MITRESaw.py -h`
 ```
-usage: MITRESaw.py [-h] [-a] [-n] [-o] [-q] [-t] framework platforms searchterms threatgroups
+usage: MITRESaw.py [-h] [-a] [-c COLUMNS] [-n] [-o] [-q] [-t] framework platforms searchterms threatgroups
 
 positional arguments:
   framework             Specify which framework to collect from - Enterprise, ICS or Mobile
@@ -80,15 +80,36 @@ positional arguments:
 optional arguments:
   -h, --help                  show this help message and exit
   -a, --asciiart              Don't show ASCII Art of the saw.
+  -c, --columns COLUMNS       Export a filtered CSV (ThreatActors_Keywords.csv) with only specified columns (comma-separated).
+                              Includes a 'keywords' column option for auto-matched industry keyword tagging.
+                              Example: -c group_software_name,keywords
   -n, --navlayers             Obtain ATT&CK Navigator layers for Groups and Software identified during extraction of identifable evidence
-  -o, --showotherlogsources   Show log sources which can detect identified techniques where the coverage is less than 1% 
+  -o, --showotherlogsources   Show log sources which can detect identified techniques where the coverage is less than 1%
   -q, --queries               Build search queries based on results - to be imported into Splunk; Azure Sentinel; Elastic/Kibana
   -t, --truncate              Truncate printing of indicators for a cleaner output (they are still written to output file)
 ```
 
-### Example
+### Examples
 
-`python3 MITRESaw.py Windows,Linux,macOS mining,technology,defense,_uk_,law . -q`
+`python3 MITRESaw.py Enterprise Windows,Linux,macOS mining,technology,defense,_uk_,law . -q`
+
+#### Splunk Lookup Export
+Export a CSV of group names and auto-matched industry keywords for use as a Splunk lookup:
+
+`python3 MITRESaw.py Enterprise . . . -c group_software_name,keywords`
+
+Export group names, technique details, and keywords:
+
+`python3 MITRESaw.py Enterprise Windows . APT29 -c group_software_name,technique_id,technique_name,keywords`
+
+Valid column names for `--columns`:
+```
+group_software_id, group_software_name, technique_id, item_identifier,
+group_software, relation_identifier, created, last_modified,
+group_software_description, technique_name, technique_tactics,
+technique_description, technique_detection, technique_platforms,
+technique_datasources, evidence_type, evidence_indicators, keywords
+```
 
 <br><br>
 

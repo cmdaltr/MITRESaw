@@ -16,11 +16,14 @@ from mitreattack.stix20 import MitreAttackData
 from stix2 import TAXIICollectionSource, Filter
 from taxii2client.v20 import Server, Collection
 
+import pandas
+
 from MITRESaw.toolbox.extract import extract_indicators
 from MITRESaw.toolbox.tools.write_csv import write_csv_summary
 from MITRESaw.toolbox.tools.write_csv import write_csv_techniques_mapped_to_logsources
 from MITRESaw.toolbox.output.matrix import build_matrix
 from MITRESaw.toolbox.output.query import build_queries
+from MITRESaw.toolbox.tools.keywords import match_keywords
 from MITRESaw.toolbox.tools.read_files import collect_files
 from MITRESaw.toolbox.tools.print_saw import print_saw
 
@@ -207,6 +210,7 @@ def mainsaw(
     attack_framework,
     attack_version,
     sheet_tabs,
+    columns=None,
 ):
 
     # checking latest version and loading STIX data
@@ -571,6 +575,36 @@ def mainsaw(
             query_pairings,
             log_sources,
         )
+        # Generate filtered keywords CSV if --columns is specified
+        if columns:
+            valid_columns = [
+                "group_software_id", "group_software_name", "technique_id",
+                "item_identifier", "group_software", "relation_identifier",
+                "created", "last_modified", "group_software_description",
+                "technique_name", "technique_tactics", "technique_description",
+                "technique_detection", "technique_platforms", "technique_datasources",
+                "evidence_type", "evidence_indicators", "keywords",
+            ]
+            requested_columns = [c.strip() for c in columns.split(",")]
+            invalid = [c for c in requested_columns if c not in valid_columns]
+            if invalid:
+                print(f"\n    Error: Invalid column(s): {', '.join(invalid)}")
+                print(f"    Valid columns: {', '.join(valid_columns)}")
+            else:
+                csv_path = os.path.join(mitresaw_output_directory, "ThreatActors_Techniques.csv")
+                df = pandas.read_csv(csv_path, on_bad_lines="warn")
+
+                if "keywords" in requested_columns:
+                    keyword_map = {}
+                    for gid, info in group_info_data.items():
+                        keyword_map[gid] = match_keywords(info["description"])
+                    df["keywords"] = df["group_software_id"].map(keyword_map).fillna("")
+
+                df = df[requested_columns].drop_duplicates()
+                keywords_csv_path = os.path.join(mitresaw_output_directory, "ThreatActors_Keywords.csv")
+                df.to_csv(keywords_csv_path, index=False)
+                print(f"      Keywords CSV written to {keywords_csv_path}")
+
         mitresaw_techniques = re.findall(
             r"\|\|(T\d{3}[\d\.]+)\|\|", str(consolidated_techniques)
         )

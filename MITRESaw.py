@@ -64,6 +64,14 @@ parser.add_argument(
     const=True,
     default=False,
 )
+parser.add_argument(
+    "-c",
+    "--columns",
+    help="Export a filtered CSV (ThreatActors_Keywords.csv) with only specified columns (comma-separated).\n"
+         "Includes a 'keywords' column option for auto-matched industry keyword tagging.\n"
+         "Example: -c group_software_name,keywords\n",
+    default=None,
+)
 
 
 args = parser.parse_args()
@@ -76,6 +84,7 @@ art = args.asciiart
 navigationlayers = args.navlayers
 queries = args.queries
 truncate = args.truncate
+columns = args.columns
 
 attack_framework = attackframework[0].title()
 attack_version = "16.1"  # Updated to latest version, will auto-fetch latest from TAXII
@@ -105,6 +114,7 @@ def main():
         attack_framework,
         attack_version,
         sheet_tabs,
+        columns,
     )
 
 
