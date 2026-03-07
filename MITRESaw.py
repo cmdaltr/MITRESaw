@@ -72,6 +72,18 @@ parser.add_argument(
          "Example: -c group_software_name,keywords\n",
     default=None,
 )
+parser.add_argument(
+    "-p",
+    "--preset",
+    help="Export a preset CSV (ThreatActors_Keywords.csv) with key columns:\n"
+         "group_software_id, group_software_name, group_software_description,\n"
+         "technique_id, technique_name, technique_description,\n"
+         "technique_tactics, evidence_indicators.\n"
+         "Shortcut for -c with the above columns. If -c is also provided, -c takes precedence.\n",
+    action="store_const",
+    const=True,
+    default=False,
+)
 
 
 args = parser.parse_args()
@@ -85,6 +97,14 @@ navigationlayers = args.navlayers
 queries = args.queries
 truncate = args.truncate
 columns = args.columns
+preset = args.preset
+
+if preset and not columns:
+    columns = (
+        "group_software_id,group_software_name,group_software_description,"
+        "technique_id,technique_name,technique_description,"
+        "technique_tactics,evidence_indicators"
+    )
 
 attack_framework = attackframework[0].title()
 attack_version = "16.1"  # Updated to latest version, will auto-fetch latest from TAXII
@@ -115,6 +135,7 @@ def main():
         attack_version,
         sheet_tabs,
         columns,
+        preset,
     )
 
 

@@ -211,6 +211,7 @@ def mainsaw(
     attack_version,
     sheet_tabs,
     columns=None,
+    preset=False,
 ):
 
     # checking latest version and loading STIX data
@@ -601,7 +602,11 @@ def mainsaw(
                     df["keywords"] = df["group_software_id"].map(keyword_map).fillna("")
 
                 df = df[requested_columns].drop_duplicates()
-                keywords_csv_path = os.path.join(mitresaw_output_directory, "ThreatActors_Keywords.csv")
+                if preset:
+                    filtered_csv_name = "mitre_procedures.csv"
+                else:
+                    filtered_csv_name = "ThreatActors_Keywords.csv"
+                keywords_csv_path = os.path.join(mitresaw_output_directory, filtered_csv_name)
                 df.to_csv(keywords_csv_path, index=False)
                 print(f"      Keywords CSV written to {keywords_csv_path}")
 
