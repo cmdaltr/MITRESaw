@@ -212,6 +212,7 @@ def mainsaw(
     sheet_tabs,
     columns=None,
     preset=False,
+    export_format="csv",
 ):
 
     # checking latest version and loading STIX data
@@ -326,7 +327,7 @@ def mainsaw(
     )
     time.sleep(1)
     subprocess.Popen(["clear"]).communicate()
-    if not art:
+    if art:
         if saw:
             print_saw(saw, tagline, "                                        ")
             print_saw(saw, tagline, "                                      ")
@@ -337,15 +338,15 @@ def mainsaw(
             print_saw(saw, tagline, "                            ")
     platforms = str(operating_platforms)[2:-2].split(",")
     platforms = list(filter(None, platforms))
-    if not art:
+    if art:
         print_saw(saw, tagline, "                          ")
     terms = str(search_terms)[2:-2].split(",")
     terms = list(filter(None, terms))
-    if not art:
+    if art:
         print_saw(saw, tagline, "                        ")
     groups = str(provided_groups)[2:-2].split(",")
     groups = list(filter(None, groups))
-    if not art:
+    if art:
         print_saw(saw, tagline, "                      ")
     else:
         print(tagline)
@@ -395,7 +396,7 @@ def mainsaw(
         contextual_information,
         previous_findings,
     ) = ({} for _ in range(4))
-    if not art:
+    if art:
         if saw:
             print_saw(saw, tagline, "                    ")
             print_saw(saw, tagline, "                  ")
@@ -576,7 +577,20 @@ def mainsaw(
             query_pairings,
             log_sources,
         )
-        # Generate filtered keywords CSV if --columns is specified
+        # Export main CSV files to JSON/XML if requested
+        if export_format != "csv":
+            for csv_name in ["ThreatActors_Techniques", "ThreatActors_Techniques_LogSourceDetections"]:
+                csv_path = os.path.join(mitresaw_output_directory, f"{csv_name}.csv")
+                if os.path.exists(csv_path):
+                    df = pandas.read_csv(csv_path, on_bad_lines="warn")
+                    if export_format == "json":
+                        out_path = os.path.join(mitresaw_output_directory, f"{csv_name}.json")
+                        df.to_json(out_path, orient="records", indent=2)
+                    elif export_format == "xml":
+                        out_path = os.path.join(mitresaw_output_directory, f"{csv_name}.xml")
+                        df.to_xml(out_path)
+                    print(f"      {export_format.upper()} written to {out_path}")
+        # Generate filtered export if --columns is specified
         if columns:
             valid_columns = [
                 "group_software_id", "group_software_name", "technique_id",
@@ -603,12 +617,19 @@ def mainsaw(
 
                 df = df[requested_columns].drop_duplicates()
                 if preset:
-                    filtered_csv_name = "mitre_procedures.csv"
+                    filtered_base_name = "mitre_procedures"
                 else:
-                    filtered_csv_name = "ThreatActors_Keywords.csv"
-                keywords_csv_path = os.path.join(mitresaw_output_directory, filtered_csv_name)
-                df.to_csv(keywords_csv_path, index=False)
-                print(f"      Keywords CSV written to {keywords_csv_path}")
+                    filtered_base_name = "ThreatActors_Keywords"
+                if export_format == "json":
+                    filtered_path = os.path.join(mitresaw_output_directory, f"{filtered_base_name}.json")
+                    df.to_json(filtered_path, orient="records", indent=2)
+                elif export_format == "xml":
+                    filtered_path = os.path.join(mitresaw_output_directory, f"{filtered_base_name}.xml")
+                    df.to_xml(filtered_path)
+                else:
+                    filtered_path = os.path.join(mitresaw_output_directory, f"{filtered_base_name}.csv")
+                    df.to_csv(filtered_path, index=False)
+                print(f"      Filtered export written to {filtered_path}")
 
         mitresaw_techniques = re.findall(
             r"\|\|(T\d{3}[\d\.]+)\|\|", str(consolidated_techniques)

@@ -5,29 +5,29 @@ from MITRESaw.toolbox.main import mainsaw
 
 parser = argparse.ArgumentParser(formatter_class=RawTextHelpFormatter)
 parser.add_argument(
-    "framework",
-    nargs=1,
-    help="Specify which framework to collect from - Enterprise, ICS or Mobile\n",
+    "-f", "--framework",
+    default="Enterprise",
+    help="Specify which framework to collect from - Enterprise, ICS or Mobile (default: Enterprise)\n",
 )
 parser.add_argument(
-    "platforms",
-    nargs=1,
-    help="Filter results based on provided platforms e.g. Windows,Linux,IaaS,Azure_AD (use _ instead of spaces)\n Use . to not filter i.e. obtain all Platforms\n Valid options are: 'Azure_AD', 'Containers', 'Google_Workspace', 'IaaS', 'Linux', 'Network', 'Office_365', 'PRE', 'SaaS', 'Windows', 'macOS'\n\n",
+    "-p", "--platforms",
+    default=".",
+    help="Filter results based on provided platforms e.g. Windows,Linux,IaaS,Azure_AD (use _ instead of spaces)\n Use . to not filter i.e. obtain all Platforms (default: .)\n Valid options are: 'Azure_AD', 'Containers', 'Google_Workspace', 'IaaS', 'Linux', 'Network', 'Office_365', 'PRE', 'SaaS', 'Windows', 'macOS'\n\n",
 )
 parser.add_argument(
-    "searchterms",
-    nargs=1,
-    help="Filter Threat Actor results based on specific industries e.g. mining,technology,defense,law (use _ instead of spaces)\n Use . to not filter i.e. obtain all Threat Actors\n\n",
+    "-t", "--searchterms",
+    default=".",
+    help="Filter Threat Actor results based on specific industries e.g. mining,technology,defense,law (use _ instead of spaces)\n Use . to not filter i.e. obtain all Threat Actors (default: .)\n\n",
 )
 parser.add_argument(
-    "threatgroups",
-    nargs=1,
-    help="Filter Threat Actor results based on specific group names e.g. APT29,HAFNIUM,Lazurus_Group,Turla (use _ instead of spaces)\n Use . to not filter i.e. obtain all Threat Actors\n",
+    "-g", "--threatgroups",
+    default=".",
+    help="Filter Threat Actor results based on specific group names e.g. APT29,HAFNIUM,Lazurus_Group,Turla (use _ instead of spaces)\n Use . to not filter i.e. obtain all Threat Actors (default: .)\n",
 )
 parser.add_argument(
     "-a",
     "--asciiart",
-    help="Don't show ASCII Art of the saw.\n",
+    help="Show ASCII Art of the saw.\n",
     action="store_const",
     const=True,
     default=False,
@@ -43,7 +43,7 @@ parser.add_argument(
 parser.add_argument(
     "-o",
     "--showotherlogsources",
-    help="Show log sources which can detect identified techniques where the coverage is less than 1%\n",
+    help="Show log sources which can detect identified techniques where the coverage is less than 1%%\n",
     action="store_const",
     const=True,
     default=False,
@@ -57,7 +57,7 @@ parser.add_argument(
     default=False,
 )
 parser.add_argument(
-    "-t",
+    "-r",
     "--truncate",
     help="Truncate printing of indicators for a cleaner output (they are still written to output file)\n",
     action="store_const",
@@ -73,9 +73,9 @@ parser.add_argument(
     default=None,
 )
 parser.add_argument(
-    "-p",
-    "--preset",
-    help="Export a preset CSV (ThreatActors_Keywords.csv) with key columns:\n"
+    "-d",
+    "--default",
+    help="Export an express CSV (ThreatActors_Keywords.csv) with key columns:\n"
          "group_software_id, group_software_name, group_software_description,\n"
          "technique_id, technique_name, technique_description,\n"
          "technique_tactics, evidence_indicators.\n"
@@ -84,20 +84,28 @@ parser.add_argument(
     const=True,
     default=False,
 )
+parser.add_argument(
+    "-x",
+    "--export",
+    help="Export format for output files (default: csv)\n",
+    choices=["csv", "json", "xml"],
+    default="csv",
+)
 
 
 args = parser.parse_args()
-attackframework = args.framework
-operating_platforms = args.platforms
-search_terms = args.searchterms
-provided_groups = args.threatgroups
+attackframework = [args.framework]
+operating_platforms = [args.platforms]
+search_terms = [args.searchterms]
+provided_groups = [args.threatgroups]
 show_others = args.showotherlogsources
 art = args.asciiart
 navigationlayers = args.navlayers
 queries = args.queries
 truncate = args.truncate
 columns = args.columns
-preset = args.preset
+preset = args.default
+export_format = args.export
 
 if preset and not columns:
     columns = (
@@ -136,6 +144,7 @@ def main():
         sheet_tabs,
         columns,
         preset,
+        export_format,
     )
 
 
