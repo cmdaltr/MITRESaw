@@ -49,9 +49,17 @@ parser.add_argument(
     default=False,
 )
 parser.add_argument(
-    "-q",
+    "-Q",
     "--queries",
     help="Build search queries based on results - to be imported into Splunk; Azure Sentinel; Elastic/Kibana\n",
+    action="store_const",
+    const=True,
+    default=False,
+)
+parser.add_argument(
+    "-q",
+    "--quiet",
+    help="Suppress per-identifier output; print only when each Threat Group has been fully processed.\n",
     action="store_const",
     const=True,
     default=False,
@@ -106,6 +114,7 @@ truncate = args.truncate
 columns = args.columns
 preset = args.default
 export_format = args.export
+quiet = args.quiet
 
 if preset and not columns:
     columns = (
@@ -145,6 +154,7 @@ def main():
         columns,
         preset,
         export_format,
+        quiet,
     )
 
 

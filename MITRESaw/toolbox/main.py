@@ -61,6 +61,80 @@ def get_latest_attack_version() -> str:
         return "Unknown"
 
 
+def build_technique_datasource_map(stix_filepath: str) -> Dict[str, str]:
+    """Build a mapping from technique external ID to data source strings.
+
+    Returns dict like {"T1001": "Network Traffic: Network Connection Creation, Process: Process Creation, ..."}
+    """
+    with open(stix_filepath, encoding="utf-8") as f:
+        data = json.load(f)
+
+    id_to_obj = {o["id"]: o for o in data["objects"]}
+
+    # Build data component id -> name
+    dc_names = {o["id"]: o.get("name", "") for o in data["objects"] if o.get("type") == "x-mitre-data-component"}
+
+    # Build full "DataSource: DataComponent" names by matching DC names to DS names
+    ds_names = sorted(
+        [o.get("name", "") for o in data["objects"] if o.get("type") == "x-mitre-data-source"],
+        key=len, reverse=True,
+    )
+    # Manual fallback for DCs whose names don't start with their parent DS name
+    dc_parent_override = {
+        "Response Content": "Internet Scan", "Response Metadata": "Internet Scan",
+        "Malware Content": "Malware Repository", "Malware Metadata": "Malware Repository",
+        "Network Connection Creation": "Network Traffic",
+        "Active DNS": "Domain Name", "Passive DNS": "Domain Name",
+        "Domain Registration": "Domain Name",
+        "Host Status": "Sensor Health", "Social Media": "Persona",
+        "OS API Execution": "Process",
+    }
+    dc_full_names = {}
+    for dc_id, dc_name in dc_names.items():
+        if dc_name in dc_parent_override:
+            dc_full_names[dc_id] = f"{dc_parent_override[dc_name]}: {dc_name}"
+        else:
+            for ds_name in ds_names:
+                if dc_name.startswith(ds_name):
+                    dc_full_names[dc_id] = f"{ds_name}: {dc_name}"
+                    break
+            else:
+                dc_full_names[dc_id] = dc_name
+
+    # Build detection_strategy -> data component full names (via analytics)
+    ds_to_dcs: Dict[str, Set] = {}
+    for ds_obj in [o for o in data["objects"] if o.get("type") == "x-mitre-detection-strategy"]:
+        dcs: Set[str] = set()
+        for aref in ds_obj.get("x_mitre_analytic_refs", []):
+            analytic = id_to_obj.get(aref)
+            if analytic:
+                for lref in analytic.get("x_mitre_log_source_references", []):
+                    dc_ref = lref.get("x_mitre_data_component_ref", "")
+                    if dc_ref in dc_full_names:
+                        dcs.add(dc_full_names[dc_ref])
+        ds_to_dcs[ds_obj["id"]] = dcs
+
+    # Build technique ext_id -> data source string from detects relationships
+    tech_ext_ids = {}
+    for o in data["objects"]:
+        if o.get("type") == "attack-pattern":
+            ext_id = o.get("external_references", [{}])[0].get("external_id", "")
+            tech_ext_ids[o["id"]] = ext_id
+
+    tech_to_ds: Dict[str, Set] = {}
+    for rel in data["objects"]:
+        if rel.get("type") == "relationship" and rel.get("relationship_type") == "detects":
+            src = rel["source_ref"]
+            tgt = rel["target_ref"]
+            if src in ds_to_dcs and tgt in tech_ext_ids:
+                ext_id = tech_ext_ids[tgt]
+                if ext_id not in tech_to_ds:
+                    tech_to_ds[ext_id] = set()
+                tech_to_ds[ext_id].update(ds_to_dcs[src])
+
+    return {tid: ", ".join(sorted(dcs)) for tid, dcs in tech_to_ds.items()}
+
+
 def load_attack_data(framework: str = "enterprise") -> MitreAttackData:
     """Load MITRE ATT&CK data using STIX via the mitreattack-python library."""
     print(f"    -> Loading {framework} ATT&CK data from STIX...")
@@ -72,20 +146,41 @@ def load_attack_data(framework: str = "enterprise") -> MitreAttackData:
     }
 
     stix_source = framework_map.get(framework.lower(), "enterprise-attack")
-    attack_data = MitreAttackData(stix_source)
+    stix_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "stix_data")
+    os.makedirs(stix_dir, exist_ok=True)
+    stix_filepath = os.path.join(stix_dir, f"{stix_source}.json")
 
-    return attack_data
+    if not os.path.exists(stix_filepath):
+        stix_url = f"https://raw.githubusercontent.com/mitre/cti/master/{stix_source}/{stix_source}.json"
+        print(f"    -> Downloading {stix_source} STIX data...")
+        resp = requests.get(stix_url, timeout=60)
+        resp.raise_for_status()
+        with open(stix_filepath, "w", encoding="utf-8") as f:
+            f.write(resp.text)
+        print(f"    -> Saved to {stix_filepath}")
+
+    attack_data = MitreAttackData(stix_filepath)
+    return attack_data, stix_filepath
 
 
 def process_technique_parallel(args: Tuple) -> List[Dict]:
     """Process a single technique in parallel."""
-    technique, groups, platforms, attack_data = args
+    technique_entry, groups, platforms, attack_data = args
     results = []
 
     try:
+        # get_techniques_used_by_group returns {'object': ..., 'relationships': [...]}
+        technique = technique_entry.get("object", technique_entry)
+        relationships = technique_entry.get("relationships", [])
+
         technique_id = technique.get("external_references", [{}])[0].get("external_id", "")
         technique_name = technique.get("name", "")
         technique_description = technique.get("description", "")
+
+        # Get usage description from relationship (how the group uses the technique)
+        usage = ""
+        if relationships:
+            usage = relationships[0].get("description", "")
 
         # Get platforms
         tech_platforms = technique.get("x_mitre_platforms", [])
@@ -111,6 +206,7 @@ def process_technique_parallel(args: Tuple) -> List[Dict]:
             "id": technique_id,
             "name": technique_name,
             "description": technique_description,
+            "usage": usage,
             "platforms": tech_platforms,
             "tactics": tactics,
             "data_sources": data_sources,
@@ -165,12 +261,45 @@ def get_group_techniques_parallel(attack_data: MitreAttackData, groups: List[str
             # Get techniques used by this group
             techniques = attack_data.get_techniques_used_by_group(group.get("id"))
 
+            # Also get techniques from campaigns attributed to this group
+            campaign_techniques = []
+            try:
+                campaigns = attack_data.get_campaigns_attributed_to_group(group.get("id"))
+                if campaigns:
+                    seen_technique_ids = set()
+                    for t in techniques:
+                        tobj = t.get("object", t)
+                        tid = tobj.get("external_references", [{}])[0].get("external_id", "")
+                        seen_technique_ids.add(tid)
+                    for campaign_entry in campaigns:
+                        campaign_obj = campaign_entry.get("object", campaign_entry)
+                        campaign_name = campaign_obj.get("name", "")
+                        campaign_id = campaign_obj.get("id", "")
+                        try:
+                            camp_techs = attack_data.get_techniques_used_by_campaign(campaign_id)
+                            for ct in camp_techs:
+                                ct_obj = ct.get("object", ct)
+                                ct_id = ct_obj.get("external_references", [{}])[0].get("external_id", "")
+                                if ct_id not in seen_technique_ids:
+                                    seen_technique_ids.add(ct_id)
+                                    # Prepend campaign name to usage for context
+                                    ct_rels = ct.get("relationships", [])
+                                    if ct_rels:
+                                        orig_desc = ct_rels[0].get("description", "")
+                                        ct_rels[0]["description"] = f"[Campaign: {campaign_name}] {orig_desc}"
+                                    campaign_techniques.append(ct)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+            all_group_techniques = list(techniques) + campaign_techniques
             group_techniques[group_id] = []
 
             # Process techniques in parallel
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = []
-                for technique in techniques:
+                for technique in all_group_techniques:
                     futures.append(executor.submit(process_technique_parallel,
                                                   (technique, groups, platforms, attack_data)))
 
@@ -213,6 +342,7 @@ def mainsaw(
     columns=None,
     preset=False,
     export_format="csv",
+    quiet=False,
 ):
 
     # checking latest version and loading STIX data
@@ -229,7 +359,8 @@ def mainsaw(
             attack_version = latest_version
 
         # Load STIX data
-        attack_data = load_attack_data(attack_framework)
+        attack_data, stix_filepath = load_attack_data(attack_framework)
+        technique_datasource_map = build_technique_datasource_map(stix_filepath)
 
     except requests.exceptions.ConnectionError:
         print("\n\n\tUnable to connect to the Internet. Please try again.\n\n\n")
@@ -442,13 +573,15 @@ def mainsaw(
             technique_id = technique["id"]
             technique_name = technique["name"]
             technique_description = technique["description"]
+            technique_usage = technique.get("usage", "")
             technique_platforms = ", ".join(technique["platforms"])
             technique_tactics = ", ".join(technique["tactics"])
-            technique_detection = technique["detection"]
-            technique_data_sources = ", ".join(technique["data_sources"]) if technique["data_sources"] else ""
+            technique_detection = technique.get("detection", "") or ""
+            technique_data_sources = technique_datasource_map.get(technique_id, "")
 
             # Build context string in the format expected by the rest of the tool
-            context = f"{group_id}||{group_name}||-||{technique_id}"
+            # Format: group_id||group_name||technique_id||technique_name
+            context = f"{group_id}||{group_name}||{technique_id}||{technique_name}"
             contextual_information.append(context)
 
             # obtaining navigation layers for all identified threat groups
@@ -479,7 +612,17 @@ def mainsaw(
                         print(f"    Warning: Could not download nav layer for {group_name}: {e}")
 
             # Build valid procedure
-            valid_procedure = f"{context}||{technique_description}||{technique_detection}||{technique_platforms}||{technique_data_sources}"
+            # Format expected by extract.py:
+            # [0]group_id || [1]group_name || [2]technique_id || [3]technique_name ||
+            # [4]usage(relationship desc) || [5]- || [6]group_description(terms) ||
+            # [7]technique_description || [8]technique_detection ||
+            # [9]technique_platforms || [10]technique_data_sources
+            # Sanitize free-text fields to avoid corrupting the || delimiter
+            _usage = technique_usage.replace("||", " ")
+            _gdesc = group_description.replace("||", " ")
+            _tdesc = technique_description.replace("||", " ")
+            _tdet = technique_detection.replace("||", " ")
+            valid_procedure = f"{group_id}||{group_name}||{technique_id}||{technique_name}||{_usage}||-||{_gdesc}||{_tdesc}||{_tdet}||{technique_platforms}||{technique_data_sources}"
             valid_procedures.append(valid_procedure)
 
             # Track techniques
@@ -504,7 +647,12 @@ def mainsaw(
             sub_technique = "-"
         technique_combo = [parent_technique, sub_technique, technique_count]
         technique_combos.append(technique_combo)
+    last_group_name = None
     for each_procedure in consolidated_procedures:
+        current_group_name = each_procedure.split("||")[1]
+        if quiet and last_group_name and current_group_name != last_group_name:
+            print(f"  -> '\033[1;33m{last_group_name}\033[1;m' Completed")
+        last_group_name = current_group_name
         (
             technique_findings,
             previous_findings,
@@ -515,6 +663,7 @@ def mainsaw(
             "",
             previous_findings,
             truncate,
+            quiet,
         )
         threat_actor_technique_id_name_findings = []
 
@@ -546,6 +695,8 @@ def mainsaw(
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
     )
+    if quiet and last_group_name:
+        print(f"  -> '\033[1;33m{last_group_name}\033[1;m' Completed")
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
     if len(consolidated_techniques) > 0:
@@ -618,16 +769,18 @@ def mainsaw(
                 df = df[requested_columns].drop_duplicates()
                 if preset:
                     filtered_base_name = "mitre_procedures"
+                    filtered_dir = mitresaw_root_date
                 else:
                     filtered_base_name = "ThreatActors_Keywords"
+                    filtered_dir = mitresaw_output_directory
                 if export_format == "json":
-                    filtered_path = os.path.join(mitresaw_output_directory, f"{filtered_base_name}.json")
+                    filtered_path = os.path.join(filtered_dir, f"{filtered_base_name}.json")
                     df.to_json(filtered_path, orient="records", indent=2)
                 elif export_format == "xml":
-                    filtered_path = os.path.join(mitresaw_output_directory, f"{filtered_base_name}.xml")
+                    filtered_path = os.path.join(filtered_dir, f"{filtered_base_name}.xml")
                     df.to_xml(filtered_path)
                 else:
-                    filtered_path = os.path.join(mitresaw_output_directory, f"{filtered_base_name}.csv")
+                    filtered_path = os.path.join(filtered_dir, f"{filtered_base_name}.csv")
                     df.to_csv(filtered_path, index=False)
                 print(f"      Filtered export written to {filtered_path}")
 

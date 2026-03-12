@@ -42,26 +42,32 @@ pip install -r requirements.txt
 
 ## Usage
 
-Usage remains the same as before:
+All arguments are now optional named flags with sensible defaults:
 
 ```bash
-python MITRESaw.py <framework> <platforms> <search_terms> <threat_groups> [options]
+./MITRESaw.py [options]
 ```
 
 ### Examples
 
 ```bash
-# Get all Enterprise techniques for Windows platform
-python MITRESaw.py Enterprise Windows . .
+# Default export - all groups, Enterprise framework
+./MITRESaw.py -d
 
-# Get techniques from APT29 targeting Windows and Linux
-python MITRESaw.py Enterprise Windows,Linux . APT29
+# Quiet mode with default export
+./MITRESaw.py -d -q
 
-# Get techniques targeting financial sector with navigation layers
-python MITRESaw.py Enterprise . financial . -n
+# Filter by platform and group
+./MITRESaw.py -p Windows -g APT29
+
+# Export as JSON instead of CSV
+./MITRESaw.py -g APT29 -x json
 
 # Generate queries for specific groups
-python MITRESaw.py Enterprise Windows . APT29,Lazarus_Group -q
+./MITRESaw.py -p Windows -g APT29,Lazarus_Group -Q
+
+# Filter by industry with navigation layers
+./MITRESaw.py -t financial -n
 ```
 
 ## What Changed
@@ -96,21 +102,28 @@ python MITRESaw.py Enterprise Windows . APT29,Lazarus_Group -q
 
 ## Compatibility
 
-### Backward Compatibility
+### CLI Changes
 
-The tool maintains the same CLI interface and output formats:
-- Same command-line arguments
-- Same output directory structure
-- Same CSV output format
-- Same ATT&CK Navigator layer format
+The CLI has been refactored from positional to named arguments:
 
-### Breaking Changes
+| Old | New | Notes |
+|-----|-----|-------|
+| `Enterprise` (positional) | `-f Enterprise` | Defaults to Enterprise |
+| `Windows` (positional) | `-p Windows` | Defaults to `.` (all) |
+| `mining,tech` (positional) | `-t mining,tech` | Defaults to `.` (all) |
+| `APT29` (positional) | `-g APT29` | Defaults to `.` (all) |
+| `-p` / `--preset` | `-d` / `--default` | Renamed |
+| `-t` / `--truncate` | `-r` / `--truncate` | Short flag changed |
+| `-q` / `--queries` | `-Q` / `--queries` | Short flag changed |
+| N/A | `-q` / `--quiet` | New: suppress per-identifier output |
+| N/A | `-x` / `--export` | New: csv, json, xml export formats |
+| `-a` hides art | `-a` shows art | Inverted: art hidden by default |
 
-None for end users. However, if you've modified the code:
+### Data Source Changes
 
-1. **CSV files no longer generated** in the data directory (STIX objects used instead)
-2. **`collect_files()` function** is no longer used (replaced with STIX queries)
-3. **Excel/pandas dependencies** now optional (kept for compatibility)
+- STIX data is now downloaded from GitHub mitre/cti and cached in `stix_data/`
+- Data sources are resolved via the ATT&CK v16.1 detection strategy chain
+- The `--default` (`-d`) preset exports to `./YYYY-MM-DD/mitre_procedures.csv`
 
 ## Performance Tuning
 

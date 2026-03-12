@@ -12,6 +12,9 @@ def make_evidence_insert(evidence_type, identifiers):
         identifiers = re.findall(r"\d+", str(identifiers))
     elif evidence_type == "software":
         evidence_insert = " (software)"
+    elif evidence_type == "filepath":
+        evidence_insert = " (file path(s))"
+        identifiers = list(identifiers)
     else:
         evidence_insert = ""
     return evidence_insert
@@ -89,6 +92,7 @@ def extract_indicators(
     identifiers,
     previous_findings,
     truncate,
+    quiet=False,
 ):
 
     def finding_to_stdout(
@@ -126,11 +130,12 @@ def extract_indicators(
             identifiers.replace("', '", "\033[1;m', '\033[1;31m"),
             evidence_insert,
         )
-        if truncate:
-            print(print_statement.split(": ")[0])
-        else:
-            print(print_statement)
-        time.sleep(0.1)
+        if not quiet:
+            if truncate:
+                print(print_statement.split(": ")[0])
+            else:
+                print(print_statement)
+            time.sleep(0.1)
         return identifiers.replace("', '", "++")
 
     def extract_port_indicators(description):
@@ -343,6 +348,53 @@ def extract_indicators(
         software_identifiers = sorted(list(set(software_identifiers)))
         return software_identifiers
 
+    def extract_filepath_indicators(description):
+        description = re.sub(
+            r"\(Citation[^\)]+\)",
+            r"",
+            re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", description),
+        )
+        description = (
+            description.replace('""', '"')
+            .replace("\\\\\\'", "'")
+            .replace("\\\\'", "'")
+            .replace("\\'", "'")
+            .replace("[.]", ".")
+            .replace("[:]", ":")
+            .strip(",")
+            .strip('"')
+        )
+        filepath_identifiers = []
+        # Windows paths: C:\..., %ENV%\...
+        win_paths = re.findall(
+            r"((?:[A-Za-z]:\\|%[A-Za-z_]+%\\)[^\s\"'<>|,\)]{3,})",
+            description,
+        )
+        filepath_identifiers.extend(win_paths)
+        # Unix paths: /etc/..., /tmp/..., /var/..., /usr/..., /opt/..., /home/...
+        unix_paths = re.findall(
+            r"((?:/etc|/tmp|/var|/usr|/opt|/home|/bin|/sbin|/dev|/proc|/sys)/[^\s\"'<>|,\)]{2,})",
+            description,
+        )
+        filepath_identifiers.extend(unix_paths)
+        # Notable file names with extensions (standalone or in paths)
+        file_names = re.findall(
+            r"(?:[\s\\/\"'`>]|^)([A-Za-z0-9_\-\.]{2,}\.(?:exe|dll|sys|bat|cmd|ps1|vbs|vbe|js|jse|wsf|wsh|scr|cpl|lnk|hta|msi|msp|jar|py|sh|pif|inf|reg))\b",
+            description,
+            re.IGNORECASE,
+        )
+        filepath_identifiers.extend(file_names)
+        # Deduplicate and clean
+        cleaned = []
+        for fp in filepath_identifiers:
+            fp = fp.strip().strip("`").rstrip(".").rstrip(",").rstrip(";").rstrip(")")
+            # Skip URLs and examples
+            if "www." in fp or "example" in fp.lower() or "http" in fp.lower():
+                continue
+            if len(fp) > 3 and fp not in cleaned:
+                cleaned.append(fp)
+        return sorted(list(set(cleaned)))
+
     def add_to_evidence(
         valid_procedure,
         previous_findings,
@@ -394,6 +446,7 @@ def extract_indicators(
     )
 
     # extracting ports
+    port_identifiers = []
     if (
         technique_id != "T1070.006"
         and technique_id != "T1098"
@@ -522,11 +575,30 @@ def extract_indicators(
         )
     else:
         software_identifiers = []
+
+    # extracting file paths and file names
+    filepath_identifiers = extract_filepath_indicators(description)
+    if len(filepath_identifiers) > 0:
+        evidence_found = add_to_evidence(
+            valid_procedure,
+            previous_findings,
+            evidence_found,
+            technique_id,
+            technique_name,
+            software_group_name,
+            "filepath",
+            filepath_identifiers,
+            software_group_terms,
+            terms,
+            truncate,
+        )
+
     if (
         len(port_identifiers) == 0
         and len(evt_identifiers) == 0
         and len(reg_identifiers) == 0
         and len(cmd_identifiers) == 0
+        and len(filepath_identifiers) == 0
     ):
         evidence_found = add_to_evidence(
             valid_procedure,

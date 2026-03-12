@@ -46,6 +46,8 @@ def write_csv_summary(
     log_sources,
 ):
     for dataset in consolidated_techniques:
+        parts = dataset.split("||")
+        technique_platforms = parts[9] if len(parts) > 9 else ""
         with open(
             os.path.join(mitresaw_output_directory, "ThreatActors_Techniques.csv"),
             "a",

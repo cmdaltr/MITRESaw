@@ -8,3 +8,6 @@ __pycache__/
 # Mac
 .DS_Store
 xcode/
+
+# STIX data (downloaded at runtime)
+stix_data/

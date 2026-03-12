@@ -61,46 +61,52 @@ MITRESaw has evolved to also produce search queries based on extracted indicator
 <br><br><br>
 
 ## Usage
-`python3 MITRESaw.py framework platforms searchterms threatgroups [-a] [-c] [-n] [-o] [-q] [-s] [-t]`
+`./MITRESaw.py [options]`
 
-To display usage, simply run: `python3 MITRESaw.py -h`
+All arguments are optional named flags with sensible defaults. To display usage, simply run: `./MITRESaw.py -h`
 ```
-usage: MITRESaw.py [-h] [-a] [-c COLUMNS] [-n] [-o] [-q] [-t] framework platforms searchterms threatgroups
+usage: MITRESaw.py [-h] [-f FRAMEWORK] [-p PLATFORMS] [-t SEARCHTERMS]
+                   [-g THREATGROUPS] [-a] [-n] [-o] [-Q] [-q] [-r]
+                   [-c COLUMNS] [-d] [-x {csv,json,xml}]
 
-positional arguments:
-  framework             Specify which framework to collect from - Enterprise, ICS or Mobile
-  platforms             Filter results based on provided platforms e.g. Windows,Linux,IaaS,Azure_AD (use _ instead of spaces)
-                         Use . to not filter i.e. obtain all Platforms
-                         Valid options are: 'Azure_AD', 'Containers', 'Google_Workspace', 'IaaS', 'Linux', 'Network', 'Office_365', 'PRE', 'SaaS', 'Windows', 'macOS'
-  searchterms           Filter Threat Actor results based on specific industries e.g. mining,technology,defense,law (use _ instead of spaces)
-                         Use . to not filter i.e. obtain all Threat Actors
-  threatgroups          Filter Threat Actor results based on specific group names and/or Software e.g. APT29,HAFNIUM,Lazurus_Group,Turla,AppleJeus,Brute Ratel C4 (use _ instead of spaces)
-                         Use . to not filter i.e. obtain all Threat Actors
-
-optional arguments:
+options:
   -h, --help                  show this help message and exit
-  -a, --asciiart              Don't show ASCII Art of the saw.
-  -c, --columns COLUMNS       Export a filtered CSV (ThreatActors_Keywords.csv) with only specified columns (comma-separated).
-                              Includes a 'keywords' column option for auto-matched industry keyword tagging.
-                              Example: -c group_software_name,keywords
-  -n, --navlayers             Obtain ATT&CK Navigator layers for Groups and Software identified during extraction of identifable evidence
-  -o, --showotherlogsources   Show log sources which can detect identified techniques where the coverage is less than 1%
-  -q, --queries               Build search queries based on results - to be imported into Splunk; Azure Sentinel; Elastic/Kibana
-  -t, --truncate              Truncate printing of indicators for a cleaner output (they are still written to output file)
+  -f, --framework FRAMEWORK   Specify which framework - Enterprise, ICS or Mobile (default: Enterprise)
+  -p, --platforms PLATFORMS   Filter by platform e.g. Windows,Linux,IaaS (default: . for all)
+  -t, --searchterms TERMS     Filter by industry e.g. mining,technology,defense (default: . for all)
+  -g, --threatgroups GROUPS   Filter by group e.g. APT29,HAFNIUM,Turla (default: . for all)
+  -a, --asciiart              Show ASCII Art of the saw
+  -n, --navlayers             Obtain ATT&CK Navigator layers for identified Groups
+  -o, --showotherlogsources   Show log sources with less than 1% coverage
+  -Q, --queries               Build search queries for Splunk, Azure Sentinel, Elastic/Kibana
+  -q, --quiet                 Suppress per-identifier output; print only group completion
+  -r, --truncate              Truncate indicator output (still written to file)
+  -c, --columns COLUMNS       Export filtered CSV with specified columns (comma-separated)
+  -d, --default               Export key procedure columns to mitre_procedures.csv
+  -x, --export {csv,json,xml} Export format for output files (default: csv)
 ```
 
 ### Examples
 
-`python3 MITRESaw.py Enterprise Windows,Linux,macOS mining,technology,defense,_uk_,law . -q`
+```bash
+# Default export with all groups (fastest way to get results)
+./MITRESaw.py -d
 
-#### Splunk Lookup Export
-Export a CSV of group names and auto-matched industry keywords for use as a Splunk lookup:
+# Quiet mode - show group completion instead of every indicator
+./MITRESaw.py -d -q
 
-`python3 MITRESaw.py Enterprise . . . -c group_software_name,keywords`
+# Filter by platform and threat group
+./MITRESaw.py -p Windows -g APT29
 
-Export group names, technique details, and keywords:
+# Export as JSON
+./MITRESaw.py -g APT29 -x json
 
-`python3 MITRESaw.py Enterprise Windows . APT29 -c group_software_name,technique_id,technique_name,keywords`
+# Build search queries for specific groups on Windows/Linux
+./MITRESaw.py -p Windows,Linux -t mining,technology,defense -Q
+
+# Export filtered columns with industry keyword tagging
+./MITRESaw.py -c group_software_name,technique_id,technique_name,keywords
+```
 
 Valid column names for `--columns`:
 ```
@@ -111,21 +117,9 @@ technique_description, technique_detection, technique_platforms,
 technique_datasources, evidence_type, evidence_indicators, keywords
 ```
 
-<br><br>
-
 ### Notices
 
-Because the MITRE ATT&amp;CK has been built and is managed in the United States, the keywords provided need to be in US English, as opposed UK English. An example where results would not reflect the search terms provided is the word defense (US)/defence (UK).
-I have also had discussions with peers about how to leverage the ATT&amp;CK STIX data compiled by MITRE instead of the Excel SpreadSheets but the data provided in the STIX data doesn't contain the same Group/Software information as the SpreadSheets. Although the STIX data does detail the procedure examples of each Group/Software(/Campaign) leverages each respective technique, nowhere in the STIX dataset is there a description for each of the Groups/Software/Campaigns and without this, MITRESaw cannot ascertain which Threat Actors target certain industries using the STIX dataset.<br>
-For example, for [APT41](https://attack.mitre.org/groups/G0096/)<br>
-- Description
-```
-APT41 is a threat group that researchers have assessed as Chinese state-sponsored espionage group that also conducts financially-motivated operations. Active since at least 2012, APT41 has been observed targeting healthcare, telecom, technology, and video game industries in 14 countries. APT41 overlaps at least partially with public reporting on groups including BARIUM and Winnti Group.
-```
-- Procedure example ***Create or Modify System Process: Windows Service***
-```
-APT41 modified legitimate Windows services to install malware backdoors. APT41 created the StorSyncSvc service to provide persistence for Cobalt Strike.
-```
+Because the MITRE ATT&amp;CK has been built and is managed in the United States, the keywords provided need to be in US English, as opposed to UK English (e.g. defense vs defence).
 <br><br><br>
 
 
