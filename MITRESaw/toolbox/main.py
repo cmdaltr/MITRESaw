@@ -16,9 +16,22 @@ from mitreattack.stix20 import MitreAttackData
 from stix2 import TAXIICollectionSource, Filter
 from taxii2client.v20 import Server, Collection
 
+import urllib3
+import warnings
+
 import pandas
 
 from MITRESaw.toolbox.extract import extract_indicators
+
+
+def _fetch(url: str, **kwargs) -> requests.Response:
+    """GET with automatic SSL-verify fallback for corporate VPN/proxy environments."""
+    try:
+        return requests.get(url, **kwargs)
+    except requests.exceptions.SSLError:
+        warnings.warn("SSL verification failed — retrying without verification (corporate VPN/proxy detected)")
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        return requests.get(url, verify=False, **kwargs)
 from MITRESaw.toolbox.tools.write_csv import write_csv_summary
 from MITRESaw.toolbox.tools.write_csv import write_csv_techniques_mapped_to_logsources
 from MITRESaw.toolbox.output.matrix import build_matrix
@@ -32,9 +45,16 @@ def get_latest_attack_version() -> str:
     """Fetch the latest MITRE ATT&CK version from STIX data."""
     try:
         # Use the TAXII server to get the latest version
-        server = Server("https://cti-taxii.mitre.org/taxii/")
-        api_root = server.api_roots[0]
-        collections = api_root.collections
+        try:
+            server = Server("https://cti-taxii.mitre.org/taxii/")
+            api_root = server.api_roots[0]
+            collections = api_root.collections
+        except requests.exceptions.SSLError:
+            warnings.warn("SSL verification failed for TAXII — retrying without verification")
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            server = Server("https://cti-taxii.mitre.org/taxii/", verify=False)
+            api_root = server.api_roots[0]
+            collections = api_root.collections
 
         for collection in collections:
             if "Enterprise ATT&CK" in collection.title:
@@ -48,7 +68,7 @@ def get_latest_attack_version() -> str:
                     return version
 
         # Fallback to web scraping if STIX method fails
-        version_history = requests.get("https://attack.mitre.org/resources/versions/", timeout=10)
+        version_history = _fetch("https://attack.mitre.org/resources/versions/", timeout=10)
         latest_version = re.findall(
             r"<span><strong>([^<]+)",
             str(version_history.content)
@@ -153,7 +173,7 @@ def load_attack_data(framework: str = "enterprise") -> MitreAttackData:
     if not os.path.exists(stix_filepath):
         stix_url = f"https://raw.githubusercontent.com/mitre/cti/master/{stix_source}/{stix_source}.json"
         print(f"    -> Downloading {stix_source} STIX data...")
-        resp = requests.get(stix_url, timeout=60)
+        resp = _fetch(stix_url, timeout=60)
         resp.raise_for_status()
         with open(stix_filepath, "w", encoding="utf-8") as f:
             f.write(resp.text)
@@ -601,7 +621,7 @@ def mainsaw(
                             "     -> Obtaining ATT&CK Navigator Layers for \033[1;33mThreat Actors\033[1;m related to identified \033[1;32mTechniques\033[1;m..."
                         )
                     try:
-                        group_navlayer = requests.get(
+                        group_navlayer = _fetch(
                             f"https://attack.mitre.org/groups/{group_id}/{group_id}-enterprise-layer.json",
                             timeout=10
                         )
