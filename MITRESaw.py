@@ -99,6 +99,14 @@ parser.add_argument(
     choices=["csv", "json", "xml"],
     default="csv",
 )
+parser.add_argument(
+    "-F",
+    "--fetch",
+    help="Force a fresh download of ATT&CK STIX data (default: re-download if older than 7 days)\n",
+    action="store_const",
+    const=True,
+    default=False,
+)
 
 
 args = parser.parse_args()
@@ -115,6 +123,7 @@ columns = args.columns
 preset = args.default
 export_format = args.export
 quiet = args.quiet
+fetch = args.fetch
 
 if preset and not columns:
     columns = (
@@ -155,6 +164,7 @@ def main():
         preset,
         export_format,
         quiet,
+        fetch,
     )
 
 

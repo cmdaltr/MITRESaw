@@ -85,6 +85,270 @@ def make_spacer(software_group_name):
     return group_spacer
 
 
+def extract_port_indicators(description):
+    description = re.sub(
+        r"\(Citation[^\)]+\)",
+        r"",
+        re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", description),
+    )
+    description = (
+        description.replace('""', '"')
+        .replace(". . ", ". ")
+        .replace(".. ", ". ")
+        .replace("\\\\\\'", "'")
+        .replace("\\\\'", "'")
+        .replace("\\'", "'")
+        .strip(",")
+        .strip('"')
+        .strip(",")
+        .strip('"')
+    )
+    port_identifiers = re.findall(
+        r"(?:(?:[Pp]orts?(?: of)? |and |& |or |, |e\.g\.? |tcp: ?|udp: ?)|(?:\())(\d{2,})(?: |/|\. |,|\<)",
+        description,
+    )
+    port_identifiers = list(
+        filter(
+            lambda port: "365" != port,
+            list(filter(lambda port: "10" != port, port_identifiers)),
+        )
+    )  # remove string from list
+    port_identifiers = sorted(list(set(port_identifiers)))
+    return port_identifiers
+
+
+def extract_evt_indicators(description):
+    description = re.sub(
+        r"\(Citation[^\)]+\)",
+        r"",
+        re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", description),
+    )
+    description = (
+        description.replace('""', '"')
+        .replace(". . ", ". ")
+        .replace(".. ", ". ")
+        .replace("\\\\\\'", "'")
+        .replace("\\\\'", "'")
+        .replace("\\'", "'")
+        .replace("'), ('", "")
+        .strip(",")
+        .strip('"')
+        .strip(",")
+        .strip('"')
+    )
+    evt_identifiers = re.findall(
+        r"(?:(?:Event ?|E)I[Dd]( ==)? ?\"?(\d{1,5}))", description
+    )
+    evt_identifiers = re.findall(
+        r"'(\d+)'", str(sorted(list(set(evt_identifiers))))
+    )
+    return evt_identifiers
+
+
+def extract_reg_indicators(
+    description,
+):
+    description = re.sub(
+        r"\(Citation[^\)]+\)",
+        r"",
+        re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", description),
+    )
+    description = (
+        description.replace('""', '"')
+        .replace(". . ", ". ")
+        .replace(".. ", ". ")
+        .replace("\\\\\\'", "'")
+        .replace("\\\\'", "'")
+        .replace("\\'", "'")
+        .strip(",")
+        .strip('"')
+        .strip(",")
+        .strip('"')
+        .strip("'")
+    )
+    reg_identifiers = re.findall(
+        r"([Hh][Kk](?:[Ll][Mm]|[Cc][Uu]|[Ee][Yy])[^\{\}\|\"'!$<>`]+)",
+        description.lower()
+        .replace("hkey_local_machine", "hklm")
+        .replace("hkey_current_user", "hkcu")
+        .replace("[hklm]", "hklm")
+        .replace("[hkcu]", "hkcu")
+        .replace("hklm]", "hklm")
+        .replace("hkcu]", "hkcu")
+        .replace("\u201c", '"')
+        .replace("\u201d", '"')
+        .replace("\\\\\\\\\\\\\\\\", "\\\\\\\\")
+        .replace("\\\\\\\\\\\\\\\\", "\\")
+        .replace("\\\\\\\\\\\\", "\\")
+        .replace("\\\\\\\\", "\\")
+        .replace("\u00a3\\\\t\u00a3", "\\\\t")
+        .replace('""', '"')
+        .replace("  ", " ")
+        .replace("[.]", ".")
+        .replace("[:]", ":")
+        .replace("&#42;", "*")
+        .replace("&lbrace;", "{")
+        .replace("&rbrace;", "}")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("[username]", "%username%")
+        .replace("\\]\\", "]\\")
+        .replace('""', '"')
+        .replace('""', '"')
+        .strip("\\")
+        .strip(),
+    )
+    registry_identifiers = sorted(list(set(reg_identifiers)))
+    return registry_identifiers
+
+
+def extract_cmd_indicators(description):
+    terms_identifiers = re.findall(
+        r"(?:(?:<code> ?([^\{\}!<>`]{3,}) ?<\/code>)|(?:` ?([^\{\}!<>`]{3,}) ?`)|(?:\[ ?([^\{\}!<>`]{3,}) ?\]\(https:\/\/attack\.mitre\.org\/software))",
+        description,
+    )
+    cmd_identifiers = []
+    all_identifiers = sorted(list(set(terms_identifiers)))
+    for identifier_set in all_identifiers:
+        for each_identifier in identifier_set:
+            if (
+                len(each_identifier) > 0
+                and "](https://attack.mitre.org/" not in each_identifier
+                and "example" not in each_identifier.lower()
+                and "citation" not in each_identifier.lower()
+                and not each_identifier.startswith(")")
+                and not each_identifier.endswith("(")
+                and not each_identifier.lower().startswith("hklm\\")
+                and not each_identifier.lower().startswith("hkcu\\")
+                and not each_identifier.lower().startswith("hkey\\")
+                and not each_identifier.lower().startswith("[hklm")
+                and not each_identifier.lower().startswith("[hkcu")
+                and not each_identifier.lower().startswith("[hkey")
+                and not each_identifier == ", and "
+                and not each_identifier == "or"
+            ):
+                identifier = (
+                    each_identifier.lower()
+                    .replace("\u201c", '"')
+                    .replace("\u201d", '"')
+                    .replace("\\\\\\\\\\\\\\\\", "\\\\\\\\")
+                    .replace("\\\\\\\\\\\\\\\\", "\\")
+                    .replace("\\\\\\\\\\\\", "\\")
+                    .replace("\\\\\\\\", "\\")
+                    .replace("\u00a3\\\\t\u00a3", "\\\\t")
+                    .replace('""', '"')
+                    .replace("  ", " ")
+                    .replace("[.]", ".")
+                    .replace("[:]", ":")
+                    .replace("&#42;", "*")
+                    .replace("&lbrace;", "{")
+                    .replace("&rbrace;", "}")
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("[username]", "%username%")
+                    .replace("\\]\\", "]\\")
+                    .replace('""', '"')
+                    .replace('""', '"')
+                    .strip("\\")
+                    .strip()
+                )
+                identifier = (
+                    identifier.replace("\\\\\\\\\\'", "'")
+                    .replace("\\\\\\\\'", "'")
+                    .replace("\\\\\\'", "'")
+                    .replace("\\\\'", "'")
+                    .replace("\\'", "'")
+                    .replace("'process", "process")
+                    .replace("\"'", '"')
+                )
+                if len(identifier) > 1:
+                    cmd_identifiers.append(identifier)
+    # filtering out strings which match exactly
+    strings_match = ["or"]
+    cmd_identifiers = list(
+        filter(
+            lambda x: any("or" != x for string in strings_match),
+            cmd_identifiers,
+        )
+    )
+    # filtering out strings contained in identifier
+    strings_in = ["where the"]
+    cmd_identifiers = list(
+        filter(
+            lambda x: any(string not in x for string in strings_in),
+            cmd_identifiers,
+        )
+    )
+    cmd_identifiers = sorted(list(set(cmd_identifiers)))
+    return cmd_identifiers
+
+
+def extract_cve_indicators(description):
+    cve_identifiers = re.findall(
+        r"(CVE\-\d+\-\d+)",
+        description,
+    )
+    cve_identifiers = sorted(list(set(cve_identifiers)))
+    return cve_identifiers
+
+
+def extract_software_indicators(description):
+    software_identifiers = re.findall(
+        r"\[([^\]]+)\]\(https:\/\/attack\.mitre\.org\/software/S",
+        description,
+    )
+    software_identifiers = sorted(list(set(software_identifiers)))
+    return software_identifiers
+
+
+def extract_filepath_indicators(description):
+    description = re.sub(
+        r"\(Citation[^\)]+\)",
+        r"",
+        re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", description),
+    )
+    description = (
+        description.replace('""', '"')
+        .replace("\\\\\\'", "'")
+        .replace("\\\\'", "'")
+        .replace("\\'", "'")
+        .replace("[.]", ".")
+        .replace("[:]", ":")
+        .strip(",")
+        .strip('"')
+    )
+    filepath_identifiers = []
+    # Windows paths: C:\..., %ENV%\...
+    win_paths = re.findall(
+        r"((?:[A-Za-z]:\\|%[A-Za-z_]+%\\)[^\s\"'<>|,\)]{3,})",
+        description,
+    )
+    filepath_identifiers.extend(win_paths)
+    # Unix paths: /etc/..., /tmp/..., /var/..., /usr/..., /opt/..., /home/...
+    unix_paths = re.findall(
+        r"((?:/etc|/tmp|/var|/usr|/opt|/home|/bin|/sbin|/dev|/proc|/sys)/[^\s\"'<>|,\)]{2,})",
+        description,
+    )
+    filepath_identifiers.extend(unix_paths)
+    # Notable file names with extensions (standalone or in paths)
+    file_names = re.findall(
+        r"(?:[\s\\/\"'`>]|^)([A-Za-z0-9_\-\.]{2,}\.(?:exe|dll|sys|bat|cmd|ps1|vbs|vbe|js|jse|wsf|wsh|scr|cpl|lnk|hta|msi|msp|jar|py|sh|pif|inf|reg))\b",
+        description,
+        re.IGNORECASE,
+    )
+    filepath_identifiers.extend(file_names)
+    # Deduplicate and clean
+    cleaned = []
+    for fp in filepath_identifiers:
+        fp = fp.strip().strip("`").rstrip(".").rstrip(",").rstrip(";").rstrip(")")
+        # Skip URLs and examples
+        if "www." in fp or "example" in fp.lower() or "http" in fp.lower():
+            continue
+        if len(fp) > 3 and fp not in cleaned:
+            cleaned.append(fp)
+    return sorted(list(set(cleaned)))
+
+
 def extract_indicators(
     valid_procedure,
     terms,
@@ -137,263 +401,6 @@ def extract_indicators(
                 print(print_statement)
             time.sleep(0.1)
         return identifiers.replace("', '", "++")
-
-    def extract_port_indicators(description):
-        description = re.sub(
-            r"\(Citation[^\)]+\)",
-            r"",
-            re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", description),
-        )
-        description = (
-            description.replace('""', '"')
-            .replace(". . ", ". ")
-            .replace(".. ", ". ")
-            .replace("\\\\\\'", "'")
-            .replace("\\\\'", "'")
-            .replace("\\'", "'")
-            .strip(",")
-            .strip('"')
-            .strip(",")
-            .strip('"')
-        )
-        port_identifiers = re.findall(
-            r"(?:(?:[Pp]orts?(?: of)? |and |& |or |, |e\.g\.? |tcp: ?|udp: ?)|(?:\())(\d{2,})(?: |/|\. |,|\<)",
-            description,
-        )
-        port_identifiers = list(
-            filter(
-                lambda port: "365" != port,
-                list(filter(lambda port: "10" != port, port_identifiers)),
-            )
-        )  # remove string from list
-        port_identifiers = sorted(list(set(port_identifiers)))
-        return port_identifiers
-
-    def extract_evt_indicators(description):
-        description = re.sub(
-            r"\(Citation[^\)]+\)",
-            r"",
-            re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", description),
-        )
-        description = (
-            description.replace('""', '"')
-            .replace(". . ", ". ")
-            .replace(".. ", ". ")
-            .replace("\\\\\\'", "'")
-            .replace("\\\\'", "'")
-            .replace("\\'", "'")
-            .replace("'), ('", "")
-            .strip(",")
-            .strip('"')
-            .strip(",")
-            .strip('"')
-        )
-        evt_identifiers = re.findall(
-            r"(?:(?:Event ?|E)I[Dd]( ==)? ?\"?(\d{1,5}))", description
-        )
-        evt_identifiers = re.findall(
-            r"'(\d+)'", str(sorted(list(set(evt_identifiers))))
-        )
-        return evt_identifiers
-
-    def extract_reg_indicators(
-        description,
-    ):
-        description = re.sub(
-            r"\(Citation[^\)]+\)",
-            r"",
-            re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", description),
-        )
-        description = (
-            description.replace('""', '"')
-            .replace(". . ", ". ")
-            .replace(".. ", ". ")
-            .replace("\\\\\\'", "'")
-            .replace("\\\\'", "'")
-            .replace("\\'", "'")
-            .strip(",")
-            .strip('"')
-            .strip(",")
-            .strip('"')
-            .strip("'")
-        )
-        reg_identifiers = re.findall(
-            r"([Hh][Kk](?:[Ll][Mm]|[Cc][Uu]|[Ee][Yy])[^\{\}\|\"'!$<>`]+)",
-            description.lower()
-            .replace("hkey_local_machine", "hklm")
-            .replace("hkey_current_user", "hkcu")
-            .replace("[hklm]", "hklm")
-            .replace("[hkcu]", "hkcu")
-            .replace("hklm]", "hklm")
-            .replace("hkcu]", "hkcu")
-            .replace("“", '"')
-            .replace("”", '"')
-            .replace("\\\\\\\\\\\\\\\\", "\\\\\\\\")
-            .replace("\\\\\\\\\\\\\\\\", "\\")
-            .replace("\\\\\\\\\\\\", "\\")
-            .replace("\\\\\\\\", "\\")
-            .replace("£\\\\t£", "\\\\t")
-            .replace('""', '"')
-            .replace("  ", " ")
-            .replace("[.]", ".")
-            .replace("[:]", ":")
-            .replace("&#42;", "*")
-            .replace("&lbrace;", "{")
-            .replace("&rbrace;", "}")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("[username]", "%username%")
-            .replace("\\]\\", "]\\")
-            .replace('""', '"')
-            .replace('""', '"')
-            .strip("\\")
-            .strip(),
-        )
-        registry_identifiers = sorted(list(set(reg_identifiers)))
-        return registry_identifiers
-
-    def extract_cmd_indicators(description):
-        terms_identifiers = re.findall(
-            r"(?:(?:<code> ?([^\{\}!<>`]{3,}) ?<\/code>)|(?:` ?([^\{\}!<>`]{3,}) ?`)|(?:\[ ?([^\{\}!<>`]{3,}) ?\]\(https:\/\/attack\.mitre\.org\/software))",
-            description,
-        )
-        cmd_identifiers = []
-        all_identifiers = sorted(list(set(terms_identifiers)))
-        for identifier_set in all_identifiers:
-            for each_identifier in identifier_set:
-                if (
-                    len(each_identifier) > 0
-                    and "](https://attack.mitre.org/" not in each_identifier
-                    and "example" not in each_identifier.lower()
-                    and "citation" not in each_identifier.lower()
-                    and not each_identifier.startswith(")")
-                    and not each_identifier.endswith("(")
-                    and not each_identifier.lower().startswith("hklm\\")
-                    and not each_identifier.lower().startswith("hkcu\\")
-                    and not each_identifier.lower().startswith("hkey\\")
-                    and not each_identifier.lower().startswith("[hklm")
-                    and not each_identifier.lower().startswith("[hkcu")
-                    and not each_identifier.lower().startswith("[hkey")
-                    and not each_identifier == ", and "
-                    and not each_identifier == "or"
-                ):
-                    identifier = (
-                        each_identifier.lower()
-                        .replace("“", '"')
-                        .replace("”", '"')
-                        .replace("\\\\\\\\\\\\\\\\", "\\\\\\\\")
-                        .replace("\\\\\\\\\\\\\\\\", "\\")
-                        .replace("\\\\\\\\\\\\", "\\")
-                        .replace("\\\\\\\\", "\\")
-                        .replace("£\\\\t£", "\\\\t")
-                        .replace('""', '"')
-                        .replace("  ", " ")
-                        .replace("[.]", ".")
-                        .replace("[:]", ":")
-                        .replace("&#42;", "*")
-                        .replace("&lbrace;", "{")
-                        .replace("&rbrace;", "}")
-                        .replace("&lt;", "<")
-                        .replace("&gt;", ">")
-                        .replace("[username]", "%username%")
-                        .replace("\\]\\", "]\\")
-                        .replace('""', '"')
-                        .replace('""', '"')
-                        .strip("\\")
-                        .strip()
-                    )
-                    identifier = (
-                        identifier.replace("\\\\\\\\\\'", "'")
-                        .replace("\\\\\\\\'", "'")
-                        .replace("\\\\\\'", "'")
-                        .replace("\\\\'", "'")
-                        .replace("\\'", "'")
-                        .replace("'process", "process")
-                        .replace("\"'", '"')
-                    )
-                    if len(identifier) > 1:
-                        cmd_identifiers.append(identifier)
-        # filtering out strings which match exactly
-        strings_match = ["or"]
-        cmd_identifiers = list(
-            filter(
-                lambda x: any("or" != x for string in strings_match),
-                cmd_identifiers,
-            )
-        )
-        # filtering out strings contained in identifier
-        strings_in = ["where the"]
-        cmd_identifiers = list(
-            filter(
-                lambda x: any(string not in x for string in strings_in),
-                cmd_identifiers,
-            )
-        )
-        cmd_identifiers = sorted(list(set(cmd_identifiers)))
-        return cmd_identifiers
-
-    def extract_cve_indicators(description):
-        cve_identifiers = re.findall(
-            r"(CVE\-\d+\-\d+)",
-            description,
-        )
-        cve_identifiers = sorted(list(set(cve_identifiers)))
-        return cve_identifiers
-
-    def extract_software_indicators(description):
-        software_identifiers = re.findall(
-            r"\[([^\]]+)\]\(https:\/\/attack\.mitre\.org\/software/S",
-            description,
-        )
-        software_identifiers = sorted(list(set(software_identifiers)))
-        return software_identifiers
-
-    def extract_filepath_indicators(description):
-        description = re.sub(
-            r"\(Citation[^\)]+\)",
-            r"",
-            re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", description),
-        )
-        description = (
-            description.replace('""', '"')
-            .replace("\\\\\\'", "'")
-            .replace("\\\\'", "'")
-            .replace("\\'", "'")
-            .replace("[.]", ".")
-            .replace("[:]", ":")
-            .strip(",")
-            .strip('"')
-        )
-        filepath_identifiers = []
-        # Windows paths: C:\..., %ENV%\...
-        win_paths = re.findall(
-            r"((?:[A-Za-z]:\\|%[A-Za-z_]+%\\)[^\s\"'<>|,\)]{3,})",
-            description,
-        )
-        filepath_identifiers.extend(win_paths)
-        # Unix paths: /etc/..., /tmp/..., /var/..., /usr/..., /opt/..., /home/...
-        unix_paths = re.findall(
-            r"((?:/etc|/tmp|/var|/usr|/opt|/home|/bin|/sbin|/dev|/proc|/sys)/[^\s\"'<>|,\)]{2,})",
-            description,
-        )
-        filepath_identifiers.extend(unix_paths)
-        # Notable file names with extensions (standalone or in paths)
-        file_names = re.findall(
-            r"(?:[\s\\/\"'`>]|^)([A-Za-z0-9_\-\.]{2,}\.(?:exe|dll|sys|bat|cmd|ps1|vbs|vbe|js|jse|wsf|wsh|scr|cpl|lnk|hta|msi|msp|jar|py|sh|pif|inf|reg))\b",
-            description,
-            re.IGNORECASE,
-        )
-        filepath_identifiers.extend(file_names)
-        # Deduplicate and clean
-        cleaned = []
-        for fp in filepath_identifiers:
-            fp = fp.strip().strip("`").rstrip(".").rstrip(",").rstrip(";").rstrip(")")
-            # Skip URLs and examples
-            if "www." in fp or "example" in fp.lower() or "http" in fp.lower():
-                continue
-            if len(fp) > 3 and fp not in cleaned:
-                cleaned.append(fp)
-        return sorted(list(set(cleaned)))
 
     def add_to_evidence(
         valid_procedure,

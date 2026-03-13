@@ -1,7 +1,6 @@
 #!/usr/bin/env python3 -tt
 import os
 import pandas
-import re
 from collections import Counter
 from MITRESaw.toolbox.tools.map_general_logs import generic_mapping
 from MITRESaw.toolbox.tools.map_bespoke_logs import bespoke_mapping
@@ -38,15 +37,21 @@ def find_parent_sub_technique(technique, sorted_threat_actors_techniques_in_scop
 
 
 def map_log_sources(detectable_threat_actor_technique):
+    # Entry format:
+    # [0]group_id  [1]group_name  [2]technique_id  [3]technique_name
+    # [4]usage  [5]-  [6]group_desc  [7]tech_desc  [8]tech_detection
+    # [9]tech_platforms  [10]tech_datasources  [11]tech_tactics
+    # [12]evidence_type  [13]identifiers
     log_sources = []
-    group = detectable_threat_actor_technique.split("||")[0]
-    technique_id = detectable_threat_actor_technique.split("||")[2]
-    technique_name = detectable_threat_actor_technique.split("||")[6].split(",")[0]
-    technique_desc = detectable_threat_actor_technique.split("||")[7]
-    platform = detectable_threat_actor_technique.split("||")[8]
-    evidence_type = detectable_threat_actor_technique.split("||")[10]
+    parts = detectable_threat_actor_technique.split("||")
+    group = parts[0]
+    technique_id = parts[2]
+    technique_name = parts[3]
+    technique_desc = parts[7]
+    platform = parts[9]
+    evidence_type = parts[12] if len(parts) > 12 else ""
     evidence = (
-        detectable_threat_actor_technique.split("||")[11]
+        (parts[13] if len(parts) > 13 else "")
         .replace("', 'G", "")
         .replace("\\'", "'")
         .replace("\\\\\\\\", "\\\\")
@@ -55,7 +60,7 @@ def map_log_sources(detectable_threat_actor_technique):
     logsources = generic_mapping(
         technique_id,
         platform,
-        detectable_threat_actor_technique.split("||")[9],
+        parts[10] if len(parts) > 10 else "",
         evidence_type,
     )
     for logsource in logsources[1:-1].split(", "):
@@ -76,13 +81,15 @@ def map_log_sources(detectable_threat_actor_technique):
         evidence_type,
         evidence
     )
+    if not log_sources:
+        return f"{group},{technique_id},{technique_name},{technique_desc.replace(',', '%2C')},{platform},-,{evidence_type},{str(evidence)[2:-2].replace(chr(39) + ', ' + chr(39), '; ')}"
     if log_sources[0].startswith("CVE-") or "', 'CVE-" in str(log_sources):
         cves = ""
         for cve in log_sources:
-            cves = f"{cves}{group},{technique_id},{technique_name},{technique_desc.replace(",", "%2C")},{platform},{cve.split(",")[1]} ({cve.split(",")[2]}),{evidence_type},{cve.split(",")[0]},{cve.split(",")[3]}\n"
+            cves = f"{cves}{group},{technique_id},{technique_name},{technique_desc.replace(',', '%2C')},{platform},{cve.split(',')[1]} ({cve.split(',')[2]}),{evidence_type},{cve.split(',')[0]},{cve.split(',')[3]}\n"
         return cves
     else:
-        return f"{group},{technique_id},{technique_name},{technique_desc.replace(",", "%2C")},{platform},{str(log_sources)[2:-2].replace("', '", "; ")},{evidence_type},{str(evidence)[2:-2].replace("', '", "; ")}"
+        return f"{group},{technique_id},{technique_name},{technique_desc.replace(',', '%2C')},{platform},{str(log_sources)[2:-2].replace(chr(39) + ', ' + chr(39), '; ')},{evidence_type},{str(evidence)[2:-2].replace(chr(39) + ', ' + chr(39), '; ')}"
 
 
 def build_matrix(
@@ -110,6 +117,13 @@ def build_matrix(
             "group_software_id,group_software_name,technique_id,item_identifier,group_software,relation_identifier,created,last_modified,group_software_description,technique_name,technique_tactics,technique_description,technique_detection,technique_platforms,technique_datasources,evidence_type,evidence_indicators\n"
         )
     mapped_log_sources = []
+
+    # Pre-build lookup: (actor_name, technique_name) -> list of entries
+    entries_by_actor_tech = {}
+    for entry in consolidated_techniques:
+        p = entry.split("||")
+        key = (p[1], p[3])
+        entries_by_actor_tech.setdefault(key, []).append(entry)
 
     # compile intersect
     for dataset in consolidated_techniques:
@@ -150,23 +164,22 @@ def build_matrix(
 
         # need to identify criteria for what is detectable, non-detectable and out-of-scope
         for threat_actor in uniq_threat_actors_xaxis:
-            threat_actor_technique_regex = (
-                re.escape(threat_actor)
-                + r"\|\|uses\|\|"
-                + re.escape(uniq_technique)
-                + r"(?:[\.\d]+)?(?:\|\|[^\|]+){7}\|\|(ports|evt|reg|cmd|software|cve|N/A)\|\|([^\|]+)', 'G"
-            )
-            detectable_threat_actor_technique = re.search(
-                threat_actor_technique_regex,
-                str(consolidated_techniques),
-            )
-            if detectable_threat_actor_technique != None:
-                if detectable_threat_actor_technique[0].split("||")[-2] == "N/A":
-                    marker = "O"
-                else:
+            matching = entries_by_actor_tech.get((threat_actor, uniq_technique), [])
+            if matching:
+                # Check if any entry has real evidence (not N/A)
+                has_evidence = any(
+                    e.split("||")[12] != "N/A" for e in matching if len(e.split("||")) > 12
+                )
+                if has_evidence:
                     marker = "X"
-                    mapping = map_log_sources(detectable_threat_actor_technique[0])
-                    mapped_log_sources.append(mapping)
+                    for e in matching:
+                        ep = e.split("||")
+                        if len(ep) > 13 and ep[12] != "N/A" and ep[13] not in ("[]", ""):
+                            mapping = map_log_sources(e)
+                            mapped_log_sources.append(mapping)
+                            break
+                else:
+                    marker = "O"
             else:
                 marker = "-"
             markers.append(marker)

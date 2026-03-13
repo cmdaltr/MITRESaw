@@ -1,58 +1,302 @@
 #!/usr/bin/env python3 -tt
 import json
-import os
 import re
 import requests
 import time
+import urllib3
+import warnings
+
+from MITRESaw.toolbox.extract import (
+    extract_port_indicators,
+    extract_cmd_indicators,
+    extract_filepath_indicators,
+    extract_reg_indicators,
+)
+
+# In-memory cache: CVE ID -> enriched result string (or None for failed fetches)
+_cve_cache = {}
+
+# Known PoC/exploit hosting domains
+_POC_DOMAINS = [
+    "github.com/",
+    "packetstormsecurity.com",
+    "exploit-db.com",
+    "vuldb.com",
+    "sploitus.com",
+]
+
+# NVD rate-limit: max 1 request per 6 seconds (without API key)
+_last_nvd_request = 0.0
+
+
+def _fetch(url, **kwargs):
+    """GET with automatic SSL-verify fallback for corporate VPN/proxy environments."""
+    try:
+        return requests.get(url, timeout=15, **kwargs)
+    except requests.exceptions.SSLError:
+        warnings.warn(
+            "SSL verification failed — retrying without verification (corporate VPN/proxy detected)"
+        )
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        return requests.get(url, verify=False, timeout=15, **kwargs)
+
+
+def _build_cvelistv5_url(cve_id):
+    """Build correct CVEProject/cvelistV5 raw URL for a CVE ID.
+
+    CVE-2021-26855  -> cves/2021/26xxx/CVE-2021-26855.json
+    CVE-2017-1000486 -> cves/2017/1000xxx/CVE-2017-1000486.json
+    """
+    parts = cve_id.split("-")
+    year = parts[1]
+    seq = parts[2]
+    seq_range = (seq[:-3] or "0") + "xxx"
+    return (
+        f"https://raw.githubusercontent.com/CVEProject/cvelistV5/main/"
+        f"cves/{year}/{seq_range}/{cve_id}.json"
+    )
+
+
+def _extract_indicators_from_text(text):
+    """Run extraction functions against CVE description text to find actionable indicators."""
+    indicators = {}
+    ports = extract_port_indicators(text)
+    if ports:
+        indicators["ports"] = ports
+    cmds = extract_cmd_indicators(text)
+    if cmds:
+        indicators["cmds"] = cmds
+    filepaths = extract_filepath_indicators(text)
+    if filepaths:
+        indicators["filepaths"] = filepaths
+    regs = extract_reg_indicators(text)
+    if regs:
+        indicators["registry"] = regs
+    return indicators
+
+
+def _find_poc_references(cve_data):
+    """Search CVE JSON for PoC/exploit references."""
+    poc_refs = []
+    # Check CNA references
+    cna = cve_data.get("containers", {}).get("cna", {})
+    for ref in cna.get("references", []):
+        url = ref.get("url", "")
+        tags = [t.lower() for t in ref.get("tags", [])]
+        # Tagged as exploit
+        if any("exploit" in t for t in tags):
+            poc_refs.append(url)
+            continue
+        # Known PoC domains with exploit/poc keywords in URL
+        url_lower = url.lower()
+        if any(domain in url_lower for domain in _POC_DOMAINS):
+            if any(kw in url_lower for kw in ["exploit", "poc", "proof-of-concept", "advisory"]):
+                poc_refs.append(url)
+    # Check ADP references
+    for adp in cve_data.get("containers", {}).get("adp", []):
+        for ref in adp.get("references", []):
+            url = ref.get("url", "")
+            tags = [t.lower() for t in ref.get("tags", [])]
+            if any("exploit" in t for t in tags):
+                poc_refs.append(url)
+    return list(set(poc_refs))
+
+
+def _extract_cvss_score(cve_data):
+    """Extract highest CVSS score from CNA or ADP metrics."""
+    scores = []
+    for container_key in ["cna", "adp"]:
+        containers = cve_data.get("containers", {})
+        if container_key == "cna":
+            container_list = [containers.get("cna", {})]
+        else:
+            container_list = containers.get("adp", [])
+        for container in container_list:
+            for metric in container.get("metrics", []):
+                for cvss_key in ["cvssV4_0", "cvssV3_1", "cvssV3_0", "cvssV2_0"]:
+                    cvss = metric.get(cvss_key, {})
+                    score = cvss.get("baseScore")
+                    if score is not None:
+                        scores.append(float(score))
+    return max(scores) if scores else None
+
+
+def _check_cisa_kev(cve_data):
+    """Check ADP containers for CISA KEV (Known Exploited Vulnerabilities) status."""
+    for adp in cve_data.get("containers", {}).get("adp", []):
+        title = adp.get("title", "").lower()
+        if "cisa" in title and ("kev" in title or "known exploited" in title):
+            return True
+        # Check providerMetadata for CISA
+        provider = adp.get("providerMetadata", {}).get("orgId", "")
+        if provider and "cisa" in adp.get("title", "").lower():
+            return True
+    return False
+
+
+def _collect_descriptions(cve_data):
+    """Collect all description text from CNA and ADP containers."""
+    texts = []
+    cna = cve_data.get("containers", {}).get("cna", {})
+    for desc in cna.get("descriptions", []):
+        texts.append(desc.get("value", ""))
+    for adp in cve_data.get("containers", {}).get("adp", []):
+        for desc in adp.get("descriptions", []):
+            texts.append(desc.get("value", ""))
+    return " ".join(texts)
+
+
+def _fetch_nvd_enrichment(cve_id):
+    """Fetch richer description from NVD API (rate-limited)."""
+    global _last_nvd_request
+    elapsed = time.time() - _last_nvd_request
+    if elapsed < 6.0:
+        time.sleep(6.0 - elapsed)
+    _last_nvd_request = time.time()
+    try:
+        resp = _fetch(
+            f"https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={cve_id}"
+        )
+        if resp.status_code == 200:
+            nvd_data = resp.json()
+            vulns = nvd_data.get("vulnerabilities", [])
+            if vulns:
+                cve_item = vulns[0].get("cve", {})
+                for desc in cve_item.get("descriptions", []):
+                    if desc.get("lang") == "en":
+                        return desc.get("value", "")
+    except Exception:
+        pass
+    return ""
+
+
+def obtain_cve_details(evidence):
+    """Fetch CVE data, extract actionable intelligence, and return enriched results.
+
+    Returns a list of strings in format: "{cve_id},{vendor},{versions},{enriched_description}"
+    where enriched_description includes CVSS, indicators, PoC count, and CISA KEV status.
+    """
+    cves = []
+    for cve in evidence:
+        if not cve or "-" not in cve:
+            continue
+
+        # Check cache first
+        if cve in _cve_cache:
+            cached = _cve_cache[cve]
+            if cached is not None:
+                cves.append(cached)
+            continue
+
+        url = _build_cvelistv5_url(cve)
+        try:
+            response = _fetch(url)
+        except Exception as e:
+            print(f"\t{cve} fetch failed: {e}")
+            _cve_cache[cve] = None
+            continue
+
+        if not (200 <= response.status_code < 300):
+            print(f"\t{cve} returned a {response.status_code} error.")
+            _cve_cache[cve] = None
+            time.sleep(1)
+            continue
+
+        try:
+            cve_data = response.json()
+        except json.JSONDecodeError:
+            print(f"\t{cve} returned invalid JSON.")
+            _cve_cache[cve] = None
+            continue
+
+        # Extract basic metadata with safe access
+        cna = cve_data.get("containers", {}).get("cna", {})
+        affected = cna.get("affected", [{}])
+        vendor = affected[0].get("vendor", "Unknown") if affected else "Unknown"
+        versions_list = affected[0].get("versions", []) if affected else []
+        versions = ";".join(
+            v.get("version", "")
+            for v in versions_list
+            if v.get("status") == "affected" and v.get("version")
+        )
+        if not versions:
+            versions = str(
+                re.findall(
+                    r"'affected', 'version': '([^']+)",
+                    str(versions_list),
+                )
+            )[2:-2].replace("', '", ";")
+
+        # Collect all description text
+        full_text = _collect_descriptions(cve_data)
+        description = (
+            full_text.strip()
+            .replace(",", "")
+            .replace("\n", " ")
+            .replace("'", "`")
+            .strip()
+        )
+
+        # NVD fallback for terse descriptions
+        if len(full_text.strip()) < 100:
+            nvd_text = _fetch_nvd_enrichment(cve)
+            if nvd_text and len(nvd_text) > len(full_text):
+                full_text = nvd_text
+                description = (
+                    full_text.strip()
+                    .replace(",", "")
+                    .replace("\n", " ")
+                    .replace("'", "`")
+                    .strip()
+                )
+
+        # Extract actionable indicators from description text
+        indicators = _extract_indicators_from_text(full_text)
+
+        # Find PoC/exploit references
+        poc_refs = _find_poc_references(cve_data)
+
+        # Extract CVSS score
+        cvss_score = _extract_cvss_score(cve_data)
+
+        # Check CISA KEV status
+        cisa_kev = _check_cisa_kev(cve_data)
+
+        # Build enrichment suffix
+        enrichment_parts = []
+        if cvss_score is not None:
+            enrichment_parts.append(f"CVSS:{cvss_score}")
+        if indicators:
+            indicator_strs = []
+            for itype, ivals in sorted(indicators.items()):
+                indicator_strs.append(f"{itype}={';'.join(ivals[:5])}")
+            enrichment_parts.append("Indicators: " + " | ".join(indicator_strs))
+        if poc_refs:
+            enrichment_parts.append(f"PoC:{len(poc_refs)} refs")
+        if cisa_kev:
+            enrichment_parts.append("CISA-KEV:Yes")
+
+        if enrichment_parts:
+            enriched_desc = description + " | " + " | ".join(enrichment_parts)
+        else:
+            enriched_desc = description
+
+        # Report if no actionable intelligence found
+        has_actionable = bool(indicators) or bool(poc_refs) or cisa_kev
+        if not has_actionable:
+            print(f"\tNo evidence/PoC found for {cve}")
+
+        cve_result = f"{cve},{vendor},{versions},{enriched_desc}"
+        _cve_cache[cve] = cve_result
+        cves.append(cve_result)
+
+    return cves
 
 
 def remove_logsource(logsource, data):
     for each in data:
         logsource = [x for x in logsource if x != each]
     return logsource
-
-
-def obtain_cve_details(evidence):
-    cves = []
-    for cve in evidence:
-        cve_details = requests.get(
-            "https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/{}/{}xxx/{}.json".format(
-                cve.split("-")[1],
-                cve.split("-")[2][0],
-                cve,
-            )
-        )
-        if cve_details.status_code >= 200 and cve_details.status_code < 300:
-            cve_content = cve_details.content
-            with open(f"{cve}.json", "wb") as cve_file_b:
-                cve_file_b.write(cve_content)
-            with open(f"{cve}.json", "r") as cve_file:
-                # json.load: read JSON data from a file object.
-                # json.loads: read JSON data from a string.
-                cve_data = json.load(cve_file)
-            # extracting cve data from repository
-            vendor = cve_data["containers"]["cna"]["affected"][0]["vendor"]
-            versions = str(
-                re.findall(
-                    r"'affected', 'version': '([^']+)",
-                    str(cve_data["containers"]["cna"]["affected"][0]["versions"]),
-                )
-            )[2:-2].replace("', '", ";")
-            description = (
-                cve_data["containers"]["cna"]["descriptions"][0]["value"]
-                .strip()
-                .replace(",", "")
-                .replace("\n", " ")
-                .replace("'", "`")
-                .strip()
-            )
-            cve_details = f"{cve},{vendor},{versions},{description}"
-            cves.append(cve_details)
-            os.remove(f"{cve}.json")
-        else:
-            print(f"\t{cve} returned a {cve_details.status_code} error.")
-            time.sleep(1)
-    return cves
 
 
 def bespoke_mapping(technique_id, platform, logsource, evidence_type, evidence):
@@ -116,7 +360,9 @@ def bespoke_mapping(technique_id, platform, logsource, evidence_type, evidence):
     elif evidence_type == "evt":
         logsource.append("EVT_LOGS")
     elif evidence_type == "cve":
-        logsource = obtain_cve_details(evidence[2:-2].split("', '"))
+        cve_items = [c for c in evidence[2:-2].split("', '") if c and "-" in c]
+        if cve_items:
+            logsource = obtain_cve_details(cve_items)
     logsource = re.sub(
         r"('[^']+)\\?(', )\"([^']+)(', ')", r"\1\2'\3\4", str(logsource)
     )[2:-2].split("', '")

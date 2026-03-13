@@ -155,8 +155,11 @@ def build_technique_datasource_map(stix_filepath: str) -> Dict[str, str]:
     return {tid: ", ".join(sorted(dcs)) for tid, dcs in tech_to_ds.items()}
 
 
-def load_attack_data(framework: str = "enterprise") -> MitreAttackData:
-    """Load MITRE ATT&CK data using STIX via the mitreattack-python library."""
+def load_attack_data(framework: str = "enterprise", force_fetch: bool = False) -> MitreAttackData:
+    """Load MITRE ATT&CK data using STIX via the mitreattack-python library.
+
+    Re-downloads if the cached file is older than 7 days or if force_fetch is True (--fetch).
+    """
     print(f"    -> Loading {framework} ATT&CK data from STIX...")
 
     framework_map = {
@@ -170,7 +173,21 @@ def load_attack_data(framework: str = "enterprise") -> MitreAttackData:
     os.makedirs(stix_dir, exist_ok=True)
     stix_filepath = os.path.join(stix_dir, f"{stix_source}.json")
 
+    need_download = False
     if not os.path.exists(stix_filepath):
+        need_download = True
+    elif force_fetch:
+        print(f"    -> --fetch flag set, forcing fresh download...")
+        need_download = True
+    else:
+        file_age_days = (time.time() - os.path.getmtime(stix_filepath)) / 86400
+        if file_age_days > 7:
+            print(f"    -> STIX data is {int(file_age_days)} days old, re-downloading...")
+            need_download = True
+        else:
+            print(f"    -> Using cached STIX data ({int(file_age_days)} day(s) old)")
+
+    if need_download:
         stix_url = f"https://raw.githubusercontent.com/mitre/cti/master/{stix_source}/{stix_source}.json"
         print(f"    -> Downloading {stix_source} STIX data...")
         resp = _fetch(stix_url, timeout=60)
@@ -363,6 +380,7 @@ def mainsaw(
     preset=False,
     export_format="csv",
     quiet=False,
+    fetch=False,
 ):
 
     # checking latest version and loading STIX data
@@ -379,7 +397,7 @@ def mainsaw(
             attack_version = latest_version
 
         # Load STIX data
-        attack_data, stix_filepath = load_attack_data(attack_framework)
+        attack_data, stix_filepath = load_attack_data(attack_framework, force_fetch=fetch)
         technique_datasource_map = build_technique_datasource_map(stix_filepath)
 
     except requests.exceptions.ConnectionError:
@@ -642,7 +660,8 @@ def mainsaw(
             _gdesc = group_description.replace("||", " ")
             _tdesc = technique_description.replace("||", " ")
             _tdet = technique_detection.replace("||", " ")
-            valid_procedure = f"{group_id}||{group_name}||{technique_id}||{technique_name}||{_usage}||-||{_gdesc}||{_tdesc}||{_tdet}||{technique_platforms}||{technique_data_sources}"
+            _ttactics = technique_tactics.replace("||", " ")
+            valid_procedure = f"{group_id}||{group_name}||{technique_id}||{technique_name}||{_usage}||-||{_gdesc}||{_tdesc}||{_tdet}||{technique_platforms}||{technique_data_sources}||{_ttactics}"
             valid_procedures.append(valid_procedure)
 
             # Track techniques
