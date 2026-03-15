@@ -1,9 +1,13 @@
 #!/usr/bin/env python3 -tt
+import json
 import os
 import pandas
 from collections import Counter
 from MITRESaw.toolbox.tools.map_general_logs import generic_mapping
 from MITRESaw.toolbox.tools.map_bespoke_logs import bespoke_mapping
+
+# Priority order for selecting the primary evidence type for log source mapping
+_EVIDENCE_PRIORITY = ["cve", "evt", "reg", "cmd", "ports", "software", "filepath"]
 
 
 def find_parent_sub_technique(technique, sorted_threat_actors_techniques_in_scope):
@@ -37,11 +41,11 @@ def find_parent_sub_technique(technique, sorted_threat_actors_techniques_in_scop
 
 
 def map_log_sources(detectable_threat_actor_technique):
-    # Entry format:
+    # Entry format (consolidated evidence):
     # [0]group_id  [1]group_name  [2]technique_id  [3]technique_name
     # [4]usage  [5]-  [6]group_desc  [7]tech_desc  [8]tech_detection
     # [9]tech_platforms  [10]tech_datasources  [11]tech_tactics
-    # [12]evidence_type  [13]identifiers
+    # [12]evidence_dict (JSON)
     log_sources = []
     parts = detectable_threat_actor_technique.split("||")
     group = parts[0]
@@ -49,19 +53,32 @@ def map_log_sources(detectable_threat_actor_technique):
     technique_name = parts[3]
     technique_desc = parts[7]
     platform = parts[9]
-    evidence_type = parts[12] if len(parts) > 12 else ""
-    evidence = (
-        (parts[13] if len(parts) > 13 else "")
-        .replace("', 'G", "")
-        .replace("\\'", "'")
-        .replace("\\\\\\\\", "\\\\")
-    )
+
+    # Parse consolidated evidence dict
+    evidence_dict = {}
+    if len(parts) > 12:
+        try:
+            evidence_dict = json.loads(parts[12])
+        except (json.JSONDecodeError, IndexError):
+            evidence_dict = {}
+
+    # Select primary evidence type for log source mapping
+    primary_type = ""
+    primary_evidence = ""
+    for etype in _EVIDENCE_PRIORITY:
+        if etype in evidence_dict and evidence_dict[etype]:
+            primary_type = etype
+            primary_evidence = str(evidence_dict[etype])
+            break
+
+    evidence_str = json.dumps(evidence_dict).replace(",", "%2C")
+
     # mapping to identifiable evidence according to https://attack.mitre.org/datasources/
     logsources = generic_mapping(
         technique_id,
         platform,
         parts[10] if len(parts) > 10 else "",
-        evidence_type,
+        primary_type,
     )
     for logsource in logsources[1:-1].split(", "):
         log_sources.append(logsource)
@@ -78,18 +95,18 @@ def map_log_sources(detectable_threat_actor_technique):
                 )
             )
         ),
-        evidence_type,
-        evidence
+        primary_type,
+        primary_evidence
     )
     if not log_sources:
-        return f"{group},{technique_id},{technique_name},{technique_desc.replace(',', '%2C')},{platform},-,{evidence_type},{str(evidence)[2:-2].replace(chr(39) + ', ' + chr(39), '; ')}"
+        return f"{group},{technique_id},{technique_name},{technique_desc.replace(',', '%2C')},{platform},-,{evidence_str}"
     if log_sources[0].startswith("CVE-") or "', 'CVE-" in str(log_sources):
         cves = ""
         for cve in log_sources:
-            cves = f"{cves}{group},{technique_id},{technique_name},{technique_desc.replace(',', '%2C')},{platform},{cve.split(',')[1]} ({cve.split(',')[2]}),{evidence_type},{cve.split(',')[0]},{cve.split(',')[3]}\n"
+            cves = f"{cves}{group},{technique_id},{technique_name},{technique_desc.replace(',', '%2C')},{platform},{cve.split(',')[1]} ({cve.split(',')[2]}),{cve.split(',')[0]},{cve.split(',')[3]}\n"
         return cves
     else:
-        return f"{group},{technique_id},{technique_name},{technique_desc.replace(',', '%2C')},{platform},{str(log_sources)[2:-2].replace(chr(39) + ', ' + chr(39), '; ')},{evidence_type},{str(evidence)[2:-2].replace(chr(39) + ', ' + chr(39), '; ')}"
+        return f"{group},{technique_id},{technique_name},{technique_desc.replace(',', '%2C')},{platform},{str(log_sources)[2:-2].replace(chr(39) + ', ' + chr(39), '; ')},{evidence_str}"
 
 
 def build_matrix(
@@ -114,7 +131,7 @@ def build_matrix(
         os.path.join(mitresaw_output_directory, "ThreatActors_Techniques.csv"), "w"
     ) as mitresaw_csv:
         mitresaw_csv.write(
-            "group_software_id,group_software_name,technique_id,item_identifier,group_software,relation_identifier,created,last_modified,group_software_description,technique_name,technique_tactics,technique_description,technique_detection,technique_platforms,technique_datasources,evidence_type,evidence_indicators\n"
+            "group_software_id,group_software_name,technique_id,item_identifier,group_software,relation_identifier,created,last_modified,group_software_description,technique_name,technique_tactics,technique_description,technique_detection,technique_platforms,technique_datasources,evidence_indicators\n"
         )
     mapped_log_sources = []
 
@@ -166,15 +183,15 @@ def build_matrix(
         for threat_actor in uniq_threat_actors_xaxis:
             matching = entries_by_actor_tech.get((threat_actor, uniq_technique), [])
             if matching:
-                # Check if any entry has real evidence (not N/A)
+                # Check if any entry has real evidence (non-empty dict)
                 has_evidence = any(
-                    e.split("||")[12] != "N/A" for e in matching if len(e.split("||")) > 12
+                    e.split("||")[12] != "{}" for e in matching if len(e.split("||")) > 12
                 )
                 if has_evidence:
                     marker = "X"
                     for e in matching:
                         ep = e.split("||")
-                        if len(ep) > 13 and ep[12] != "N/A" and ep[13] not in ("[]", ""):
+                        if len(ep) > 12 and ep[12] != "{}":
                             mapping = map_log_sources(e)
                             mapped_log_sources.append(mapping)
                             break

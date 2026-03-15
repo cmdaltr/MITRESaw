@@ -373,7 +373,7 @@ def mainsaw(
     navigationlayers,
     queries,
     truncate,
-    attack_framework,
+    attack_frameworks,
     attack_version,
     sheet_tabs,
     columns=None,
@@ -396,9 +396,13 @@ def mainsaw(
             )
             attack_version = latest_version
 
-        # Load STIX data
-        attack_data, stix_filepath = load_attack_data(attack_framework, force_fetch=fetch)
-        technique_datasource_map = build_technique_datasource_map(stix_filepath)
+        # Load STIX data for all requested frameworks
+        all_attack_data = {}
+        technique_datasource_map = {}
+        for fw in attack_frameworks:
+            attack_data, stix_filepath = load_attack_data(fw, force_fetch=fetch)
+            all_attack_data[fw] = attack_data
+            technique_datasource_map.update(build_technique_datasource_map(stix_filepath))
 
     except requests.exceptions.ConnectionError:
         print("\n\n\tUnable to connect to the Internet. Please try again.\n\n\n")
@@ -408,17 +412,17 @@ def mainsaw(
         sys.exit()
 
     # Setup output directories
+    frameworks_label = ", ".join(attack_frameworks)
+    frameworks_slug = "-".join(fw.lower() for fw in attack_frameworks)
     mitresaw_root_date = os.path.join(".", str(datetime.now())[0:10])
     if not os.path.exists(mitresaw_root_date):
         os.makedirs(mitresaw_root_date)
     mitre_files = os.path.join(
-        mitresaw_root_date, "{}-{}-stix".format(attack_framework.lower(), attack_version)
+        mitresaw_root_date, "{}-{}-stix".format(frameworks_slug, attack_version)
     )
     if not os.path.exists(mitre_files):
         os.makedirs(mitre_files)
 
-    # Cache STIX data locally for faster subsequent runs
-    stix_cache_file = os.path.join(mitre_files, "attack_data_cache.json")
     print(f"    -> Using STIX data from TAXII server (cached locally)...")
 
     time.sleep(0.1)
@@ -492,7 +496,7 @@ def mainsaw(
     ]
     chosen_title = random.choice(titles)
     tagline = "{}        *ATT&CK for {} v{}\n".format(
-        chosen_title, attack_framework.title(), attack_version
+        chosen_title, frameworks_label, attack_version
     )
     time.sleep(1)
     subprocess.Popen(["clear"]).communicate()
@@ -596,10 +600,18 @@ def mainsaw(
         )
     )
 
-    # Get group techniques using parallel processing
-    group_techniques_data, group_info_data, all_techniques_data = get_group_techniques_parallel(
-        attack_data, groups, platforms, max_workers=10
-    )
+    # Get group techniques using parallel processing across all frameworks
+    all_group_techniques_data = {}
+    all_group_info_data = {}
+    for fw, attack_data in all_attack_data.items():
+        group_techniques_data, group_info_data, _ = get_group_techniques_parallel(
+            attack_data, groups, platforms, max_workers=10
+        )
+        for gid, techs in group_techniques_data.items():
+            all_group_techniques_data.setdefault(gid, []).extend(techs)
+        all_group_info_data.update(group_info_data)
+    group_techniques_data = all_group_techniques_data
+    group_info_data = all_group_info_data
 
     # Process the STIX data into the format expected by the rest of the tool
     contextual_information = []
@@ -628,26 +640,28 @@ def mainsaw(
                     mitresaw_root_date,
                     "{}_navigationlayers".format(str(datetime.now())[0:10]),
                 )
-                navlayer_json = os.path.join(
-                    navlayer_output_directory,
-                    "{}_{}-enterprise-layer.json".format(group_id, group_name),
-                )
-                if not os.path.exists(navlayer_json):
-                    if not os.path.exists(navlayer_output_directory):
-                        os.makedirs(navlayer_output_directory)
-                        print(
-                            "     -> Obtaining ATT&CK Navigator Layers for \033[1;33mThreat Actors\033[1;m related to identified \033[1;32mTechniques\033[1;m..."
-                        )
-                    try:
-                        group_navlayer = _fetch(
-                            f"https://attack.mitre.org/groups/{group_id}/{group_id}-enterprise-layer.json",
-                            timeout=10
-                        )
-                        if group_navlayer.status_code == 200:
-                            with open(navlayer_json, "wb") as navlayer_file:
-                                navlayer_file.write(group_navlayer.content)
-                    except Exception as e:
-                        print(f"    Warning: Could not download nav layer for {group_name}: {e}")
+                for fw in attack_frameworks:
+                    domain = f"{fw.lower()}-attack"
+                    navlayer_json = os.path.join(
+                        navlayer_output_directory,
+                        f"{group_id}_{group_name}-{domain}-layer.json",
+                    )
+                    if not os.path.exists(navlayer_json):
+                        if not os.path.exists(navlayer_output_directory):
+                            os.makedirs(navlayer_output_directory)
+                            print(
+                                "     -> Obtaining ATT&CK Navigator Layers for \033[1;33mThreat Actors\033[1;m related to identified \033[1;32mTechniques\033[1;m..."
+                            )
+                        try:
+                            group_navlayer = _fetch(
+                                f"https://attack.mitre.org/groups/{group_id}/{group_id}-{domain}-layer.json",
+                                timeout=10
+                            )
+                            if group_navlayer.status_code == 200:
+                                with open(navlayer_json, "wb") as navlayer_file:
+                                    navlayer_file.write(group_navlayer.content)
+                        except Exception as e:
+                            print(f"    Warning: Could not download nav layer for {group_name} ({fw}): {e}")
 
             # Build valid procedure
             # Format expected by extract.py:
@@ -788,7 +802,7 @@ def mainsaw(
                 "created", "last_modified", "group_software_description",
                 "technique_name", "technique_tactics", "technique_description",
                 "technique_detection", "technique_platforms", "technique_datasources",
-                "evidence_type", "evidence_indicators", "keywords",
+                "evidence_indicators", "keywords",
             ]
             requested_columns = [c.strip() for c in columns.split(",")]
             invalid = [c for c in requested_columns if c not in valid_columns]
@@ -833,16 +847,18 @@ def mainsaw(
         )
         print("      Done.")
 
-        # enterprise-attack navigation layer only currently
-        mitresaw_navlayer = '{{"description": "Enterprise techniques used by various Threat Actors, produced by MITRESaw", "name": "{}", "domain": "enterprise-attack", "versions": {{"layer": "4.4", "attack": "15", "navigator": "4.8.1"}}, "techniques": [{{"techniqueID": "{}", "comment": "", "score": 1, "color": "#66b1ff", "showSubtechniques": false}}], "gradient": {{"colors": ["#ffffff", "#66b1ff"], "minValue": 0, "maxValue": 1}}, "legendItems": [{{"label": "identified from MITRESaw analysis", "color": "#66b1ff"}}]}}\n'.format(
-            mitresaw_output_directory.split("/")[2][11:], mitresaw_techniques_insert
-        )
-        with open(
-            os.path.join(mitresaw_output_directory, "enterprise-layer.json"), "w"
-        ) as mitresaw_navlayer_json:
-            mitresaw_navlayer_json.write(
-                mitresaw_navlayer.replace("{{", "{").replace("}}", "}")
+        # Generate ATT&CK Navigator layer per framework
+        for fw in attack_frameworks:
+            domain = f"{fw.lower()}-attack"
+            mitresaw_navlayer = '{{"description": "{} techniques used by various Threat Actors, produced by MITRESaw", "name": "{}", "domain": "{}", "versions": {{"layer": "4.4", "attack": "15", "navigator": "4.8.1"}}, "techniques": [{{"techniqueID": "{}", "comment": "", "score": 1, "color": "#66b1ff", "showSubtechniques": false}}], "gradient": {{"colors": ["#ffffff", "#66b1ff"], "minValue": 0, "maxValue": 1}}, "legendItems": [{{"label": "identified from MITRESaw analysis", "color": "#66b1ff"}}]}}\n'.format(
+                fw, mitresaw_output_directory.split("/")[2][11:], domain, mitresaw_techniques_insert
             )
+            with open(
+                os.path.join(mitresaw_output_directory, f"{domain}-layer.json"), "w"
+            ) as mitresaw_navlayer_json:
+                mitresaw_navlayer_json.write(
+                    mitresaw_navlayer.replace("{{", "{").replace("}}", "}")
+                )
         build_queries(queries, mitresaw_output_directory, query_pairings)
         log_sources = sorted(
             str(log_sources)[3:-3]

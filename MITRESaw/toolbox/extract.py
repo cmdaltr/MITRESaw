@@ -1,4 +1,5 @@
 #!/usr/bin/env python3 -tt
+import json
 import re
 import time
 
@@ -400,46 +401,6 @@ def extract_indicators(
             else:
                 print(print_statement)
             time.sleep(0.1)
-        return identifiers.replace("', '", "++")
-
-    def add_to_evidence(
-        valid_procedure,
-        previous_findings,
-        evidence_found,
-        technique_id,
-        technique_name,
-        software_group_name,
-        evidence_type,
-        identifiers,
-        software_group_terms,
-        terms,
-        truncate,
-    ):
-        evidence = "{}||{}||{}".format(
-            valid_procedure,
-            evidence_type,
-            str(identifiers),
-        )
-        evidence_found.append(evidence)
-        if "{}||{}||{}||{}".format(
-            technique_id, technique_name, software_group_name, evidence_type
-        ) not in str(previous_findings):
-            if len(identifiers) > 0:
-                identifiers = finding_to_stdout(
-                    technique_name,
-                    software_group_name,
-                    evidence_type,
-                    identifiers,
-                    software_group_terms,
-                    terms,
-                    truncate,
-                )
-                previous_findings[
-                    "{}||{}||{}||{}".format(
-                        technique_id, technique_name, software_group_name, evidence_type
-                    )
-                ] = "-"
-        return evidence_found
 
     software_group_name = valid_procedure.split("||")[1]
     technique_id = valid_procedure.split("||")[2]
@@ -452,172 +413,89 @@ def extract_indicators(
         software_group_usage, technique_description, technique_detection
     )
 
+    # Build consolidated evidence dict: {type: [identifiers]}
+    evidence_dict = {}
+
     # extracting ports
-    port_identifiers = []
-    if (
-        technique_id != "T1070.006"
-        and technique_id != "T1098"
-        and technique_id != "T1529"
-    ):
+    if technique_id not in ("T1070.006", "T1098", "T1529"):
         port_identifiers = extract_port_indicators(description)
-        if len(port_identifiers) > 0:
-            evidence_found = add_to_evidence(
-                valid_procedure,
-                previous_findings,
-                evidence_found,
-                technique_id,
-                technique_name,
-                software_group_name,
-                "ports",
-                port_identifiers,
-                software_group_terms,
-                terms,
-                truncate,
-            )
-        else:
-            port_identifiers = []
+        if port_identifiers:
+            evidence_dict["ports"] = port_identifiers
 
     # extracting event IDs
     if "Event ID" in description or "EID" in description or "EventId" in description:
         evt_identifiers = extract_evt_indicators(description)
-    else:
-        evt_identifiers = []
-    if len(evt_identifiers) > 0:
-        evidence_found = add_to_evidence(
-            valid_procedure,
-            previous_findings,
-            evidence_found,
-            technique_id,
-            technique_name,
-            software_group_name,
-            "evt",
-            evt_identifiers,
-            software_group_terms,
-            terms,
-            truncate,
-        )
-    else:
-        evt_identifiers = []
+        if evt_identifiers:
+            evidence_dict["evt"] = evt_identifiers
 
     # extracting registry artefacts
-    if (
-        "hklm\\" in description.lower()
-        or "hkcu\\" in description.lower()
-        or "hkey\\" in description.lower()
-        or "hkey_" in description.lower()
-        or "hklm]" in description.lower()
-        or "hkcu]" in description.lower()
-        or "hkey_local_machine]" in description.lower()
-        or "hkey_current_user]" in description.lower()
-    ):
+    desc_lower = description.lower()
+    if any(k in desc_lower for k in [
+        "hklm\\", "hkcu\\", "hkey\\", "hkey_",
+        "hklm]", "hkcu]", "hkey_local_machine]", "hkey_current_user]",
+    ]):
         reg_identifiers = extract_reg_indicators(description)
-    else:
-        reg_identifiers = []
-    if len(reg_identifiers) > 0:
-        evidence_found = add_to_evidence(
-            valid_procedure,
-            previous_findings,
-            evidence_found,
-            technique_id,
-            technique_name,
-            software_group_name,
-            "reg",
-            reg_identifiers,
-            software_group_terms,
-            terms,
-            truncate,
-        )
-    else:
-        reg_identifiers = []
+        if reg_identifiers:
+            evidence_dict["reg"] = reg_identifiers
 
     # extracting commands
     if "<code>" in description or "`" in description:
         cmd_identifiers = extract_cmd_indicators(description)
-        evidence_found = add_to_evidence(
-            valid_procedure,
-            previous_findings,
-            evidence_found,
-            technique_id,
-            technique_name,
-            software_group_name,
-            "cmd",
-            cmd_identifiers,
-            software_group_terms,
-            terms,
-            truncate,
-        )
-    else:
-        cmd_identifiers = []
+        if cmd_identifiers:
+            evidence_dict["cmd"] = cmd_identifiers
+
+    # extracting CVEs (enriched with actionable intelligence)
     if "CVE" in description.upper():
         cve_identifiers = extract_cve_indicators(description)
-        evidence_found = add_to_evidence(
-            valid_procedure,
-            previous_findings,
-            evidence_found,
-            technique_id,
-            technique_name,
-            software_group_name,
-            "cve",
-            cve_identifiers,
-            software_group_terms,
-            terms,
-            truncate,
-        )
-    else:
-        cve_identifiers = []
+        if cve_identifiers:
+            from MITRESaw.toolbox.tools.map_bespoke_logs import enrich_cves_for_evidence
+            evidence_dict["cve"] = enrich_cves_for_evidence(cve_identifiers)
+
+    # extracting software references
     if "/software/" in description.lower():
         software_identifiers = extract_software_indicators(description)
-        evidence_found = add_to_evidence(
-            valid_procedure,
-            previous_findings,
-            evidence_found,
-            technique_id,
-            technique_name,
-            software_group_name,
-            "software",
-            software_identifiers,
-            software_group_terms,
-            terms,
-            truncate,
-        )
-    else:
-        software_identifiers = []
+        if software_identifiers:
+            evidence_dict["software"] = software_identifiers
 
     # extracting file paths and file names
     filepath_identifiers = extract_filepath_indicators(description)
-    if len(filepath_identifiers) > 0:
-        evidence_found = add_to_evidence(
-            valid_procedure,
-            previous_findings,
-            evidence_found,
-            technique_id,
-            technique_name,
-            software_group_name,
-            "filepath",
-            filepath_identifiers,
-            software_group_terms,
-            terms,
-            truncate,
-        )
+    if filepath_identifiers:
+        evidence_dict["filepath"] = filepath_identifiers
 
-    if (
-        len(port_identifiers) == 0
-        and len(evt_identifiers) == 0
-        and len(reg_identifiers) == 0
-        and len(cmd_identifiers) == 0
-        and len(filepath_identifiers) == 0
-    ):
-        evidence_found = add_to_evidence(
-            valid_procedure,
-            previous_findings,
-            evidence_found,
-            technique_id,
-            technique_name,
-            software_group_name,
-            "N/A",
-            [],
-            software_group_terms,
-            terms,
-            truncate,
-        )
+    # Append single consolidated entry with JSON-serialized evidence dict
+    evidence_entry = "{}||{}".format(valid_procedure, json.dumps(evidence_dict))
+    evidence_found.append(evidence_entry)
+
+    # Print findings to stdout (iterate over dict entries)
+    for ev_type, ev_identifiers in evidence_dict.items():
+        if ev_identifiers:
+            key = "{}||{}||{}||{}".format(
+                technique_id, technique_name, software_group_name, ev_type
+            )
+            if key not in previous_findings:
+                # For CVEs, print just CVE IDs and their indicators (not descriptions)
+                if ev_type == "cve":
+                    display_identifiers = []
+                    for cve_entry in ev_identifiers:
+                        for cve_id, cve_value in cve_entry.items():
+                            parts = cve_value.split("|") if cve_value else []
+                            indicators_part = parts[2] if len(parts) > 2 else ""
+                            if indicators_part:
+                                display_identifiers.append(f"{cve_id}: {indicators_part}")
+                            else:
+                                display_identifiers.append(cve_id)
+                    stdout_identifiers = display_identifiers
+                else:
+                    stdout_identifiers = ev_identifiers
+                finding_to_stdout(
+                    technique_name,
+                    software_group_name,
+                    ev_type,
+                    stdout_identifiers,
+                    software_group_terms,
+                    terms,
+                    truncate,
+                )
+                previous_findings[key] = "-"
+
     return evidence_found, previous_findings

@@ -6,8 +6,11 @@ from MITRESaw.toolbox.main import mainsaw
 parser = argparse.ArgumentParser(formatter_class=RawTextHelpFormatter)
 parser.add_argument(
     "-f", "--framework",
-    default="Enterprise",
-    help="Specify which framework to collect from - Enterprise, ICS or Mobile (default: Enterprise)\n",
+    default="Enterprise,ICS,Mobile",
+    help="Specify which framework(s) to collect from (comma-separated).\n"
+         "Options: Enterprise, ICS, Mobile.\n"
+         "Default: all three (Enterprise,ICS,Mobile).\n"
+         "Example: -f Enterprise or -f Enterprise,ICS\n",
 )
 parser.add_argument(
     "-p", "--platforms",
@@ -110,7 +113,7 @@ parser.add_argument(
 
 
 args = parser.parse_args()
-attackframework = [args.framework]
+attack_frameworks = [f.strip().title() for f in args.framework.split(",")]
 operating_platforms = [args.platforms]
 search_terms = [args.searchterms]
 provided_groups = [args.threatgroups]
@@ -132,7 +135,6 @@ if preset and not columns:
         "technique_tactics,evidence_indicators"
     )
 
-attack_framework = attackframework[0].title()
 attack_version = "16.1"  # Updated to latest version, will auto-fetch latest from TAXII
 sheet_tabs = [
     "techniques-techniques",
@@ -157,7 +159,7 @@ def main():
         navigationlayers,
         queries,
         truncate,
-        attack_framework,
+        attack_frameworks,
         attack_version,
         sheet_tabs,
         columns,
