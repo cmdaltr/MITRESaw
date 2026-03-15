@@ -704,7 +704,8 @@ def mainsaw(
     for each_procedure in consolidated_procedures:
         current_group_name = each_procedure.split("||")[1]
         if quiet and last_group_name and current_group_name != last_group_name:
-            print(f"  -> '\033[1;33m{last_group_name}\033[1;m' Completed")
+            print(f"   \033[1;31m{last_group_name.ljust(25)}\033[0m | Completed")
+            print(f"   {'=' * 25} | {'=' * 45} | {'=' * 68}")
         last_group_name = current_group_name
         (
             technique_findings,
@@ -749,7 +750,7 @@ def mainsaw(
         set(threat_actor_technique_id_name_findings)
     )
     if quiet and last_group_name:
-        print(f"  -> '\033[1;33m{last_group_name}\033[1;m' Completed")
+        print(f"   \033[1;31m{last_group_name.ljust(25)}\033[0m Completed")
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
     if len(consolidated_techniques) > 0:
@@ -802,7 +803,7 @@ def mainsaw(
                 "created", "last_modified", "group_software_description",
                 "technique_name", "technique_tactics", "technique_description",
                 "technique_detection", "technique_platforms", "technique_datasources",
-                "evidence_indicators", "keywords",
+                "evidence_indicators", "detectable_via", "keywords",
             ]
             requested_columns = [c.strip() for c in columns.split(",")]
             invalid = [c for c in requested_columns if c not in valid_columns]

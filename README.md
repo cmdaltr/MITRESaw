@@ -67,7 +67,7 @@ All arguments are optional named flags with sensible defaults. To display usage,
 ```
 usage: MITRESaw.py [-h] [-f FRAMEWORK] [-p PLATFORMS] [-t SEARCHTERMS]
                    [-g THREATGROUPS] [-a] [-n] [-o] [-Q] [-q] [-r]
-                   [-c COLUMNS] [-d] [-x {csv,json,xml}]
+                   [-c COLUMNS] [-d] [-x {csv,json,xml}] [-F]
 
 options:
   -h, --help                  show this help message and exit
@@ -84,6 +84,7 @@ options:
   -c, --columns COLUMNS       Export filtered CSV with specified columns (comma-separated)
   -d, --default               Export key procedure columns to mitre_procedures.csv
   -x, --export {csv,json,xml} Export format for output files (default: csv)
+  -F, --fetch                 Force fresh download of ATT&CK STIX data
 ```
 
 ### Examples
@@ -114,7 +115,7 @@ group_software_id, group_software_name, technique_id, item_identifier,
 group_software, relation_identifier, created, last_modified,
 group_software_description, technique_name, technique_tactics,
 technique_description, technique_detection, technique_platforms,
-technique_datasources, evidence_type, evidence_indicators, keywords
+technique_datasources, evidence_indicators, detectable_via, keywords
 ```
 
 ### Notices

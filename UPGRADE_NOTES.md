@@ -184,6 +184,50 @@ The implementation uses:
 - Thread-local results aggregation
 - Exception isolation per thread
 
+## Log Source Mapping Enhancements
+
+### Expanded Detection Coverage
+
+New log source mappings have been added across both generic (ATT&CK data source) and bespoke (environment-specific) layers:
+
+**Generic mappings** (mapped to ATT&CK data sources):
+- `Sysmon: 22` and `DNS Server Logs` for DNS-related data sources
+- `Proxy logs` for network traffic content and connection creation
+- `Firewall EventLog: 2003;2004;2005;2006` for firewall data sources
+- `Terminal Services EventLog: 1149` for logon session creation
+- `AppLocker EventLog: 8003;8004;8006;8007` for file and process monitoring
+- `Defender EventLog: 1006;1007;1116;1117` for process access and creation
+- `BITS EventLog: 59;60;16403` and `PrintService EventLog: 316;808;842` for service creation
+- `*nix /var/log/audit/audit.log` and `*nix /var/log/syslog` for user account authentication
+
+**Bespoke mappings** (technique and platform-based):
+- `DNS logs` for DNS tunnelling and domain generation techniques
+- `RDP logs` for RDP lateral movement
+- `Proxy logs` for proxy and web-based techniques
+- `IDS/IPS logs` for network scanning and intrusion detection
+- `VPN logs` for VPN and remote access techniques
+- `WAF logs` for web application attacks and brute force techniques
+- `AWS GuardDuty` and `Azure Defender` for cloud platform threat detection
+
+### Bespoke Log Source Categories
+
+Bespoke log sources are now grouped into meaningful categories:
+- **EDR-based**: `EDR (file logging)`, `EDR (process logging)`, `EDR (registry logging)`, `EDR (command logging)`, `EDR (network logging)`
+- **Service-specific**: `Event logs`, `Email logs`, `MFA logs`, `DNS logs`, `RDP logs`, `Proxy logs`, `IDS/IPS logs`, `VPN logs`, `WAF logs`
+- **Cloud**: `Azure logs`, `Azure Defender`, `AWS CloudTrail logs`, `AWS GuardDuty`
+
+### New `detectable_via` Column
+
+A `detectable_via` column has been added to CSV outputs, containing the log sources that can detect each technique as an array (e.g. `['EDR (process logging)', 'Event logs']`). This column is included in the `-d` default export preset.
+
+### CVE Intelligence Enrichment
+
+CVE identifiers are enriched with actionable intelligence from NVD and CISA KEV:
+- Affected product and version information
+- Exploit indicator strings for detection
+- Public exploit/PoC references
+- CISA Known Exploited Vulnerability (KEV) status
+
 ## Future Enhancements
 
 Potential improvements for future versions:

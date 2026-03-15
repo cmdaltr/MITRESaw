@@ -60,11 +60,12 @@ def _build_cvelistv5_url(cve_id):
 
 
 def _extract_indicators_from_text(text):
-    """Run extraction functions against CVE description text to find actionable indicators."""
+    """Run extraction functions against CVE description text to find actionable indicators.
+
+    Note: port extraction is skipped for CVE descriptions because version numbers
+    (e.g. Office 2005, 2007, 2010) are falsely detected as port numbers.
+    """
     indicators = {}
-    ports = extract_port_indicators(text)
-    if ports:
-        indicators["ports"] = ports
     cmds = extract_cmd_indicators(text)
     if cmds:
         indicators["cmds"] = cmds
@@ -403,15 +404,16 @@ def enrich_cves_for_evidence(cve_ids):
             for itype, ivals in sorted(indicators.items()):
                 cleaned = [v.replace(",", "") for v in ivals[:5]]
                 indicator_parts.extend(cleaned)
-        if cisa_kev:
-            indicator_parts.append("CISA-KEV:Yes")
         indicators_str = "; ".join(indicator_parts)
 
         # PoC refs (semi-colon separated)
         poc_str = "; ".join(poc_refs) if poc_refs else ""
 
-        # Build pipe-delimited value: product|description|indicators|poc_refs
-        value = f"{product}|{description}|{indicators_str}|{poc_str}"
+        # CISA KEV status
+        kev_str = "CISA-KEV:Yes" if cisa_kev else ""
+
+        # Build pipe-delimited value: product|description|indicators|poc_refs|kev
+        value = f"{product}|{description}|{indicators_str}|{poc_str}|{kev_str}"
 
         # Report if no actionable intelligence found
         has_actionable = bool(indicators) or bool(poc_refs) or cisa_kev
@@ -459,14 +461,14 @@ def bespoke_mapping(technique_id, platform, logsource, evidence_type, evidence):
             logsource,
             ["File: File Access", "File: File Creation", "File: File Modification"],
         )
-        logsource.append("FILE_LOGS")
+        logsource.append("EDR (file logging)")
     if "Process: Process Creation" in str(logsource):
         remove_logsource(logsource, ["Process: Process Creation"])
-        logsource.append("PROCESS_LOGS")
+        logsource.append("EDR (process logging)")
 
     # removing generic/unspecified log sources
     if "Process monitoring" in str(logsource):
-        remove_logsource(logsource, ["Process Monitoring"])
+        remove_logsource(logsource, ["Process monitoring"])
 
     # removing data sources not applicable to our environment
     """if "Zeek conn.log" in str(logsource):
@@ -474,41 +476,39 @@ def bespoke_mapping(technique_id, platform, logsource, evidence_type, evidence):
 
     # assigning data sources based on platform
     if "Azure" in platform or "IaaS" in platform:
-        logsource.append(
-            "AZURE_LOGS",
-        )
+        logsource.append("Azure logs")
+        logsource.append("Azure Defender")
     if "IaaS" in platform:
-        logsource.append(
-            "AWS_LOGS",
-        )
+        logsource.append("AWS CloudTrail logs")
+        logsource.append("AWS GuardDuty")
 
     # assigning data sources based on evidence-type uncovered and environment-relevant data sources
     if evidence_type == "reg":
-        logsource.append("REG_LOGS")
+        logsource.append("EDR (registry logging)")
     elif evidence_type == "cmd" or evidence_type == "software":
         if "Windows" in platform:
-            logsource.append("WIN_LOGS")
+            logsource.append("EDR (command logging)")
         else:  # Linux and macOS
-            logsource.append("NIX_LOGS")
+            logsource.append("EDR (command logging)")
     elif (
         evidence_type == "ports"
     ):  # consider location of appliances and technology stack inc. logical architecture (internal/external)
         if (
             technique_id == "T1090.002" or technique_id == "T1105"
         ):  # external data sources only
-            logsource.append("NETWORK_LOGS")
+            logsource.append("EDR (network logging)")
         elif (
             technique_id == "T1047"
             or technique_id == "T1082"
             or technique_id == "T1112"
         ):  # internal data sources only
-            logsource.append("NETWORK_LOGS")
+            logsource.append("EDR (network logging)")
         elif (
             technique_id == "T1090.003" or "T1110" in technique_id
         ):  # both internal and external data sources
-            logsource.append("NETWORK_LOGS")
+            logsource.append("EDR (network logging)")
     elif evidence_type == "evt":
-        logsource.append("EVT_LOGS")
+        logsource.append("Event logs")
     elif evidence_type == "cve":
         # Evidence is now a list of enriched dicts; extract CVE IDs for log source lookup
         cve_items = re.findall(r"(CVE-\d+-\d+)", str(evidence))
@@ -520,14 +520,42 @@ def bespoke_mapping(technique_id, platform, logsource, evidence_type, evidence):
 
     # assigning data sources based on technique id and environment-relevant data sources
     if technique_id == "T1566.001" or technique_id == "T1566.002":
-        logsource.append("EMAIL_LOGS")
+        logsource.append("Email logs")
     if (
         technique_id == "T1098.005"
         or technique_id == "T1111"
         or technique_id == "T1556.006"
         or technique_id == "T1621"
     ):
-        logsource.append("MFA_LOGS")
+        logsource.append("MFA logs")
+
+    # DNS-related techniques
+    if technique_id in ("T1071.004", "T1568", "T1572", "T1090.004"):
+        logsource.append("DNS logs")
+
+    # RDP lateral movement
+    if technique_id == "T1021.001":
+        logsource.append("RDP logs")
+
+    # Proxy/web-based techniques
+    if "T1090" in technique_id or technique_id in ("T1102", "T1071.001"):
+        logsource.append("Proxy logs")
+
+    # Network scanning / intrusion detection
+    if technique_id in ("T1046", "T1595.001", "T1595.002", "T1040"):
+        logsource.append("IDS/IPS logs")
+
+    # VPN / remote access
+    if technique_id in ("T1133", "T1021.006"):
+        logsource.append("VPN logs")
+
+    # Web Application Firewall
+    if technique_id in (
+        "T1190", "T1189", "T1505.003",
+        "T1071.001", "T1102",
+        "T1046", "T1595.001", "T1595.002",
+    ) or "T1110" in technique_id:
+        logsource.append("WAF logs")
 
     # merging duplicate data sources
     counter = 0

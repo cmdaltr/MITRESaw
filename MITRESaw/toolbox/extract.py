@@ -4,86 +4,17 @@ import re
 import time
 
 
-def make_evidence_insert(evidence_type, identifiers):
-    if evidence_type == "ports":
-        evidence_insert = " (port(s))"
-        identifiers = re.findall(r"\d+", str(identifiers))
-    elif evidence_type == "evt":
-        evidence_insert = " (Windows event log ID(s))"
-        identifiers = re.findall(r"\d+", str(identifiers))
-    elif evidence_type == "software":
-        evidence_insert = " (software)"
-    elif evidence_type == "filepath":
-        evidence_insert = " (file path(s))"
-        identifiers = list(identifiers)
-    else:
-        evidence_insert = ""
-    return evidence_insert
-
-
-def make_terms_insert(terms, software_group_terms):
-    if str(terms) != "['.']":
-        extracted_terms = re.findall(r"\w+", str(software_group_terms))
-        software_group_terms_insert = sorted(list(set(extracted_terms)))
-        terms_insert = " -> '\033[1;36m{}\033[1;m' ->".format(
-            str(software_group_terms_insert)[2:-2]
-            .replace("_", " ")
-            .replace("', '", "\033[1;m', '\033[1;36m")
-        )
-    else:
-        terms_insert = " ->"
-    return terms_insert
-
-
-def make_spacer(software_group_name):
-    """if len(software_group_name) == 25:
-        group_spacer = ""
-    elif len(software_group_name) == 24:
-        group_spacer = " "
-    elif len(software_group_name) == 23:
-        group_spacer = " "
-    elif len(software_group_name) == 22:
-        group_spacer = " "
-    elif len(software_group_name) == 21:
-        group_spacer = " "
-    """
-    if len(software_group_name) == 20:
-        group_spacer = " "
-    elif len(software_group_name) == 19:
-        group_spacer = " "
-    elif len(software_group_name) == 18:
-        group_spacer = "  "
-    elif len(software_group_name) == 17:
-        group_spacer = "   "
-    elif len(software_group_name) == 16:
-        group_spacer = "    "
-    elif len(software_group_name) == 15:
-        group_spacer = "     "
-    elif len(software_group_name) == 14:
-        group_spacer = "      "
-    elif len(software_group_name) == 13:
-        group_spacer = "       "
-    elif len(software_group_name) == 12:
-        group_spacer = "        "
-    elif len(software_group_name) == 11:
-        group_spacer = "         "
-    elif len(software_group_name) == 10:
-        group_spacer = "          "
-    elif len(software_group_name) == 9:
-        group_spacer = "           "
-    elif len(software_group_name) == 8:
-        group_spacer = "            "
-    elif len(software_group_name) == 7:
-        group_spacer = "             "
-    elif len(software_group_name) == 6:
-        group_spacer = "              "
-    elif len(software_group_name) == 5:
-        group_spacer = "               "
-    elif len(software_group_name) == 4:
-        group_spacer = "                "
-    elif len(software_group_name) == 3:
-        group_spacer = "                 "
-    return group_spacer
+def make_evidence_label(evidence_type):
+    labels = {
+        "ports": "🌐",
+        "evt": "🪵",
+        "software": "📦",
+        "filepath": "📁",
+        "cve": "🔒",
+        "reg": "🔑",
+        "cmd": "💻",
+    }
+    return labels.get(evidence_type, "")
 
 
 def extract_port_indicators(description):
@@ -262,6 +193,8 @@ def extract_cmd_indicators(description):
                     .replace("'process", "process")
                     .replace("\"'", '"')
                 )
+                # Strip bracketed placeholders e.g. [session number to be stolen]
+                identifier = re.sub(r"\s*\[[^\]]*(?:to be|number|name|address|path|file|user|password|target|host|domain|value)[^\]]*\]", "", identifier).strip()
                 if len(identifier) > 1:
                     cmd_identifiers.append(identifier)
     # filtering out strings which match exactly
@@ -272,14 +205,26 @@ def extract_cmd_indicators(description):
             cmd_identifiers,
         )
     )
-    # filtering out strings contained in identifier
-    strings_in = ["where the"]
-    cmd_identifiers = list(
-        filter(
-            lambda x: any(string not in x for string in strings_in),
-            cmd_identifiers,
-        )
-    )
+    # filtering out prose fragments mistakenly captured between backticks
+    prose_phrases = [
+        "where the", "such as", "can be used", "can additionally",
+        "information about", "information such", "the type of",
+        "for example", "is used to", "are used to", "may use",
+        "can also", "can list", "will be", "used by",
+        "providers also", "cloud providers", "infrastructure as",
+        "as well as",
+    ]
+    prose_starts = [
+        "in ", "on ", "the ", "that ", "which ", "a ", "an ", "and ",
+        "or ", "for ", "to ", "from ", "with ", "this ", "these ",
+        "can ", "may ", "is ", "are ", "it ", "its ", "also ",
+    ]
+    cmd_identifiers = [
+        x for x in cmd_identifiers
+        if len(x) <= 150
+        and not any(phrase in x for phrase in prose_phrases)
+        and not any(x.startswith(prefix) for prefix in prose_starts)
+    ]
     cmd_identifiers = sorted(list(set(cmd_identifiers)))
     return cmd_identifiers
 
@@ -369,38 +314,35 @@ def extract_indicators(
         terms,
         truncate,
     ):
-        evidence_insert = make_evidence_insert(evidence_type, identifiers)
-        terms_insert = make_terms_insert(terms, software_group_terms)
-        if "." in technique_id:
-            spacer = " "
-        else:
-            spacer = "     "
-        group_spacer = make_spacer(software_group_name)
-        identifiers = (
+        label = make_evidence_label(evidence_type)
+        identifiers_str = (
             str(identifiers)[2:-2]
             .replace("\\\\\\\\\\\\\\\\", "\\\\\\\\")
             .replace("\\\\\\\\", "\\\\")
             .replace('"reg" add ', "reg add ")
+            .replace("', '", ", ")
         )
-        if "', '" in identifiers:
-            evidence_insert = evidence_insert.replace("(s)", "s")
-        else:
-            evidence_insert = evidence_insert.replace("(s)", "")
-        print_statement = "  -> '\033[1;33m{}\033[1;m'{}{} '\033[1;32m{}\033[1;m'{}: '\033[1;31m{}\033[1;m'{}".format(
-            software_group_name,
-            group_spacer,
-            terms_insert,
-            technique_id,
-            spacer,
-            identifiers.replace("', '", "\033[1;m', '\033[1;31m"),
-            evidence_insert,
-        )
+        # Lowercase unless the technique specifies otherwise (e.g. CVE IDs)
+        if evidence_type != "cve":
+            identifiers_str = identifiers_str.lower()
+        # Wrap each identifier in backticks
+        identifiers_str = ", ".join(f"`{x.strip()}`" for x in identifiers_str.split(", "))
+        if len(identifiers_str) > 60:
+            truncated = identifiers_str[:60]
+            if truncated.count("`") % 2 != 0:
+                truncated += "`"
+            identifiers_str = truncated + "..."
+        col_group = f"\033[1;31m{software_group_name}\033[0m".ljust(25 + 11)
+        col_technique = f"\033[1;32m{technique_id}\033[0m".ljust(45 + 11)
+        col_indicators = f"\033[1;33m{identifiers_str}\033[0m".ljust(65 + 11)
         if not quiet:
             if truncate:
-                print(print_statement.split(": ")[0])
+                print(f"   {col_group} | {col_technique}")
+                print(f"   {'-' * 25} | {'-' * 45}")
             else:
-                print(print_statement)
-            time.sleep(0.1)
+                print(f"   {col_group} | {col_technique} | {label} {col_indicators}")
+                print(f"   {'-' * 25} | {'-' * 45} | {'-' * 68}")
+            time.sleep(0.01)
 
     software_group_name = valid_procedure.split("||")[1]
     technique_id = valid_procedure.split("||")[2]
@@ -497,5 +439,8 @@ def extract_indicators(
                     truncate,
                 )
                 previous_findings[key] = "-"
+
+    if not quiet and evidence_dict:
+        time.sleep(0.1)
 
     return evidence_found, previous_findings

@@ -103,7 +103,11 @@ def map_log_sources(detectable_threat_actor_technique):
     if log_sources[0].startswith("CVE-") or "', 'CVE-" in str(log_sources):
         cves = ""
         for cve in log_sources:
-            cves = f"{cves}{group},{technique_id},{technique_name},{technique_desc.replace(',', '%2C')},{platform},{cve.split(',')[1]} ({cve.split(',')[2]}),{cve.split(',')[0]},{cve.split(',')[3]}\n"
+            if not cve.startswith("CVE-"):
+                continue
+            parts_cve = cve.split(",")
+            if len(parts_cve) >= 4:
+                cves = f"{cves}{group},{technique_id},{technique_name},{technique_desc.replace(',', '%2C')},{platform},{parts_cve[1]} ({parts_cve[2]}),{parts_cve[0]},{parts_cve[3]}\n"
         return cves
     else:
         return f"{group},{technique_id},{technique_name},{technique_desc.replace(',', '%2C')},{platform},{str(log_sources)[2:-2].replace(chr(39) + ', ' + chr(39), '; ')},{evidence_str}"
@@ -131,7 +135,7 @@ def build_matrix(
         os.path.join(mitresaw_output_directory, "ThreatActors_Techniques.csv"), "w"
     ) as mitresaw_csv:
         mitresaw_csv.write(
-            "group_software_id,group_software_name,technique_id,item_identifier,group_software,relation_identifier,created,last_modified,group_software_description,technique_name,technique_tactics,technique_description,technique_detection,technique_platforms,technique_datasources,evidence_indicators\n"
+            "group_software_id,group_software_name,technique_id,item_identifier,group_software,relation_identifier,created,last_modified,group_software_description,technique_name,technique_tactics,technique_description,technique_detection,technique_platforms,technique_datasources,evidence_indicators,detectable_via\n"
         )
     mapped_log_sources = []
 
