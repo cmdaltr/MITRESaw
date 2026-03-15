@@ -15,6 +15,8 @@ from MITRESaw.toolbox.extract import (
 
 # In-memory cache: CVE ID -> enriched result string (or None for failed fetches)
 _cve_cache = {}
+# Separate cache for evidence dict values (pipe-delimited format)
+_cve_evidence_cache = {}
 
 # Known PoC/exploit hosting domains
 _POC_DOMAINS = [
@@ -307,19 +309,10 @@ def enrich_cves_for_evidence(cve_ids):
         if not cve or "-" not in cve:
             continue
 
-        # Check cache first
-        if cve in _cve_cache:
-            cached = _cve_cache[cve]
-            if cached is not None:
-                # Parse cached comma-delimited result back into fields
-                parts = cached.split(",", 3)
-                _vendor = parts[1] if len(parts) > 1 else ""
-                _versions = parts[2] if len(parts) > 2 else ""
-                _desc = parts[3] if len(parts) > 3 else ""
-                product = f"{_vendor} {_versions}".strip().replace(",", "")
-                enriched.append({cve: product + "|" + _desc})
-            else:
-                enriched.append({cve: ""})
+        # Check evidence cache first
+        if cve in _cve_evidence_cache:
+            cached = _cve_evidence_cache[cve]
+            enriched.append({cve: cached if cached is not None else ""})
             continue
 
         url = _build_cvelistv5_url(cve)
@@ -328,12 +321,14 @@ def enrich_cves_for_evidence(cve_ids):
         except Exception as e:
             print(f"\t{cve} fetch failed: {e}")
             _cve_cache[cve] = None
+            _cve_evidence_cache[cve] = None
             enriched.append({cve: ""})
             continue
 
         if not (200 <= response.status_code < 300):
             print(f"\t{cve} returned a {response.status_code} error.")
             _cve_cache[cve] = None
+            _cve_evidence_cache[cve] = None
             enriched.append({cve: ""})
             time.sleep(1)
             continue
@@ -343,6 +338,7 @@ def enrich_cves_for_evidence(cve_ids):
         except json.JSONDecodeError:
             print(f"\t{cve} returned invalid JSON.")
             _cve_cache[cve] = None
+            _cve_evidence_cache[cve] = None
             enriched.append({cve: ""})
             continue
 
@@ -440,6 +436,7 @@ def enrich_cves_for_evidence(cve_ids):
         else:
             enriched_desc = description
         _cve_cache[cve] = f"{cve},{vendor},{versions},{enriched_desc}"
+        _cve_evidence_cache[cve] = value
 
         enriched.append({cve: value})
 
