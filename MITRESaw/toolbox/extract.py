@@ -454,6 +454,6 @@ def extract_indicators(
                 previous_findings[key] = "-"
 
     if not quiet and evidence_dict:
-        time.sleep(0.25)
+        time.sleep(0.1)
 
     return evidence_found, previous_findings

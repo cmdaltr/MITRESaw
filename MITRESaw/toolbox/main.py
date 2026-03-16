@@ -259,7 +259,6 @@ def process_technique_parallel(args: Tuple) -> List[Dict]:
 def get_group_techniques_parallel(attack_data: MitreAttackData, groups: List[str],
                                    platforms: List[str], max_workers: int = 10) -> Tuple[Dict, Dict, List]:
     """Get techniques used by groups using parallel processing."""
-    print(f"    -> Extracting techniques with {max_workers} parallel workers...")
 
     group_techniques = {}
     group_info = {}
@@ -599,6 +598,7 @@ def mainsaw(
     )
 
     # Get group techniques using parallel processing across all frameworks
+    print("    -> Extracting techniques with 10 parallel workers...")
     all_group_techniques_data = {}
     all_group_info_data = {}
     for fw, attack_data in all_attack_data.items():
@@ -710,7 +710,7 @@ def mainsaw(
             if quiet:
                 print(f"   \033[1;31m{last_group_name.ljust(25)}\033[0m | Completed")
                 print(f"   {'=' * 25} | {'=' * 55} | {'=' * (w_ind + 3)}")
-            time.sleep(1.0)
+            time.sleep(0.5)
         last_group_name = current_group_name
         (
             technique_findings,
