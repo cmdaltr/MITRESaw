@@ -117,6 +117,7 @@ def write_csv_summary(
                 "-",                             # created
                 "-",                             # last_modified
                 _clean_field(parts[6]),           # group_software_description
+                _clean_field(parts[4]),           # procedure_description
                 parts[3],                        # technique_name
                 parts[11] if len(parts) > 11 else "",  # technique_tactics
                 _clean_field(parts[7]),           # technique_description

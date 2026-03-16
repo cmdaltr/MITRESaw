@@ -817,9 +817,9 @@ def mainsaw(
                 "group_software_id", "group_software_name", "technique_id",
                 "item_identifier", "group_software", "relation_identifier",
                 "created", "last_modified", "group_software_description",
-                "technique_name", "technique_tactics", "technique_description",
-                "technique_detection", "technique_platforms", "technique_datasources",
-                "evidence_indicators", "detectable_via", "keywords",
+                "procedure_description", "technique_name", "technique_tactics",
+                "technique_description", "technique_detection", "technique_platforms",
+                "technique_datasources", "evidence_indicators", "detectable_via", "keywords",
             ]
             requested_columns = [c.strip() for c in columns.split(",")]
             invalid = [c for c in requested_columns if c not in valid_columns]

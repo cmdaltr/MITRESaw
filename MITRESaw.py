@@ -88,7 +88,7 @@ parser.add_argument(
     "--default",
     help="Export an express CSV (ThreatActors_Keywords.csv) with key columns:\n"
          "group_software_id, group_software_name, group_software_description,\n"
-         "technique_id, technique_name, technique_description,\n"
+         "procedure_description, technique_id, technique_name, technique_description,\n"
          "technique_tactics, evidence_indicators, detectable_via.\n"
          "Shortcut for -c with the above columns. If -c is also provided, -c takes precedence.\n",
     action="store_const",
@@ -131,7 +131,7 @@ fetch = args.fetch
 if preset and not columns:
     columns = (
         "group_software_id,group_software_name,group_software_description,"
-        "technique_id,technique_name,technique_description,"
+        "procedure_description,technique_id,technique_name,technique_description,"
         "technique_tactics,evidence_indicators,detectable_via"
     )
 

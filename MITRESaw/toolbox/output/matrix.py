@@ -135,7 +135,7 @@ def build_matrix(
         os.path.join(mitresaw_output_directory, "ThreatActors_Techniques.csv"), "w"
     ) as mitresaw_csv:
         mitresaw_csv.write(
-            "group_software_id,group_software_name,technique_id,item_identifier,group_software,relation_identifier,created,last_modified,group_software_description,technique_name,technique_tactics,technique_description,technique_detection,technique_platforms,technique_datasources,evidence_indicators,detectable_via\n"
+            "group_software_id,group_software_name,technique_id,item_identifier,group_software,relation_identifier,created,last_modified,group_software_description,procedure_description,technique_name,technique_tactics,technique_description,technique_detection,technique_platforms,technique_datasources,evidence_indicators,detectable_via\n"
         )
     mapped_log_sources = []
 
