@@ -889,8 +889,8 @@ def mainsaw(
         for log_source in log_sources:
             if ": " in log_source:
                 logsources.append(log_source.split(": ")[0])
-            elif log_source.startswith("*nix /var/log/"):
-                logsources.append(f"{log_source.split("/log/")[0]}/log")
+            elif "/var/log" in log_source:
+                logsources.append("*nix /var/log")
             else:
                 logsources.append(log_source)
         # counting the occurance of each log source
