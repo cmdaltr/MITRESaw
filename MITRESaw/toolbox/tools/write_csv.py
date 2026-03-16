@@ -137,3 +137,5 @@ def write_csv_summary(
                     )
                 )
             log_sources.append(generic_logsource.replace(", , ", ", "))
+            if full_logsources:
+                log_sources.append(str(full_logsources))

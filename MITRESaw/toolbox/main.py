@@ -706,7 +706,7 @@ def mainsaw(
         if last_group_name and current_group_name != last_group_name:
             if quiet:
                 print(f"   \033[1;31m{last_group_name.ljust(25)}\033[0m | Completed")
-                print(f"   {'=' * 25} | {'=' * 45} | {'=' * 68}")
+                print(f"   {'=' * 25} | {'=' * 55} | {'=' * 68}")
             time.sleep(1.0)
         last_group_name = current_group_name
         (
@@ -753,7 +753,7 @@ def mainsaw(
     )
     if quiet and last_group_name:
         print(f"   \033[1;31m{last_group_name.ljust(25)}\033[0m | Completed")
-        print(f"   {'=' * 25} | {'=' * 45} | {'=' * 68}")
+        print(f"   {'=' * 25} | {'=' * 55} | {'=' * 68}")
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
 

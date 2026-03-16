@@ -333,15 +333,15 @@ def extract_indicators(
                 truncated += "`"
             identifiers_str = truncated + "..."
         col_group = f"\033[1;31m{software_group_name}\033[0m".ljust(25 + 11)
-        col_technique = f"\033[1;32m{technique_id}\033[0m".ljust(45 + 11)
+        col_technique = f"\033[1;32m{technique_id}\033[0m".ljust(55 + 11)
         col_indicators = f"\033[1;33m{identifiers_str}\033[0m".ljust(65 + 11)
         if not quiet:
             if truncate:
                 print(f"   {col_group} | {col_technique}")
-                print(f"   {'-' * 25} | {'-' * 45}")
+                print(f"   {'-' * 25} | {'-' * 55}")
             else:
                 print(f"   {col_group} | {col_technique} | {label} {col_indicators}")
-                print(f"   {'-' * 25} | {'-' * 45} | {'-' * 68}")
+                print(f"   {'-' * 25} | {'-' * 55} | {'-' * 68}")
             time.sleep(0.1)
 
     software_group_name = valid_procedure.split("||")[1]
