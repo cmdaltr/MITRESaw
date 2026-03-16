@@ -703,9 +703,11 @@ def mainsaw(
     last_group_name = None
     for each_procedure in consolidated_procedures:
         current_group_name = each_procedure.split("||")[1]
-        if quiet and last_group_name and current_group_name != last_group_name:
-            print(f"   \033[1;31m{last_group_name.ljust(25)}\033[0m | Completed")
-            print(f"   {'=' * 25} | {'=' * 45} | {'=' * 68}")
+        if last_group_name and current_group_name != last_group_name:
+            if quiet:
+                print(f"   \033[1;31m{last_group_name.ljust(25)}\033[0m | Completed")
+                print(f"   {'=' * 25} | {'=' * 45} | {'=' * 68}")
+            time.sleep(2.0)
         last_group_name = current_group_name
         (
             technique_findings,
@@ -750,9 +752,15 @@ def mainsaw(
         set(threat_actor_technique_id_name_findings)
     )
     if quiet and last_group_name:
-        print(f"   \033[1;31m{last_group_name.ljust(25)}\033[0m Completed")
+        print(f"   \033[1;31m{last_group_name.ljust(25)}\033[0m | Completed")
+        print(f"   {'=' * 25} | {'=' * 45} | {'=' * 68}")
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
+
+    # Report CVEs with no actionable intelligence
+    from MITRESaw.toolbox.tools.map_bespoke_logs import report_cves_no_evidence
+    report_cves_no_evidence()
+
     if len(consolidated_techniques) > 0:
         print("\n     Correlating results and creating intersecting matrix...")
 

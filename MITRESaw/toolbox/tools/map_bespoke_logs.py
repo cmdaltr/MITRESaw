@@ -17,6 +17,16 @@ from MITRESaw.toolbox.extract import (
 _cve_cache = {}
 # Separate cache for evidence dict values (pipe-delimited format)
 _cve_evidence_cache = {}
+# Collect CVEs with no actionable intelligence for end-of-run reporting
+_cves_no_evidence = []
+
+
+def report_cves_no_evidence():
+    """Print CVEs with no actionable intelligence. Call at end of run."""
+    unique = sorted(set(_cves_no_evidence))
+    if unique:
+        print(f"\n   No evidence/PoC found for: {', '.join(unique)}\n")
+
 
 # Known PoC/exploit hosting domains
 _POC_DOMAINS = [
@@ -29,6 +39,10 @@ _POC_DOMAINS = [
 
 # NVD rate-limit: max 1 request per 6 seconds (without API key)
 _last_nvd_request = 0.0
+# PoC search cache and rate limiting
+_poc_search_cache = {}
+_last_github_search = 0.0
+_last_gitlab_search = 0.0
 
 
 def _fetch(url, **kwargs):
@@ -103,6 +117,72 @@ def _find_poc_references(cve_data):
             if any("exploit" in t for t in tags):
                 poc_refs.append(url)
     return list(set(poc_refs))
+
+
+def _search_github_pocs(cve_id, product_name=""):
+    """Search nomi-sec/PoC-in-GitHub for curated PoCs, fall back to GitHub search API."""
+    if cve_id in _poc_search_cache:
+        return _poc_search_cache[cve_id]
+    refs = []
+    # 1. nomi-sec curated lookup (no rate limit)
+    parts = cve_id.split("-")
+    year = parts[1]
+    url = f"https://raw.githubusercontent.com/nomi-sec/PoC-in-GitHub/master/{year}/{cve_id}.json"
+    try:
+        resp = _fetch(url)
+        if resp.status_code == 200:
+            pocs = resp.json()
+            pocs.sort(key=lambda x: x.get("stargazers_count", 0), reverse=True)
+            refs = [p["html_url"] for p in pocs[:5] if "html_url" in p]
+    except Exception:
+        pass
+    # 2. GitHub search fallback by product name (rate-limited)
+    if not refs and product_name:
+        global _last_github_search
+        elapsed = time.time() - _last_github_search
+        if elapsed < 6.0:
+            time.sleep(6.0 - elapsed)
+        _last_github_search = time.time()
+        try:
+            query = requests.utils.quote(f"{cve_id} {product_name} exploit OR poc")
+            resp = _fetch(
+                f"https://api.github.com/search/repositories?q={query}&sort=stars&per_page=5"
+            )
+            if resp.status_code == 200:
+                items = resp.json().get("items", [])
+                refs = [item["html_url"] for item in items[:5]]
+        except Exception:
+            pass
+    _poc_search_cache[cve_id] = refs
+    return refs
+
+
+def _search_exploitdb(cve_id):
+    """Search ExploitDB via GitLab API for exploits matching the CVE."""
+    global _last_gitlab_search
+    elapsed = time.time() - _last_gitlab_search
+    if elapsed < 6.0:
+        time.sleep(6.0 - elapsed)
+    _last_gitlab_search = time.time()
+    refs = []
+    try:
+        search_url = (
+            f"https://gitlab.com/api/v4/projects/exploit-database%2Fexploitdb"
+            f"/search?scope=blobs&search={cve_id}"
+        )
+        resp = _fetch(search_url)
+        if resp.status_code == 200:
+            results = resp.json()
+            for result in results[:5]:
+                filename = result.get("filename", "")
+                match = re.search(r"(\d+)\.\w+$", filename)
+                if match:
+                    refs.append(
+                        f"https://www.exploit-db.com/exploits/{match.group(1)}"
+                    )
+    except Exception:
+        pass
+    return refs
 
 
 def _extract_cvss_score(cve_data):
@@ -256,8 +336,12 @@ def obtain_cve_details(evidence):
         # Extract actionable indicators from description text
         indicators = _extract_indicators_from_text(full_text)
 
-        # Find PoC/exploit references
+        # Find PoC/exploit references (CVE JSON + GitHub + ExploitDB)
         poc_refs = _find_poc_references(cve_data)
+        product_name = affected[0].get("product", "") if affected else ""
+        github_pocs = _search_github_pocs(cve, product_name)
+        exploitdb_pocs = _search_exploitdb(cve)
+        poc_refs = list(set(poc_refs + github_pocs + exploitdb_pocs))
 
         # Extract CVSS score
         cvss_score = _extract_cvss_score(cve_data)
@@ -287,7 +371,7 @@ def obtain_cve_details(evidence):
         # Report if no actionable intelligence found
         has_actionable = bool(indicators) or bool(poc_refs) or cisa_kev
         if not has_actionable:
-            print(f"\tNo evidence/PoC found for {cve}")
+            _cves_no_evidence.append(cve)
 
         cve_result = f"{cve},{vendor},{versions},{enriched_desc}"
         _cve_cache[cve] = cve_result
@@ -389,8 +473,12 @@ def enrich_cves_for_evidence(cve_ids):
         # Extract actionable indicators
         indicators = _extract_indicators_from_text(full_text)
 
-        # Find PoC/exploit references
+        # Find PoC/exploit references (CVE JSON + GitHub + ExploitDB)
         poc_refs = _find_poc_references(cve_data)
+        product_name = affected[0].get("product", "") if affected else ""
+        github_pocs = _search_github_pocs(cve, product_name)
+        exploitdb_pocs = _search_exploitdb(cve)
+        poc_refs = list(set(poc_refs + github_pocs + exploitdb_pocs))
 
         # Extract CVSS score
         cvss_score = _extract_cvss_score(cve_data)
@@ -418,7 +506,7 @@ def enrich_cves_for_evidence(cve_ids):
         # Report if no actionable intelligence found
         has_actionable = bool(indicators) or bool(poc_refs) or cisa_kev
         if not has_actionable:
-            print(f"\tNo evidence/PoC found for {cve}")
+            _cves_no_evidence.append(cve)
 
         # Cache the original format for bespoke_mapping compatibility
         enrichment_parts = []

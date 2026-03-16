@@ -342,7 +342,7 @@ def extract_indicators(
             else:
                 print(f"   {col_group} | {col_technique} | {label} {col_indicators}")
                 print(f"   {'-' * 25} | {'-' * 45} | {'-' * 68}")
-            time.sleep(0.01)
+            time.sleep(0.1)
 
     software_group_name = valid_procedure.split("||")[1]
     technique_id = valid_procedure.split("||")[2]
@@ -441,6 +441,6 @@ def extract_indicators(
                 previous_findings[key] = "-"
 
     if not quiet and evidence_dict:
-        time.sleep(0.1)
+        time.sleep(0.5)
 
     return evidence_found, previous_findings
