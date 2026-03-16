@@ -1,5 +1,6 @@
 #!/usr/bin/env python3 -tt
 import json
+import os
 import re
 import time
 
@@ -315,6 +316,18 @@ def extract_indicators(
         truncate,
     ):
         label = make_evidence_label(evidence_type)
+        # Column widths: group and technique are fixed, indicators fill remaining space
+        w_group = 25
+        w_technique = 55
+        try:
+            term_width = os.get_terminal_size().columns
+        except OSError:
+            term_width = 160
+        # Layout: "   " (3) + group + " | " (3) + technique + " | " (3) + emoji (2) + " " (1) + indicators
+        w_indicators = max(20, term_width - w_group - w_technique - 12)
+        # Truncation limit for identifier text (subtract ANSI overhead and backtick padding)
+        max_id_len = max(10, w_indicators - 5)
+
         identifiers_str = (
             str(identifiers)[2:-2]
             .replace("\\\\\\\\\\\\\\\\", "\\\\\\\\")
@@ -327,21 +340,21 @@ def extract_indicators(
             identifiers_str = identifiers_str.lower()
         # Wrap each identifier in backticks
         identifiers_str = ", ".join(f"`{x.strip()}`" for x in identifiers_str.split(", "))
-        if len(identifiers_str) > 60:
-            truncated = identifiers_str[:60]
+        if len(identifiers_str) > max_id_len:
+            truncated = identifiers_str[:max_id_len]
             if truncated.count("`") % 2 != 0:
                 truncated += "`"
             identifiers_str = truncated + "..."
-        col_group = f"\033[1;31m{software_group_name}\033[0m".ljust(25 + 11)
-        col_technique = f"\033[1;32m{technique_id}\033[0m".ljust(55 + 11)
-        col_indicators = f"\033[1;33m{identifiers_str}\033[0m".ljust(65 + 11)
+        col_group = f"\033[1;31m{software_group_name}\033[0m".ljust(w_group + 11)
+        col_technique = f"\033[1;32m{technique_id}\033[0m".ljust(w_technique + 11)
+        col_indicators = f"\033[1;33m{identifiers_str}\033[0m".ljust(w_indicators + 11)
         if not quiet:
             if truncate:
                 print(f"   {col_group} | {col_technique}")
-                print(f"   {'-' * 25} | {'-' * 55}")
+                print(f"   {'-' * w_group} | {'-' * w_technique}")
             else:
                 print(f"   {col_group} | {col_technique} | {label} {col_indicators}")
-                print(f"   {'-' * 25} | {'-' * 55} | {'-' * 68}")
+                print(f"   {'-' * w_group} | {'-' * w_technique} | {'-' * (w_indicators + 3)}")
             time.sleep(0.1)
 
     software_group_name = valid_procedure.split("||")[1]

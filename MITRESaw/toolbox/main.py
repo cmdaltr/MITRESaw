@@ -29,7 +29,6 @@ def _fetch(url: str, **kwargs) -> requests.Response:
     try:
         return requests.get(url, **kwargs)
     except requests.exceptions.SSLError:
-        warnings.warn("SSL verification failed — retrying without verification (corporate VPN/proxy detected)")
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         return requests.get(url, verify=False, **kwargs)
 from MITRESaw.toolbox.tools.write_csv import write_csv_summary
@@ -50,7 +49,6 @@ def get_latest_attack_version() -> str:
             api_root = server.api_roots[0]
             collections = api_root.collections
         except requests.exceptions.SSLError:
-            warnings.warn("SSL verification failed for TAXII — retrying without verification")
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
             server = Server("https://cti-taxii.mitre.org/taxii/", verify=False)
             api_root = server.api_roots[0]
@@ -593,9 +591,9 @@ def mainsaw(
     # Use STIX-based parallel processing instead of CSV files
     print()
     print(
-        "    -> Extracting \033[1;31mIdentifiers\033[1;m from \033[1;32mTechniques\033[1;m using STIX data based on {}\033[1;33m{}\033[1;m{}".format(
+        "    -> Extracting \033[1;33mIdentifiers\033[1;m from \033[1;32mTechniques\033[1;m using STIX data based on {}\033[1;31m{}\033[1;m{}".format(
             all_insert,
-            groups_insert.replace("', '", "\033[1;m, \033[1;33m"),
+            groups_insert.replace("', '", "\033[1;m, \033[1;31m"),
             terms_insert,
         )
     )
@@ -704,9 +702,14 @@ def mainsaw(
     for each_procedure in consolidated_procedures:
         current_group_name = each_procedure.split("||")[1]
         if last_group_name and current_group_name != last_group_name:
+            try:
+                tw = os.get_terminal_size().columns
+            except OSError:
+                tw = 160
+            w_ind = max(20, tw - 25 - 55 - 12)
             if quiet:
                 print(f"   \033[1;31m{last_group_name.ljust(25)}\033[0m | Completed")
-                print(f"   {'=' * 25} | {'=' * 55} | {'=' * 68}")
+                print(f"   {'=' * 25} | {'=' * 55} | {'=' * (w_ind + 3)}")
             time.sleep(1.0)
         last_group_name = current_group_name
         (
@@ -752,14 +755,19 @@ def mainsaw(
         set(threat_actor_technique_id_name_findings)
     )
     if quiet and last_group_name:
+        try:
+            tw = os.get_terminal_size().columns
+        except OSError:
+            tw = 160
+        w_ind = max(20, tw - 25 - 55 - 12)
         print(f"   \033[1;31m{last_group_name.ljust(25)}\033[0m | Completed")
-        print(f"   {'=' * 25} | {'=' * 55} | {'=' * 68}")
+        print(f"   {'=' * 25} | {'=' * 55} | {'=' * (w_ind + 3)}")
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
 
     # Report CVEs with no actionable intelligence
-    from MITRESaw.toolbox.tools.map_bespoke_logs import report_cves_no_evidence
-    report_cves_no_evidence()
+    from MITRESaw.toolbox.tools.map_bespoke_logs import report_cve_summary
+    report_cve_summary()
 
     if len(consolidated_techniques) > 0:
         print("\n     Correlating results and creating intersecting matrix...")

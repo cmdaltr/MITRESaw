@@ -19,13 +19,22 @@ _cve_cache = {}
 _cve_evidence_cache = {}
 # Collect CVEs with no actionable intelligence for end-of-run reporting
 _cves_no_evidence = []
+# Collect CVE fetch failures for end-of-run reporting
+_cve_fetch_failures = []
 
 
-def report_cves_no_evidence():
-    """Print CVEs with no actionable intelligence. Call at end of run."""
-    unique = sorted(set(_cves_no_evidence))
-    if unique:
-        print(f"\n   No evidence/PoC found for: {', '.join(unique)}\n")
+def report_cve_summary():
+    """Print CVE enrichment summary. Call at end of run."""
+    unique_no_evidence = sorted(set(_cves_no_evidence))
+    unique_failures = sorted(set(_cve_fetch_failures))
+    if unique_failures:
+        print(f"\n   CVE enrichment failed for: {', '.join(unique_failures)}")
+    if unique_no_evidence:
+        print(f"   No evidence/PoC found for: {', '.join(unique_no_evidence)}")
+    if _ssl_fallback_used:
+        print("   Note: SSL verification was bypassed for some requests (corporate VPN/proxy detected)")
+    if unique_failures or unique_no_evidence or _ssl_fallback_used:
+        print()
 
 
 # Known PoC/exploit hosting domains
@@ -45,14 +54,16 @@ _last_github_search = 0.0
 _last_gitlab_search = 0.0
 
 
+_ssl_fallback_used = False
+
+
 def _fetch(url, **kwargs):
     """GET with automatic SSL-verify fallback for corporate VPN/proxy environments."""
+    global _ssl_fallback_used
     try:
         return requests.get(url, timeout=15, **kwargs)
     except requests.exceptions.SSLError:
-        warnings.warn(
-            "SSL verification failed — retrying without verification (corporate VPN/proxy detected)"
-        )
+        _ssl_fallback_used = True
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         return requests.get(url, verify=False, timeout=15, **kwargs)
 
@@ -275,12 +286,12 @@ def obtain_cve_details(evidence):
         try:
             response = _fetch(url)
         except Exception as e:
-            print(f"\t{cve} fetch failed: {e}")
+            _cve_fetch_failures.append(cve)
             _cve_cache[cve] = None
             continue
 
         if not (200 <= response.status_code < 300):
-            print(f"\t{cve} returned a {response.status_code} error.")
+            _cve_fetch_failures.append(cve)
             _cve_cache[cve] = None
             time.sleep(1)
             continue
@@ -288,7 +299,7 @@ def obtain_cve_details(evidence):
         try:
             cve_data = response.json()
         except json.JSONDecodeError:
-            print(f"\t{cve} returned invalid JSON.")
+            _cve_fetch_failures.append(cve)
             _cve_cache[cve] = None
             continue
 
@@ -404,14 +415,14 @@ def enrich_cves_for_evidence(cve_ids):
         try:
             response = _fetch(url)
         except Exception as e:
-            print(f"\t{cve} fetch failed: {e}")
+            _cve_fetch_failures.append(cve)
             _cve_cache[cve] = None
             _cve_evidence_cache[cve] = None
             enriched.append({cve: ""})
             continue
 
         if not (200 <= response.status_code < 300):
-            print(f"\t{cve} returned a {response.status_code} error.")
+            _cve_fetch_failures.append(cve)
             _cve_cache[cve] = None
             _cve_evidence_cache[cve] = None
             enriched.append({cve: ""})
@@ -421,7 +432,7 @@ def enrich_cves_for_evidence(cve_ids):
         try:
             cve_data = response.json()
         except json.JSONDecodeError:
-            print(f"\t{cve} returned invalid JSON.")
+            _cve_fetch_failures.append(cve)
             _cve_cache[cve] = None
             _cve_evidence_cache[cve] = None
             enriched.append({cve: ""})
