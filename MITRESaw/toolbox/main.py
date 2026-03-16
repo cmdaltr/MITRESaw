@@ -880,6 +880,8 @@ def mainsaw(
             .replace(", ", "; ")
             .replace("'; '", "; ")
             .replace('"; "', "; ")
+            .replace("'", "")
+            .replace("EventLog", "event log")
             .replace("; ", ", ")
             .split(", ")
         )
