@@ -216,17 +216,32 @@ Bespoke log sources are now grouped into meaningful categories:
 - **Service-specific**: `Event logs`, `Email logs`, `MFA logs`, `DNS logs`, `RDP logs`, `Proxy logs`, `IDS/IPS logs`, `VPN logs`, `WAF logs`
 - **Cloud**: `Azure logs`, `Azure Defender`, `AWS CloudTrail logs`, `AWS GuardDuty`
 
-### New `detectable_via` Column
+### CSV Output Schema
 
-A `detectable_via` column has been added to CSV outputs, containing the log sources that can detect each technique as an array (e.g. `['EDR (process logging)', 'Event logs']`). This column is included in the `-d` default export preset.
+The default (`-d`) export produces `mitre_procedures.csv` with the following columns:
+
+| Column | Description |
+|--------|-------------|
+| `group_sw_id` | MITRE ATT&CK group or software ID |
+| `group_sw_name` | Group or software name |
+| `group_sw_description` | Group or software description |
+| `technique_id` | ATT&CK technique ID |
+| `technique_name` | Technique name |
+| `technique_description` | Technique description |
+| `tactic` | ATT&CK tactic(s) |
+| `procedure_example` | How the group specifically uses the technique |
+| `evidence` | Extracted indicators (JSON dict) |
+| `detectable_via` | Log sources that can detect the technique |
 
 ### CVE Intelligence Enrichment
 
-CVE identifiers are enriched with actionable intelligence from NVD and CISA KEV:
-- Affected product and version information
-- Exploit indicator strings for detection
-- Public exploit/PoC references
-- CISA Known Exploited Vulnerability (KEV) status
+CVE identifiers are enriched with actionable intelligence from multiple sources:
+- **NVD / CVEProject**: Affected product and version information, CVSS scores
+- **CISA KEV**: Known Exploited Vulnerability status
+- **nomi-sec/PoC-in-GitHub**: Curated GitHub PoC repository lookup
+- **GitHub Search API**: Fallback search by CVE ID and product name (e.g. "log4j")
+- **ExploitDB (via GitLab API)**: Exploit database search for matching exploits
+- Extracted indicator strings (commands, file paths, registry keys) for detection
 
 ## Future Enhancements
 
