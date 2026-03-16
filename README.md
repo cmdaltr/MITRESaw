@@ -106,17 +106,14 @@ options:
 ./MITRESaw.py -p Windows,Linux -t mining,technology,defense -Q
 
 # Export filtered columns with industry keyword tagging
-./MITRESaw.py -c group_software_name,technique_id,technique_name,keywords
+./MITRESaw.py -c group_sw_name,technique_id,technique_name,keywords
 ```
 
 Valid column names for `--columns`:
 ```
-group_software_id, group_software_name, technique_id, item_identifier,
-group_software, relation_identifier, created, last_modified,
-group_software_description, procedure_description, technique_name,
-technique_tactics, technique_description, technique_detection,
-technique_platforms, technique_datasources, evidence_indicators,
-detectable_via, keywords
+group_sw_id, group_sw_name, group_sw_description, technique_id,
+technique_name, technique_description, tactic, procedure_example,
+evidence, detectable_via, keywords
 ```
 
 ### Notices

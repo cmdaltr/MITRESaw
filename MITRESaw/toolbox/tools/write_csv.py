@@ -108,24 +108,16 @@ def write_csv_summary(
             detectable_via = str(full_logsources)
 
             writer.writerow([
-                parts[0],                        # group_software_id
-                parts[1],                        # group_software_name
+                parts[0],                        # group_sw_id
+                parts[1],                        # group_sw_name
+                _clean_field(parts[6]),           # group_sw_description
                 parts[2],                        # technique_id
-                "-",                             # item_identifier
-                "-",                             # group_software
-                "-",                             # relation_identifier
-                "-",                             # created
-                "-",                             # last_modified
-                _clean_field(parts[6]),           # group_software_description
-                _clean_field(parts[4]),           # procedure_description
                 parts[3],                        # technique_name
-                parts[11] if len(parts) > 11 else "",  # technique_tactics
                 _clean_field(parts[7]),           # technique_description
-                _clean_field(parts[8]),           # technique_detection
-                technique_platforms,             # technique_platforms
-                technique_datasources,           # technique_datasources
-                evidence_json,                   # evidence_indicators (JSON dict)
-                detectable_via,                  # detectable_via (log source array)
+                parts[11] if len(parts) > 11 else "",  # tactic
+                _clean_field(parts[4]),           # procedure_example
+                evidence_json,                   # evidence
+                detectable_via,                  # detectable_via
             ])
             if queries:
                 all_indicators = []

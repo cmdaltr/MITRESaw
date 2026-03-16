@@ -814,12 +814,10 @@ def mainsaw(
         # Generate filtered export if --columns is specified
         if columns:
             valid_columns = [
-                "group_software_id", "group_software_name", "technique_id",
-                "item_identifier", "group_software", "relation_identifier",
-                "created", "last_modified", "group_software_description",
-                "procedure_description", "technique_name", "technique_tactics",
-                "technique_description", "technique_detection", "technique_platforms",
-                "technique_datasources", "evidence_indicators", "detectable_via", "keywords",
+                "group_sw_id", "group_sw_name", "group_sw_description",
+                "technique_id", "technique_name", "technique_description",
+                "tactic", "procedure_example", "evidence", "detectable_via",
+                "keywords",
             ]
             requested_columns = [c.strip() for c in columns.split(",")]
             invalid = [c for c in requested_columns if c not in valid_columns]
@@ -834,7 +832,7 @@ def mainsaw(
                     keyword_map = {}
                     for gid, info in group_info_data.items():
                         keyword_map[gid] = match_keywords(info["description"])
-                    df["keywords"] = df["group_software_id"].map(keyword_map).fillna("")
+                    df["keywords"] = df["group_sw_id"].map(keyword_map).fillna("")
 
                 df = df[requested_columns].drop_duplicates()
                 if preset:

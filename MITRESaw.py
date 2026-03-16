@@ -87,9 +87,9 @@ parser.add_argument(
     "-d",
     "--default",
     help="Export an express CSV (ThreatActors_Keywords.csv) with key columns:\n"
-         "group_software_id, group_software_name, group_software_description,\n"
-         "procedure_description, technique_id, technique_name, technique_description,\n"
-         "technique_tactics, evidence_indicators, detectable_via.\n"
+         "group_sw_id, group_sw_name, group_sw_description,\n"
+         "technique_id, technique_name, technique_description,\n"
+         "tactic, procedure_example, evidence, detectable_via.\n"
          "Shortcut for -c with the above columns. If -c is also provided, -c takes precedence.\n",
     action="store_const",
     const=True,
@@ -130,9 +130,9 @@ fetch = args.fetch
 
 if preset and not columns:
     columns = (
-        "group_software_id,group_software_name,group_software_description,"
-        "procedure_description,technique_id,technique_name,technique_description,"
-        "technique_tactics,evidence_indicators,detectable_via"
+        "group_sw_id,group_sw_name,group_sw_description,"
+        "technique_id,technique_name,technique_description,"
+        "tactic,procedure_example,evidence,detectable_via"
     )
 
 attack_version = "16.1"  # Updated to latest version, will auto-fetch latest from TAXII
