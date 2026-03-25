@@ -1,7 +1,7 @@
 #!/usr/bin/env python3 -tt
 import argparse
 from argparse import RawTextHelpFormatter
-from MITRESaw.toolbox.main import mainsaw
+from toolbox.main import mainsaw
 
 parser = argparse.ArgumentParser(formatter_class=RawTextHelpFormatter)
 parser.add_argument(
@@ -103,6 +103,17 @@ parser.add_argument(
     default="csv",
 )
 parser.add_argument(
+    "-E",
+    "--evidence-report",
+    help="Generate a styled XLSX evidence report (EvidenceReport_<timestamp>.xlsx)\n"
+         "with one row per atomic indicator extracted from procedure examples.\n"
+         "Applies the same group/platform/term filters as the main run.\n"
+         "Compatible with all other flags; runs as a post-processing step.\n",
+    action="store_const",
+    const=True,
+    default=False,
+)
+parser.add_argument(
     "-F",
     "--fetch",
     help="Force a fresh download of ATT&CK STIX data (default: re-download if older than 7 days)\n",
@@ -127,6 +138,7 @@ preset = args.default
 export_format = args.export
 quiet = args.quiet
 fetch = args.fetch
+evidence_report = args.evidence_report
 
 if preset and not columns:
     columns = (
@@ -167,6 +179,7 @@ def main():
         export_format,
         quiet,
         fetch,
+        evidence_report=evidence_report,
     )
 
 

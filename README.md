@@ -67,7 +67,7 @@ All arguments are optional named flags with sensible defaults. To display usage,
 ```
 usage: MITRESaw.py [-h] [-f FRAMEWORK] [-p PLATFORMS] [-t SEARCHTERMS]
                    [-g THREATGROUPS] [-a] [-n] [-o] [-Q] [-q] [-r]
-                   [-c COLUMNS] [-d] [-x {csv,json,xml}] [-F]
+                   [-c COLUMNS] [-d] [-x {csv,json,xml}] [-E] [-F]
 
 options:
   -h, --help                  show this help message and exit
@@ -84,6 +84,7 @@ options:
   -c, --columns COLUMNS       Export filtered CSV with specified columns (comma-separated)
   -d, --default               Export key procedure columns to mitre_procedures.csv
   -x, --export {csv,json,xml} Export format for output files (default: csv)
+  -E, --evidence-report       Generate styled XLSX evidence report (one row per indicator)
   -F, --fetch                 Force fresh download of ATT&CK STIX data
 ```
 
@@ -114,6 +115,45 @@ Valid column names for `--columns`:
 group_sw_id, group_sw_name, group_sw_description, technique_id,
 technique_name, technique_description, tactic, procedure_example,
 evidence, detectable_via, keywords
+```
+
+## Evidence Report (-E)
+
+The `--evidence-report` / `-E` flag generates a high-fidelity, styled XLSX evidence report (`EvidenceReport_<timestamp>.xlsx`) with **one row per atomic indicator** extracted from MITRE ATT&CK procedure examples.
+
+This is a post-processing step that runs after all existing outputs (CSV, XLSX matrix, queries, nav layers) have been written. It has zero impact on existing outputs.
+
+### 10-Column Schema
+
+| # | Column | Description |
+|---|--------|-------------|
+| 1 | Evidential Element | The atomic indicator (command, registry key, CVE, port, path, software, event ID) |
+| 2 | Threat Group | Canonical group name |
+| 3 | Procedure Example | MITRE ATT&CK procedure text verbatim |
+| 4 | Technique ID | ATT&CK technique ID (e.g. T1059.001) |
+| 5 | Technique Name | ATT&CK technique name |
+| 6 | Tactic | ATT&CK tactic |
+| 7 | Contextual Evidence | MITRE-documented invocation strings extracted from procedure text + detection guidance. Where MITRE has not documented a specific invocation, the column states this explicitly. |
+| 8 | Reference URL | URL from procedure text or constructed ATT&CK technique URL |
+| 9 | Navigation Layer URL | ATT&CK Navigator JSON layer URL for the group |
+| 10 | Source Type | Website or GitHub \| Website |
+
+The Contextual Evidence column (Col 7) surfaces MITRE's own documented invocation strings — backtick-wrapped commands, CLI flags, registry paths and file paths — extracted directly from the procedure text for that specific group.
+
+### Examples
+
+```bash
+# All groups, default filter, evidence report
+./MITRESaw.py -d -E
+
+# Iranian-linked groups on Windows with SIEM queries and evidence report
+./MITRESaw.py -g OilRig,APT33,MuddyWater,APT39,Magic_Hound,Fox_Kitten -p Windows -Q -E
+
+# Industry-filtered with nav layers and evidence report
+./MITRESaw.py -t financial,healthcare -p Windows,Linux -n -E
+
+# Force-refresh STIX data then generate evidence report
+./MITRESaw.py -g APT29 -p Windows -F -E
 ```
 
 ### Notices
