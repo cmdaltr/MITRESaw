@@ -272,3 +272,39 @@ def test_invocation_coverage_in_group_summary():
         assert isinstance(val, (int, float))
     finally:
         os.unlink(path)
+
+
+def test_technique_matrix_with_multiple_groups():
+    row1 = _make_row(group_name="OilRig", technique_id="T1059.001")
+    row2 = _make_row(group_name="APT33", technique_id="T1059.001",
+                     evidence={"cmd": ["powershell -enc"]})
+    row3 = _make_row(group_name="APT33", technique_id="T1078",
+                     technique_name="Valid Accounts",
+                     evidence={"cmd": ["net user"]})
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
+        path = f.name
+    try:
+        generate_evidence_report([row1, row2, row3], path)
+        wb = load_workbook(path)
+        assert "Technique Matrix" in wb.sheetnames
+        ws = wb["Technique Matrix"]
+        # T1059.001 used by 2 groups should be first (row 3)
+        assert ws.cell(row=3, column=1).value == "T1059.001"
+        assert ws.cell(row=3, column=4).value == 2
+        # T1078 used by 1 group should be second (row 4)
+        assert ws.cell(row=4, column=1).value == "T1078"
+        assert ws.cell(row=4, column=4).value == 1
+    finally:
+        os.unlink(path)
+
+
+def test_technique_matrix_not_created_single_group():
+    row = _make_row()
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
+        path = f.name
+    try:
+        generate_evidence_report([row], path)
+        wb = load_workbook(path)
+        assert "Technique Matrix" not in wb.sheetnames
+    finally:
+        os.unlink(path)

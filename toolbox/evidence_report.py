@@ -898,6 +898,136 @@ def generate_evidence_report(
         tp_row += 1
 
     # ------------------------------------------------------------------
+    # Sheet 4 — Technique Matrix (only if 2+ groups)
+    # ------------------------------------------------------------------
+    unique_groups_list = sorted(set(item["threat_group"] for item in atomised))
+    if len(unique_groups_list) >= 2:
+        ws4 = wb.create_sheet("Technique Matrix")
+        ws4.sheet_view.showGridLines = False
+
+        # Build group→techniques mapping
+        group_techs = {}
+        tech_names = {}
+        tech_tactics = {}
+        for item in atomised:
+            g = item["threat_group"]
+            tid = item["technique_id"]
+            group_techs.setdefault(g, set()).add(tid)
+            if tid not in tech_names:
+                tech_names[tid] = item["technique_name"]
+            if tid not in tech_tactics:
+                tech_tactics[tid] = item["tactic"]
+
+        # Count how many groups use each technique, sort descending
+        all_tids = set()
+        for tids in group_techs.values():
+            all_tids.update(tids)
+        tech_group_count = {}
+        for tid in all_tids:
+            tech_group_count[tid] = sum(
+                1 for g in unique_groups_list if tid in group_techs.get(g, set())
+            )
+        sorted_tids = sorted(
+            all_tids, key=lambda t: (-tech_group_count[t], t)
+        )
+
+        # Title row
+        num_matrix_cols = 4 + len(unique_groups_list)  # Technique ID, Name, Tactic, Count, groups...
+        last_matrix_col = get_column_letter(num_matrix_cols)
+        ws4.merge_cells(f"A1:{last_matrix_col}1")
+        t = ws4["A1"]
+        t.value = (
+            f"Technique Intersection Matrix  |  {len(sorted_tids)} Techniques  |  "
+            f"{len(unique_groups_list)} Groups  |  Sorted by group coverage (descending)"
+        )
+        t.font = font_title
+        t.fill = fill_navy
+        t.alignment = align_center
+        t.border = _THIN_BORDER
+        ws4.row_dimensions[1].height = 28
+
+        # Headers — row 2
+        matrix_headers = ["Technique ID", "Technique Name", "Tactic", "Group Count"]
+        matrix_headers.extend(unique_groups_list)
+        for col_idx, label in enumerate(matrix_headers, 1):
+            cell = ws4.cell(row=2, column=col_idx, value=label)
+            cell.font = font_header
+            cell.fill = fill_navy
+            cell.alignment = Alignment(
+                horizontal="center", vertical="center",
+                wrap_text=True, text_rotation=90 if col_idx > 4 else 0,
+            )
+            cell.border = _THIN_BORDER
+        ws4.row_dimensions[2].height = 120 if len(unique_groups_list) > 5 else 60
+
+        # Column widths
+        ws4.column_dimensions["A"].width = 14
+        ws4.column_dimensions["B"].width = 30
+        ws4.column_dimensions["C"].width = 22
+        ws4.column_dimensions["D"].width = 12
+        for i in range(len(unique_groups_list)):
+            ws4.column_dimensions[get_column_letter(5 + i)].width = 4
+
+        # Font for 1/0 cells
+        font_one = Font(name="Calibri", size=10, bold=True, color="22C55E")
+        font_zero = Font(name="Calibri", size=10, color="334155")
+        fill_hit = PatternFill(start_color="0A2A0A", end_color="0A2A0A", fill_type="solid")
+
+        # Data rows
+        for row_idx, tid in enumerate(sorted_tids, 3):
+            count = tech_group_count[tid]
+            bg = _BG_DARK if (row_idx - 3) % 2 == 0 else _BG_ALT
+            row_fill = PatternFill(start_color=bg, end_color=bg, fill_type="solid")
+
+            # Technique ID
+            c = ws4.cell(row=row_idx, column=1, value=tid)
+            c.font = Font(name="Courier New", size=10, bold=True, color="22C55E")
+            c.fill = row_fill
+            c.alignment = align_left
+            c.border = _THIN_BORDER
+
+            # Technique Name
+            c = ws4.cell(row=row_idx, column=2, value=tech_names.get(tid, ""))
+            c.font = Font(name="Calibri", size=10, color="E0F2FE")
+            c.fill = row_fill
+            c.alignment = align_left
+            c.border = _THIN_BORDER
+
+            # Tactic
+            c = ws4.cell(row=row_idx, column=3, value=tech_tactics.get(tid, ""))
+            c.font = Font(name="Calibri", size=10, color="FACC15")
+            c.fill = row_fill
+            c.alignment = align_left
+            c.border = _THIN_BORDER
+
+            # Group Count
+            c = ws4.cell(row=row_idx, column=4, value=count)
+            c.font = Font(name="Calibri", size=10, bold=True, color="0EA5E9")
+            c.fill = row_fill
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            c.border = _THIN_BORDER
+
+            # Group columns — 1 or empty
+            for gi, gname in enumerate(unique_groups_list):
+                has = tid in group_techs.get(gname, set())
+                c = ws4.cell(row=row_idx, column=5 + gi, value=1 if has else None)
+                if has:
+                    c.font = font_one
+                    c.fill = fill_hit
+                else:
+                    c.font = font_zero
+                    c.fill = row_fill
+                c.alignment = Alignment(horizontal="center", vertical="center")
+                c.border = _THIN_BORDER
+
+            ws4.row_dimensions[row_idx].height = 18
+
+        ws4.freeze_panes = "E3"
+        last_data = 2 + len(sorted_tids)
+        if sorted_tids:
+            ws4.auto_filter.ref = f"A2:{last_matrix_col}{last_data}"
+
+    # ------------------------------------------------------------------
     # Save
     # ------------------------------------------------------------------
     wb.save(output_path)
