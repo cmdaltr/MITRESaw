@@ -787,9 +787,6 @@ def mainsaw(
                     terms_insert
                 )
             )"""
-        write_csv_techniques_mapped_to_logsources(
-            mitresaw_output_directory, mapped_log_sources
-        )
         # outputting csv file for ingestion into other tools
         write_csv_summary(
             consolidated_techniques,
@@ -801,7 +798,7 @@ def mainsaw(
         )
         # Export main CSV files to JSON/XML if requested
         if export_format != "csv":
-            for csv_name in ["ThreatActors_Techniques", "ThreatActors_Techniques_LogSourceDetections"]:
+            for csv_name in ["ThreatActors_Techniques"]:
                 csv_path = os.path.join(mitresaw_output_directory, f"{csv_name}.csv")
                 if os.path.exists(csv_path):
                     df = pandas.read_csv(csv_path, on_bad_lines="warn")
@@ -904,10 +901,10 @@ def mainsaw(
                     searchterms_arg=",".join(str(s) for s in search_terms),
                     threatgroups_arg=",".join(str(g) for g in provided_groups),
                 )
-                # Copy CSV alongside evidence report with matching name
+                # Move CSV alongside evidence report with matching name
                 import shutil
                 _csv_dest = os.path.join(_er_dir, "Evidence_Groups-Techniques.csv")
-                shutil.copy2(csv_path, _csv_dest)
+                shutil.move(csv_path, _csv_dest)
                 print(f"\n\n     Outputs written to: {_er_dir}/")
                 print(f"                              Evidence_Groups-Techniques.csv")
                 print(f"                              Evidence_Groups-Techniques.xlsx")

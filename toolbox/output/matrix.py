@@ -265,18 +265,4 @@ def build_matrix(
         ],
         ascending=[False, False, False, True, True],
     )
-    with pandas.ExcelWriter(
-        os.path.join(
-            mitresaw_output_directory, "ThreatActors_Techniques_Intersect.xlsx"
-        )
-    ) as intersect_writer:
-        threat_actor_count_data_frame.to_excel(
-            intersect_writer, sheet_name="ThreatActorCount"
-        )
-        techniques_subtechniques_count_data_frame.to_excel(
-            intersect_writer, sheet_name="TechniqueCount"
-        )
-        sorted_intersect_data_frame.to_excel(
-            intersect_writer, sheet_name="DetectableMatrix"
-        )
     return query_pairings, mapped_log_sources
