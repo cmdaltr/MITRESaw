@@ -899,59 +899,6 @@ def mainsaw(
                 )
                 print(f"     Evidence report written to: {_er_path}")
 
-        log_sources = sorted(
-            str(log_sources)[3:-3]
-            .replace(", ", "; ")
-            .replace("'; '", "; ")
-            .replace('"; "', "; ")
-            .replace("'", "")
-            .replace("EventLog", "event log")
-            .replace("; ", ", ")
-            .split(", ")
-        )
-        # removing specific event IDs as they are not needed for reporting stats in stdout
-        for log_source in log_sources:
-            if ": " in log_source:
-                logsources.append(log_source.split(": ")[0])
-            elif "/var/log" in log_source:
-                logsources.append("*nix /var/log")
-            else:
-                logsources.append(log_source)
-        # counting the occurance of each log source
-        counted_log_sources = Counter(list(filter(None, logsources)))
-        log_coverage = list(
-            filter(
-                None,
-                sorted(counted_log_sources.items(), key=lambda x: x[1], reverse=True),
-            )
-        )
-        print(
-            "\n     The following log sources are recommended to \033[4;37maid with detecting\033[1;m the aforementioned ATT&CK techniques:"
-        )
-        print()
-        time.sleep(0.5)
-        total = 0
-        for log_count in log_coverage:
-            log = log_count[0].split(": ")[0]
-            count = log_count[1]
-            percentage = str(int(count / len(log_sources) * 100))
-            if percentage == "0" and show_others:
-                percentage = "<1"
-                print(
-                    "       - {}: \033[1;37m{}%\033[1;m".format(
-                        log.strip().strip('"'), percentage
-                    )
-                )
-            elif percentage != "0":
-                print(
-                    "       - {}: \033[1;37m{}%\033[1;m".format(
-                        log.strip().strip('"'), percentage
-                    )
-                )
-                total += int(percentage)
-        if not show_others:
-            others = 100 - total
-            print("       - Others: \033[1;37m{}%\033[1;m".format(others))
     else:
         print("\n    -> No evidence could be found which match the provided criteria.")
     print("\n\n")

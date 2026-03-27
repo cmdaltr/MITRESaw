@@ -153,9 +153,9 @@ def test_column_count():
             if ws.cell(row=r, column=1).value is None:
                 break
             populated = sum(
-                1 for c in range(1, 12) if ws.cell(row=r, column=c).value is not None
+                1 for c in range(1, 13) if ws.cell(row=r, column=c).value is not None
             )
-            assert populated == 11, f"Row {r} has {populated} populated columns, expected 11"
+            assert populated == 12, f"Row {r} has {populated} populated columns, expected 12"
     finally:
         os.unlink(path)
 
@@ -239,7 +239,7 @@ def test_technique_url_construction():
         generate_evidence_report([row], path)
         wb = load_workbook(path)
         ws = wb.active
-        url = ws.cell(row=4, column=9).value
+        url = ws.cell(row=4, column=10).value
         assert url == "https://attack.mitre.org/techniques/T1059/001/"
     finally:
         os.unlink(path)
