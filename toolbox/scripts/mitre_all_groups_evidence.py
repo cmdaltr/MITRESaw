@@ -1197,7 +1197,7 @@ def main():
     # 6. Save
     stamp    = datetime.now().strftime("%Y%m%d_%H%M%S")
     nat_slug = "_".join(NATION_FILTER) if NATION_FILTER else "all_groups"
-    filename = f"MITRE_ATT&CK_Evidence_{FRAMEWORK}_{nat_slug}_{stamp}.xlsx"
+    filename = f"Evidence_{FRAMEWORK}_{nat_slug}_{stamp}.xlsx"
     out_path = Path(OUTPUT_DIR) / filename
     wb.save(out_path)
 
