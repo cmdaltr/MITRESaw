@@ -772,7 +772,6 @@ def mainsaw(
     report_cve_summary()
 
     if len(consolidated_techniques) > 0:
-        print("\n     Correlating results and creating intersecting matrix...")
 
         # outputting relevant queries
         query_pairings, mapped_log_sources = build_matrix(
@@ -862,7 +861,6 @@ def mainsaw(
             "', '",
             '", "comment": "", "score": 1, "color": "#66b1ff", "showSubtechniques": false}}, {{"techniqueID": "',
         )
-        print("      Done.")
 
         # Generate ATT&CK Navigator layer per framework
         for fw in attack_frameworks:

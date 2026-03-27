@@ -1203,7 +1203,7 @@ def main():
 
     size_mb = out_path.stat().st_size / 1024 / 1024
     print(f"\n[+] Saved: {out_path}  ({size_mb:.1f} MB)")
-    print(f"[+] Done in {datetime.now().strftime('%H:%M:%S')}")
+    print(f"[+] Completed at {datetime.now().strftime('%H:%M:%S')}")
 
 
 if __name__ == "__main__":
