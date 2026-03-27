@@ -894,7 +894,7 @@ def mainsaw(
                 _er_dir = mitresaw_root_date if no_filters else mitresaw_output_directory
                 _er_path = os.path.join(
                     _er_dir,
-                    f"Evidence_{_dt.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    "Evidence_Groups-Techniques.xlsx",
                 )
                 generate_evidence_report(
                     rows=result_rows,
@@ -904,8 +904,13 @@ def mainsaw(
                     searchterms_arg=",".join(str(s) for s in search_terms),
                     threatgroups_arg=",".join(str(g) for g in provided_groups),
                 )
-                print(f"\n\n     CSV written to: {csv_path}")
-                print(f"     Evidence report written to: {_er_path}")
+                # Copy CSV alongside evidence report with matching name
+                import shutil
+                _csv_dest = os.path.join(_er_dir, "Evidence_Groups-Techniques.csv")
+                shutil.copy2(csv_path, _csv_dest)
+                print(f"\n\n     Outputs written to: {_er_dir}/")
+                print(f"                              Evidence_Groups-Techniques.csv")
+                print(f"                              Evidence_Groups-Techniques.xlsx")
 
     else:
         print("\n    -> No evidence could be found which match the provided criteria.")
