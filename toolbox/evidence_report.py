@@ -329,20 +329,26 @@ _RE_MD_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^\)]+)\)")
 _RE_CITATION = re.compile(r"\(Citation:[^\)]*\)")
 
 
+def _md_link_to_id(m: re.Match) -> str:
+    """Replace a markdown link with 'Text (ID)' using the last path segment."""
+    label = m.group(1)
+    url = m.group(2).rstrip("/")
+    identifier = url.rsplit("/", 1)[-1]
+    return f"{label} ({identifier})"
+
+
 def _clean_procedure_text(text: str) -> str:
     """Clean MITRE procedure text for display.
 
-    - Convert markdown links [Text](URL) → Text (URL)
+    - Convert markdown links [Text](URL) → Text (identifier)
+      e.g. [Axiom](https://attack.mitre.org/groups/G0001) → Axiom (G0001)
     - Remove all (Citation: ...) references
     - Collapse extra whitespace left behind
     """
     if not text:
         return text
-    # Convert markdown links to plain text with URL in parentheses
-    text = _RE_MD_LINK.sub(r"\1 (\2)", text)
-    # Remove citations
+    text = _RE_MD_LINK.sub(_md_link_to_id, text)
     text = _RE_CITATION.sub("", text)
-    # Collapse multiple spaces
     text = re.sub(r"  +", " ", text).strip()
     return text
 
@@ -497,9 +503,9 @@ def generate_evidence_report(
 
     for row in rows:
         group_id = str(row.get("group_sw_id", "") or "")
-        group_name = str(row.get("group_sw_name", "") or "")
+        group_name = _clean_procedure_text(str(row.get("group_sw_name", "") or ""))
         technique_id = str(row.get("technique_id", "") or "")
-        technique_name = str(row.get("technique_name", "") or "")
+        technique_name = _clean_procedure_text(str(row.get("technique_name", "") or ""))
         tactic = str(row.get("tactic", "") or "")
         procedure_text = str(row.get("procedure_example", "") or "")
         procedure_display = _clean_procedure_text(procedure_text)
