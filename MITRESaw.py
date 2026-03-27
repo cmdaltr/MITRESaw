@@ -114,6 +114,16 @@ parser.add_argument(
     default=False,
 )
 parser.add_argument(
+    "-R",
+    "--references",
+    help="Collect ALL citation/reference material for each technique.\n"
+         "Fetches source URLs (blog posts, reports, advisories) and extracts\n"
+         "pertinent content. Requires -E. Adds 'Reference Detail' sheet.\n",
+    action="store_const",
+    const=True,
+    default=False,
+)
+parser.add_argument(
     "-F",
     "--fetch",
     help="Force a fresh download of ATT&CK STIX data (default: re-download if older than 7 days)\n",
@@ -139,6 +149,7 @@ export_format = args.export
 quiet = args.quiet
 fetch = args.fetch
 evidence_report = args.evidence_report
+collect_references = args.references
 
 if preset and not columns:
     columns = (
@@ -180,6 +191,7 @@ def main():
         quiet,
         fetch,
         evidence_report=evidence_report,
+        collect_references=collect_references,
     )
 
 

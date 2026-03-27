@@ -37,6 +37,7 @@ FORCE_FETCH  = False          # True = always re-download STIX bundle
 OUTPUT_DIR   = "."            # directory for output XLSX
 NATION_FILTER = []            # e.g. ["iran"] for Iranian only, [] for all groups
 MAX_ROWS_PER_SHEET = 50000    # split into multiple sheets if exceeded
+COLLECT_REFERENCES = False    # True = fetch citation URLs and extract content (-R flag)
 # ─────────────────────────────────────────────────────────────────────────────
 
 import json
@@ -198,7 +199,9 @@ def get_group_techniques(group_id: str, idx: dict) -> list[dict]:
                 return ref.get("external_id", "")
         return ""
 
-    def add_result(t_obj, proc_text, path_label, src_name=""):
+    def add_result(t_obj, rel_obj, path_label, src_name=""):
+        proc_text = rel_obj.get("description", "") if isinstance(rel_obj, dict) else rel_obj
+        ext_refs = rel_obj.get("external_references", []) if isinstance(rel_obj, dict) else []
         tid = tech_id_from_obj(t_obj)
         if not tid:
             return
@@ -216,6 +219,7 @@ def get_group_techniques(group_id: str, idx: dict) -> list[dict]:
             "source_path":        path_label,
             "source_name":        src_name,
             "technique_stix_id":  t_obj.get("id", ""),
+            "external_references": ext_refs,
         })
 
     # PATH 1 — Direct: group → technique
@@ -224,8 +228,7 @@ def get_group_techniques(group_id: str, idx: dict) -> list[dict]:
             continue
         tgt = rel.get("target_ref", "")
         if tgt in techniques:
-            proc = rel.get("description", "")
-            add_result(techniques[tgt], proc, "direct")
+            add_result(techniques[tgt], rel, "direct")
 
     # PATH 2 — Via Software: group → software → technique
     for rel in rels_by_src.get(group_id, []):
@@ -240,11 +243,7 @@ def get_group_techniques(group_id: str, idx: dict) -> list[dict]:
                 continue
             tgt = sw_rel.get("target_ref", "")
             if tgt in techniques:
-                # Combine software relationship description with technique relationship
-                proc = sw_rel.get("description", "")
-                if not proc:
-                    proc = f"{sw_name} uses this technique."
-                add_result(techniques[tgt], proc, "software", sw_name)
+                add_result(techniques[tgt], sw_rel, "software", sw_name)
 
     # PATH 3 — Via Campaign: campaign → group + campaign → technique
     for rel in rels_by_tgt.get(group_id, []):
@@ -259,10 +258,7 @@ def get_group_techniques(group_id: str, idx: dict) -> list[dict]:
                 continue
             tgt = camp_rel.get("target_ref", "")
             if tgt in techniques:
-                proc = camp_rel.get("description", "")
-                if not proc:
-                    proc = f"Campaign {camp_name} used this technique."
-                add_result(techniques[tgt], proc, "campaign", camp_name)
+                add_result(techniques[tgt], camp_rel, "campaign", camp_name)
 
     return results
 
@@ -587,6 +583,7 @@ def atomise(group_meta: dict, technique_rows: list) -> list:
         tactic    = row["tactic"]
         src_path  = row["source_path"]
         src_name  = row["source_name"]
+        ext_refs  = row.get("external_references", [])
 
         evidence = extract_evidence(proc)
 
@@ -621,6 +618,8 @@ def atomise(group_meta: dict, technique_rows: list) -> list:
                     "source_type": "Website",
                     "source_path": src_path,
                     "source_name": src_name,
+                    "_raw_procedure": proc,
+                    "_ext_refs": ext_refs,
                 })
             continue
 
@@ -648,6 +647,8 @@ def atomise(group_meta: dict, technique_rows: list) -> list:
                     "source_type": ITYPE_SOURCE.get(itype, "Website"),
                     "source_path": src_path,
                     "source_name": src_name,
+                    "_raw_procedure": proc,
+                    "_ext_refs": ext_refs,
                 })
 
     return out
@@ -969,6 +970,53 @@ def write_nation_pivot(wb, all_rows: list, group_meta_map: dict):
     ws.freeze_panes = "A3"
 
 
+def write_reference_detail(wb, ref_results: list, group_colour_map: dict):
+    """Write a 'Reference Detail' sheet with one row per citation."""
+    ws = wb.create_sheet("Reference Detail")
+    ws.sheet_view.showGridLines = False
+
+    num_with_content = sum(1 for r in ref_results if r.get("extracted_content"))
+    ws.merge_cells("A1:H1")
+    t = ws["A1"]
+    t.value = (f"Citation Reference Detail  |  {len(ref_results)} Citations  |  "
+               f"{num_with_content} with Extracted Content")
+    t.font = Font(name="Calibri", bold=True, color=C_CYAN, size=16)
+    t.fill = PatternFill("solid", fgColor=C_NAVY)
+    t.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 28
+
+    H = ["Threat Group", "Technique ID", "Technique Name", "Citation Name",
+         "Source URL", "Source Description", "Extracted Content", "Status"]
+    for ci, h in enumerate(H, 1):
+        hcell(ws, 2, ci, h)
+    ws.row_dimensions[2].height = 32
+
+    widths = [22, 14, 28, 30, 55, 50, 80, 14]
+    for ci, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(ci)].width = w
+
+    for ri, ref in enumerate(ref_results, 3):
+        gname = ref.get("group", "")
+        bg, gfg = group_colour_map.get(gname, DEFAULT_COLOUR)
+        alt_bg = "0A1220" if ri % 2 == 0 else bg
+
+        dcell(ws, ri, 1, gname,                         alt_bg, gfg, bold=True)
+        dcell(ws, ri, 2, ref.get("technique_id", ""),    alt_bg, C_GREEN, bold=True, mono=True)
+        dcell(ws, ri, 3, ref.get("technique_name", ""),  alt_bg, C_WHITE)
+        dcell(ws, ri, 4, ref.get("citation_name", ""),   alt_bg, C_CYAN)
+        dcell(ws, ri, 5, ref.get("url", ""),             alt_bg, C_CYAN,
+              url=ref.get("url") or None)
+        dcell(ws, ri, 6, ref.get("description", ""),     alt_bg, C_SLATE)
+        dcell(ws, ri, 7, ref.get("extracted_content",""),alt_bg, C_SLATE, mono=True)
+        dcell(ws, ri, 8, ref.get("status", ""),          alt_bg, C_ORANGE)
+        ws.row_dimensions[ri].height = 90
+
+    ws.freeze_panes = "A3"
+    last = 2 + len(ref_results)
+    if ref_results:
+        ws.auto_filter.ref = f"A2:H{last}"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1084,6 +1132,68 @@ def main():
     write_nation_pivot(wb, all_rows, group_meta_map)
     print(f"    Sheet 'Nation-State Pivot'")
 
+    # 5b. Reference collection (if enabled)
+    if COLLECT_REFERENCES:
+        # Add parent path so we can import reference_collector
+        _parent = str(Path(__file__).resolve().parent.parent)
+        if _parent not in sys.path:
+            sys.path.insert(0, _parent)
+        from reference_collector import (
+            resolve_citations, collect_reference_content
+        )
+
+        print("\n[+] Collecting citation references...")
+
+        # Build stix_ref_map and collect unique procedures
+        seen_ref_procs = set()
+        ref_results = []
+        total_citations = 0
+        total_fetched = 0
+
+        for row in all_rows:
+            proc_key = (row["group"], row["technique_id"],
+                        hash(row.get("_raw_procedure", row["procedure_example"])))
+            if proc_key in seen_ref_procs:
+                continue
+            seen_ref_procs.add(proc_key)
+
+            ext_refs = row.get("_ext_refs", [])
+            raw_proc = row.get("_raw_procedure", row["procedure_example"])
+
+            citations = resolve_citations(raw_proc, ext_refs)
+            if not citations:
+                continue
+            total_citations += len(citations)
+
+            indicators = []
+            if row["evidential_element"] != "(no extractable indicators)":
+                indicators = [row["evidential_element"]]
+
+            fetched = collect_reference_content(
+                citations,
+                group_name=row["group"],
+                technique_name=row["technique_name"],
+                technique_id=row["technique_id"],
+                indicators=indicators,
+                verbose=True,
+            )
+            for r in fetched:
+                r["group"] = row["group"]
+                r["group_id"] = row["group_id"]
+                r["technique_id"] = row["technique_id"]
+                r["technique_name"] = row["technique_name"]
+                r["tactic"] = row["tactic"]
+                ref_results.append(r)
+                if r["status"] in ("fetched", "cached"):
+                    total_fetched += 1
+
+        print(f"[+] Citations resolved: {total_citations}, "
+              f"URLs fetched/cached: {total_fetched}, "
+              f"with content: {sum(1 for r in ref_results if r.get('extracted_content'))}")
+
+        write_reference_detail(wb, ref_results, group_colour_map)
+        print(f"    Sheet 'Reference Detail': {len(ref_results)} citations")
+
     # 6. Save
     stamp    = datetime.now().strftime("%Y%m%d_%H%M%S")
     nat_slug = "_".join(NATION_FILTER) if NATION_FILTER else "all_groups"
@@ -1097,4 +1207,25 @@ def main():
 
 
 if __name__ == "__main__":
+    import argparse
+    _parser = argparse.ArgumentParser(description="Generate MITRE ATT&CK evidence report")
+    _parser.add_argument("-R", "--references", action="store_true",
+                         help="Fetch citation URLs and extract pertinent content")
+    _parser.add_argument("-F", "--force-fetch", action="store_true",
+                         help="Force re-download of STIX data")
+    _parser.add_argument("--framework", default=None,
+                         help=f"ATT&CK framework (default: {FRAMEWORK})")
+    _parser.add_argument("--nation", nargs="*", default=None,
+                         help="Filter groups by nation keyword (e.g. iran china)")
+    _args = _parser.parse_args()
+
+    if _args.references:
+        COLLECT_REFERENCES = True
+    if _args.force_fetch:
+        FORCE_FETCH = True
+    if _args.framework:
+        FRAMEWORK = _args.framework
+    if _args.nation is not None:
+        NATION_FILTER = _args.nation
+
     main()

@@ -85,6 +85,7 @@ options:
   -d, --default               Export key procedure columns to mitre_procedures.csv
   -x, --export {csv,json,xml} Export format for output files (default: csv)
   -E, --evidence-report       Generate styled XLSX evidence report (one row per indicator)
+  -R, --references            Fetch citation sources and extract pertinent content (requires -E)
   -F, --fetch                 Force fresh download of ATT&CK STIX data
 ```
 
@@ -153,6 +154,26 @@ This is a post-processing step that runs after all existing outputs (CSV, XLSX m
 
 # Force-refresh STIX data then generate evidence report
 ./MITRESaw.py -g APT29 -p Windows -F -E
+
+# Evidence report with full reference collection (fetches citation URLs)
+./MITRESaw.py -g APT29 -p Windows -E -R
+```
+
+## Reference Collection (-R)
+
+The `-R` flag fetches ALL citation/reference sources for each technique — blog posts, vendor reports, government advisories, GitHub repositories — and extracts pertinent content relating to each group's use of that technique.
+
+For each `(Citation: X)` in the MITRE procedure text, the collector:
+1. Resolves the citation name to its source URL via STIX `external_references`
+2. Fetches the source page (HTML → plain text extraction)
+3. Finds paragraphs mentioning the group name, technique, or indicators
+4. Writes the extracted content to a "Reference Detail" sheet in the XLSX
+
+Fetched pages are cached in `.reference_cache/` to avoid re-downloading. Rate-limited at 0.3s between requests.
+
+The standalone all-groups script also supports this:
+```bash
+python3 toolbox/scripts/mitre_all_groups_evidence.py -R
 ```
 
 ### Notices

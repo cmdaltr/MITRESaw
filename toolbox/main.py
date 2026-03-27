@@ -379,6 +379,7 @@ def mainsaw(
     quiet=False,
     fetch=False,
     evidence_report=False,
+    collect_references=False,
 ):
 
     # checking latest version and loading STIX data
