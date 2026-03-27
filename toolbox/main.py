@@ -904,7 +904,8 @@ def mainsaw(
                     searchterms_arg=",".join(str(s) for s in search_terms),
                     threatgroups_arg=",".join(str(g) for g in provided_groups),
                 )
-                print(f"\n\n     Evidence report written to: {_er_path}")
+                print(f"\n\n     CSV written to: {csv_path}")
+                print(f"     Evidence report written to: {_er_path}")
 
     else:
         print("\n    -> No evidence could be found which match the provided criteria.")
