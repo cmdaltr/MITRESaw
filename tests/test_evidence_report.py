@@ -153,14 +153,14 @@ def test_column_count():
             if ws.cell(row=r, column=1).value is None:
                 break
             populated = sum(
-                1 for c in range(1, 11) if ws.cell(row=r, column=c).value is not None
+                1 for c in range(1, 12) if ws.cell(row=r, column=c).value is not None
             )
-            assert populated == 10, f"Row {r} has {populated} populated columns, expected 10"
+            assert populated == 11, f"Row {r} has {populated} populated columns, expected 11"
     finally:
         os.unlink(path)
 
 
-def test_contextual_evidence_has_mitre_invocations():
+def test_invocations_column_has_extracted_commands():
     procedure = 'OilRig has run `net user /domain` on target systems.'
     row = _make_row(procedure=procedure, evidence={"cmd": ["net user /domain"]})
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
@@ -169,13 +169,13 @@ def test_contextual_evidence_has_mitre_invocations():
         generate_evidence_report([row], path)
         wb = load_workbook(path)
         ws = wb.active
-        ctx = ws.cell(row=4, column=7).value
-        assert ctx.startswith("MITRE documented invocation(s):")
+        inv = ws.cell(row=4, column=7).value
+        assert "net user /domain" in inv
     finally:
         os.unlink(path)
 
 
-def test_contextual_evidence_fallback_when_no_invocations():
+def test_invocations_fallback_when_no_invocations():
     procedure = "The group used spearphishing emails to deliver malicious attachments."
     row = _make_row(
         procedure=procedure,
@@ -187,8 +187,8 @@ def test_contextual_evidence_fallback_when_no_invocations():
         generate_evidence_report([row], path)
         wb = load_workbook(path)
         ws = wb.active
-        ctx = ws.cell(row=4, column=7).value
-        assert ctx.startswith("No specific invocation documented in MITRE procedure text")
+        inv = ws.cell(row=4, column=7).value
+        assert inv.startswith("No specific invocation documented in MITRE procedure text")
     finally:
         os.unlink(path)
 
@@ -204,8 +204,8 @@ def test_cve_detection_context():
         generate_evidence_report([row], path)
         wb = load_workbook(path)
         ws = wb.active
-        ctx = ws.cell(row=4, column=7).value
-        assert "CISA KEV" in ctx
+        det = ws.cell(row=4, column=8).value
+        assert "CISA KEV" in det
     finally:
         os.unlink(path)
 
@@ -221,8 +221,8 @@ def test_reg_detection_context():
         generate_evidence_report([row], path)
         wb = load_workbook(path)
         ws = wb.active
-        ctx = ws.cell(row=4, column=7).value
-        assert "Sysmon EID 12" in ctx
+        det = ws.cell(row=4, column=8).value
+        assert "Sysmon EID 12" in det
     finally:
         os.unlink(path)
 
@@ -239,7 +239,7 @@ def test_technique_url_construction():
         generate_evidence_report([row], path)
         wb = load_workbook(path)
         ws = wb.active
-        url = ws.cell(row=4, column=8).value
+        url = ws.cell(row=4, column=9).value
         assert url == "https://attack.mitre.org/techniques/T1059/001/"
     finally:
         os.unlink(path)

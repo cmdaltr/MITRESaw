@@ -123,7 +123,7 @@ The `--evidence-report` / `-E` flag generates a high-fidelity, styled XLSX evide
 
 This is a post-processing step that runs after all existing outputs (CSV, XLSX matrix, queries, nav layers) have been written. It has zero impact on existing outputs.
 
-### 10-Column Schema
+### 11-Column Schema
 
 | # | Column | Description |
 |---|--------|-------------|
@@ -133,12 +133,11 @@ This is a post-processing step that runs after all existing outputs (CSV, XLSX m
 | 4 | Technique ID | ATT&CK technique ID (e.g. T1059.001) |
 | 5 | Technique Name | ATT&CK technique name |
 | 6 | Tactic | ATT&CK tactic |
-| 7 | Contextual Evidence | MITRE-documented invocation strings extracted from procedure text + detection guidance. Where MITRE has not documented a specific invocation, the column states this explicitly. |
-| 8 | Reference URL | URL from procedure text or constructed ATT&CK technique URL |
-| 9 | Navigation Layer URL | ATT&CK Navigator JSON layer URL for the group |
-| 10 | Source Type | Website or GitHub \| Website |
-
-The Contextual Evidence column (Col 7) surfaces MITRE's own documented invocation strings — backtick-wrapped commands, CLI flags, registry paths and file paths — extracted directly from the procedure text for that specific group.
+| 7 | MITRE Invocations | Invocation strings extracted from procedure text — backtick-wrapped commands, CLI flags, registry paths, file paths as MITRE documented them. Where none are found, states this explicitly. |
+| 8 | Detection Guidance | Detection context per indicator type (Sysmon EIDs, log sources, ATT&CK data sources) |
+| 9 | Reference URL | URL from procedure text or constructed ATT&CK technique URL |
+| 10 | Navigation Layer URL | ATT&CK Navigator JSON layer URL for the group |
+| 11 | Source Type | Website or GitHub \| Website |
 
 ### Examples
 

@@ -228,42 +228,42 @@ def _format_port(port_str: str) -> str:
 
 _DETECTION_CONTEXT = {
     "cmd": (
-        "\nDetection: Process Creation \u2014 Sysmon EID 1 / Windows Security EID 4688"
+        "Process Creation \u2014 Sysmon EID 1 / Windows Security EID 4688"
         " (requires command-line auditing enabled)"
     ),
     "reg": (
-        "\nDetection: Registry modification \u2014 Sysmon EID 12/13/14 / Windows"
+        "Registry modification \u2014 Sysmon EID 12/13/14 / Windows"
         " Security EID 4657 (requires object access auditing)"
     ),
     "cve": (
-        "\nDetection: Exploit telemetry \u2014 check CISA KEV for active exploitation"
+        "Exploit telemetry \u2014 check CISA KEV for active exploitation"
         " status; review NVD for PoC availability; patch status is primary control"
     ),
     "ports": (
-        "\nDetection: Network traffic \u2014 firewall/proxy logs, Zeek conn.log,"
+        "Network traffic \u2014 firewall/proxy logs, Zeek conn.log,"
         " Sysmon EID 3 (network connection)"
     ),
     "paths": (
-        "\nDetection: File creation/modification \u2014 Sysmon EID 11 (FileCreate),"
+        "File creation/modification \u2014 Sysmon EID 11 (FileCreate),"
         " EID 23 (FileDelete) / EDR file telemetry"
     ),
     "filepath": (
-        "\nDetection: File creation/modification \u2014 Sysmon EID 11 (FileCreate),"
+        "File creation/modification \u2014 Sysmon EID 11 (FileCreate),"
         " EID 23 (FileDelete) / EDR file telemetry"
     ),
     "software": (
-        "\nDetection: Process name / image load \u2014 Sysmon EID 1 (process),"
+        "Process name / image load \u2014 Sysmon EID 1 (process),"
         " EID 7 (image load); check GitHub for tool-specific CLI usage"
     ),
     "event_ids": (
-        "\nDetection: This IS a Windows event ID \u2014 ensure the corresponding log"
+        "This IS a Windows event ID \u2014 ensure the corresponding log"
         " channel is enabled and ingested into your SIEM"
     ),
     "evt": (
-        "\nDetection: This IS a Windows event ID \u2014 ensure the corresponding log"
+        "This IS a Windows event ID \u2014 ensure the corresponding log"
         " channel is enabled and ingested into your SIEM"
     ),
-    "none": "(no extractable indicators \u2014 review procedure text manually)",
+    "none": "No extractable indicators \u2014 review procedure text manually",
 }
 
 # Source type per indicator type
@@ -350,15 +350,16 @@ def _nav_layer_url(group_id: str) -> str:
 # Contextual evidence builder
 # ---------------------------------------------------------------------------
 
-def _build_contextual_evidence(
+def _build_invocations_and_detection(
     procedure_text: str,
     indicator_type: str,
     indicator_value: str,
     detectable_via: str,
 ) -> tuple:
-    """Build contextual evidence string and return (text, had_invocations)."""
-    parts = []
+    """Build invocations and detection guidance strings.
 
+    Returns (invocations_str, detection_str, had_invocations).
+    """
     # Step A — extract invocations
     invocations = extract_procedure_invocations(
         procedure_text, indicator_type, indicator_value
@@ -366,27 +367,26 @@ def _build_contextual_evidence(
 
     had_invocations = len(invocations) > 0
 
-    # Step B — primary evidence from invocations
+    # Invocations column
     if invocations:
-        lines = "\n".join(f"  \u2022 {inv}" for inv in invocations)
-        parts.append(f"MITRE documented invocation(s):\n{lines}")
+        inv_str = "\n".join(f"\u2022 {inv}" for inv in invocations)
+    elif indicator_type == "none":
+        inv_str = ""
+    else:
+        inv_str = "No specific invocation documented in MITRE procedure text for this indicator."
 
-    # Step D — no invocations fallback
-    if not invocations and indicator_type != "none":
-        parts.append(
-            "No specific invocation documented in MITRE procedure text for this indicator."
-        )
-
-    # Step C — detection context
+    # Detection guidance column
+    det_parts = []
     det = _DETECTION_CONTEXT.get(indicator_type, "")
     if det:
-        parts.append(det)
+        det_parts.append(det.lstrip("\n"))
 
-    # Step E — ATT&CK data sources
     if detectable_via and str(detectable_via).strip() and str(detectable_via) != "nan":
-        parts.append(f"\nATT&CK Data Source(s): {detectable_via}")
+        det_parts.append(f"ATT&CK Data Source(s): {detectable_via}")
 
-    return "\n".join(parts), had_invocations
+    det_str = "\n".join(det_parts)
+
+    return inv_str, det_str, had_invocations
 
 
 # ---------------------------------------------------------------------------
@@ -405,7 +405,7 @@ _THIN_BORDER = Border(
     bottom=Side(style="thin", color=_BORDER_CLR),
 )
 
-_COL_WIDTHS = [50, 16, 55, 14, 28, 18, 72, 45, 38, 16]
+_COL_WIDTHS = [50, 16, 55, 14, 28, 18, 50, 50, 45, 38, 16]
 
 _HEADER_LABELS = [
     "Evidential Element\n(Atomic Indicator / Command / Artefact)",
@@ -414,11 +414,15 @@ _HEADER_LABELS = [
     "Technique ID",
     "Technique Name",
     "Tactic",
-    "Contextual Evidence\n(MITRE Invocations + Detection Guidance)",
+    "MITRE Invocations\n(Procedure Text Extractions)",
+    "Detection Guidance",
     "Reference URL",
     "Navigation Layer URL\n(ATT&CK Navigator JSON)",
     "Source Type",
 ]
+
+_NUM_COLS = len(_HEADER_LABELS)  # 11
+_LAST_COL_LETTER = get_column_letter(_NUM_COLS)  # "K"
 
 
 # ---------------------------------------------------------------------------
@@ -518,8 +522,8 @@ def generate_evidence_report(
                     continue
                 seen.add(dedup_key)
 
-                # Build contextual evidence
-                ctx, had_inv = _build_contextual_evidence(
+                # Build invocations and detection guidance
+                inv_str, det_str, had_inv = _build_invocations_and_detection(
                     procedure_text, indicator_type, indicator_value, detectable_via
                 )
 
@@ -539,7 +543,8 @@ def generate_evidence_report(
                     "technique_id": technique_id,
                     "technique_name": technique_name,
                     "tactic": tactic,
-                    "contextual_evidence": ctx,
+                    "invocations": inv_str,
+                    "detection_guidance": det_str,
                     "reference_url": ref_url,
                     "nav_layer_url": nav_url,
                     "source_type": source_type,
@@ -551,7 +556,6 @@ def generate_evidence_report(
             dedup_key = (group_name.lower(), technique_id.lower(), "(no extractable indicators)")
             if dedup_key not in seen:
                 seen.add(dedup_key)
-                ctx = _DETECTION_CONTEXT["none"]
                 atomised.append({
                     "evidential_element": "(no extractable indicators)",
                     "threat_group": group_name,
@@ -559,7 +563,8 @@ def generate_evidence_report(
                     "technique_id": technique_id,
                     "technique_name": technique_name,
                     "tactic": tactic,
-                    "contextual_evidence": ctx,
+                    "invocations": "",
+                    "detection_guidance": _DETECTION_CONTEXT["none"],
                     "reference_url": _extract_url(procedure_text, technique_id),
                     "nav_layer_url": _nav_layer_url(group_id),
                     "source_type": "Website",
@@ -583,10 +588,11 @@ def generate_evidence_report(
     font_col5 = Font(name="Calibri", size=10, color="E0F2FE")
     font_col3 = Font(name="Calibri", size=10, color="CBD5E1")
     font_col6 = Font(name="Calibri", size=10, color="FACC15")
-    font_col7 = Font(name="Courier New", size=10, color="CBD5E1")
-    font_col8 = Font(name="Calibri", size=10, color="0EA5E9")
-    font_col9 = Font(name="Calibri", size=10, color="A78BFA")
-    font_col10 = Font(name="Calibri", size=10, color="F97316")
+    font_col7 = Font(name="Courier New", size=10, color="CBD5E1")   # Invocations
+    font_col8 = Font(name="Courier New", size=10, color="CBD5E1")   # Detection Guidance
+    font_col9 = Font(name="Calibri", size=10, color="0EA5E9")      # Reference URL
+    font_col10 = Font(name="Calibri", size=10, color="A78BFA")     # Nav Layer URL
+    font_col11 = Font(name="Calibri", size=10, color="F97316")     # Source Type
 
     fill_navy = PatternFill(start_color=_BG_NAVY, end_color=_BG_NAVY, fill_type="solid")
     align_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -607,7 +613,7 @@ def generate_evidence_report(
         f"Groups: {unique_groups}  |  Indicators: {total_indicators}  |  "
         f"Generated: {now_str}"
     )
-    ws.merge_cells("A1:J1")
+    ws.merge_cells(f"A1:{_LAST_COL_LETTER}1")
     cell = ws["A1"]
     cell.value = title_text
     cell.font = font_title
@@ -623,7 +629,7 @@ def generate_evidence_report(
         f"Platforms: {platforms_arg}  |  Search Terms: {searchterms_arg}  |  "
         f"Threat Groups: {threatgroups_arg}  |  Source: MITRE ATT&CK STIX via MITRESaw"
     )
-    ws.merge_cells("A2:J2")
+    ws.merge_cells(f"A2:{_LAST_COL_LETTER}2")
     cell = ws["A2"]
     cell.value = subtitle_text
     cell.font = font_subtitle
@@ -657,6 +663,7 @@ def generate_evidence_report(
         8: font_col8,
         9: font_col9,
         10: font_col10,
+        11: font_col11,
     }
 
     for row_idx, item in enumerate(atomised, 4):
@@ -677,7 +684,8 @@ def generate_evidence_report(
             item["technique_id"],
             item["technique_name"],
             item["tactic"],
-            item["contextual_evidence"],
+            item["invocations"],
+            item["detection_guidance"],
             item["reference_url"],
             item["nav_layer_url"],
             item["source_type"],
@@ -696,9 +704,9 @@ def generate_evidence_report(
                 cell.font = col_fonts[col_idx]
 
             # Hyperlinks for URL columns
-            if col_idx == 8 and val and val.startswith("http"):
+            if col_idx == 9 and val and val.startswith("http"):
                 cell.hyperlink = val
-            if col_idx == 9 and val and val != "N/A" and val.startswith("http"):
+            if col_idx == 10 and val and val != "N/A" and val.startswith("http"):
                 cell.hyperlink = val
 
         ws.row_dimensions[row_idx].height = 70
@@ -709,10 +717,10 @@ def generate_evidence_report(
     # Auto-filter on row 3
     last_data_row = 3 + len(atomised)
     if atomised:
-        ws.auto_filter.ref = f"A3:J{last_data_row}"
+        ws.auto_filter.ref = f"A3:{_LAST_COL_LETTER}{last_data_row}"
 
     # Apply border to merged cells in rows 1-2
-    for col_idx in range(2, 11):
+    for col_idx in range(2, _NUM_COLS + 1):
         for r in (1, 2):
             cell = ws.cell(row=r, column=col_idx)
             cell.border = _THIN_BORDER
