@@ -885,9 +885,16 @@ def mainsaw(
                 result_rows = df.to_dict(orient="records")
                 from toolbox.evidence_report import generate_evidence_report
                 from datetime import datetime as _dt
+                # If no filters provided, put alongside mitre_procedures.csv
+                no_filters = (
+                    str(operating_platforms) == "['.']"
+                    and str(search_terms) == "['.']"
+                    and str(provided_groups) == "['.']"
+                )
+                _er_dir = mitresaw_root_date if no_filters else mitresaw_output_directory
                 _er_path = os.path.join(
-                    mitresaw_output_directory,
-                    f"EvidenceReport_{_dt.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    _er_dir,
+                    f"Evidence_{_dt.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 )
                 generate_evidence_report(
                     rows=result_rows,
