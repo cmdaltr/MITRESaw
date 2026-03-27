@@ -897,7 +897,7 @@ def mainsaw(
                     searchterms_arg=",".join(str(s) for s in search_terms),
                     threatgroups_arg=",".join(str(g) for g in provided_groups),
                 )
-                print(f"[+] Evidence report written to: {_er_path}")
+                print(f"     Evidence report written to: {_er_path}")
 
         log_sources = sorted(
             str(log_sources)[3:-3]
