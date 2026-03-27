@@ -891,7 +891,7 @@ def mainsaw(
                 _er_dir = mitresaw_root_date if no_filters else mitresaw_output_directory
                 _er_path = os.path.join(
                     _er_dir,
-                    "Evidence_Groups-Techniques.xlsx",
+                    "mitre_procedures.xlsx",
                 )
                 generate_evidence_report(
                     rows=result_rows,
@@ -903,11 +903,11 @@ def mainsaw(
                 )
                 # Move CSV alongside evidence report with matching name
                 import shutil
-                _csv_dest = os.path.join(_er_dir, "Evidence_Groups-Techniques.csv")
+                _csv_dest = os.path.join(_er_dir, "mitre_procedures.csv")
                 shutil.move(csv_path, _csv_dest)
                 print(f"\n\n     Outputs written to: {_er_dir}/")
-                print(f"                              Evidence_Groups-Techniques.csv")
-                print(f"                              Evidence_Groups-Techniques.xlsx")
+                print(f"                              mitre_procedures.csv")
+                print(f"                              mitre_procedures.xlsx")
 
     else:
         print("\n    -> No evidence could be found which match the provided criteria.")
