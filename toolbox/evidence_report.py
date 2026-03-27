@@ -322,6 +322,32 @@ def _group_accent(name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Procedure text cleanup
+# ---------------------------------------------------------------------------
+
+_RE_MD_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^\)]+)\)")
+_RE_CITATION = re.compile(r"\(Citation:[^\)]*\)")
+
+
+def _clean_procedure_text(text: str) -> str:
+    """Clean MITRE procedure text for display.
+
+    - Convert markdown links [Text](URL) → Text (URL)
+    - Remove all (Citation: ...) references
+    - Collapse extra whitespace left behind
+    """
+    if not text:
+        return text
+    # Convert markdown links to plain text with URL in parentheses
+    text = _RE_MD_LINK.sub(r"\1 (\2)", text)
+    # Remove citations
+    text = _RE_CITATION.sub("", text)
+    # Collapse multiple spaces
+    text = re.sub(r"  +", " ", text).strip()
+    return text
+
+
+# ---------------------------------------------------------------------------
 # URL helpers
 # ---------------------------------------------------------------------------
 
@@ -476,6 +502,7 @@ def generate_evidence_report(
         technique_name = str(row.get("technique_name", "") or "")
         tactic = str(row.get("tactic", "") or "")
         procedure_text = str(row.get("procedure_example", "") or "")
+        procedure_display = _clean_procedure_text(procedure_text)
         detectable_via = str(row.get("detectable_via", "") or "")
         evidence_raw = row.get("evidence", "{}")
 
@@ -539,7 +566,7 @@ def generate_evidence_report(
                 atomised.append({
                     "evidential_element": display_value,
                     "threat_group": group_name,
-                    "procedure_example": procedure_text,
+                    "procedure_example": procedure_display,
                     "technique_id": technique_id,
                     "technique_name": technique_name,
                     "tactic": tactic,
@@ -559,7 +586,7 @@ def generate_evidence_report(
                 atomised.append({
                     "evidential_element": "(no extractable indicators)",
                     "threat_group": group_name,
-                    "procedure_example": procedure_text,
+                    "procedure_example": procedure_display,
                     "technique_id": technique_id,
                     "technique_name": technique_name,
                     "tactic": tactic,
