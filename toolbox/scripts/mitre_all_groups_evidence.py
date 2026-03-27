@@ -495,26 +495,48 @@ def extract_procedure_invocations(procedure_text: str,
 
 
 DETECTION_CONTEXT = {
-    "cmd":       "Detection: Process Creation — Sysmon EID 1 / Windows Security EID 4688",
-    "reg":       "Detection: Registry modification — Sysmon EID 12/13/14 / Windows Security EID 4657",
-    "cve":       "Detection: Exploit telemetry — check CISA KEV for active exploitation; review NVD for PoC",
-    "ports":     "Detection: Network traffic — firewall/proxy logs, Zeek conn.log, Sysmon EID 3",
-    "paths":     "Detection: File creation — Sysmon EID 11 (FileCreate) / EDR file telemetry",
-    "software":  "Detection: Process name / image load — Sysmon EID 1, EID 7; check GitHub for CLI usage",
-    "event_ids": "Detection: This IS a Windows Event ID — ensure log channel is enabled and ingested",
-    "none":      "(no extractable indicators — review procedure text manually)",
+    "cmd":       "Process Creation — Sysmon EID 1 / Windows Security EID 4688",
+    "reg":       "Registry modification — Sysmon EID 12/13/14 / Windows Security EID 4657",
+    "cve":       "Exploit telemetry — check CISA KEV for active exploitation; review NVD for PoC",
+    "ports":     "Network traffic — firewall/proxy logs, Zeek conn.log, Sysmon EID 3",
+    "paths":     "File creation — Sysmon EID 11 (FileCreate) / EDR file telemetry",
+    "software":  "Process name / image load — Sysmon EID 1, EID 7; check GitHub for CLI usage",
+    "event_ids": "This IS a Windows Event ID — ensure log channel is enabled and ingested",
+    "none":      "No extractable indicators — review procedure text manually",
 }
 
-def build_contextual_evidence(procedure_text, indicator_type, indicator_value):
+_RE_MD_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^\)]+)\)")
+_RE_CITATION = re.compile(r"\(Citation:[^\)]*\)")
+
+def _md_link_to_id(m):
+    label = m.group(1)
+    url = m.group(2).rstrip("/")
+    identifier = url.rsplit("/", 1)[-1]
+    return f"{label} ({identifier})"
+
+def clean_text(text):
+    """Convert markdown links to 'Name (ID)', remove citations, collapse whitespace."""
+    if not text:
+        return text
+    text = _RE_MD_LINK.sub(_md_link_to_id, text)
+    text = _RE_CITATION.sub("", text)
+    text = re.sub(r"  +", " ", text).strip()
+    return text
+
+def build_invocations_and_detection(procedure_text, indicator_type, indicator_value):
+    """Return (invocations_str, detection_str, had_invocations)."""
     invocations = extract_procedure_invocations(procedure_text, indicator_type, indicator_value)
-    parts = []
+    had_inv = len(invocations) > 0
+
     if invocations:
-        bullets = "\n".join(f"  \u2022 {inv}" for inv in invocations)
-        parts.append(f"MITRE documented invocation(s):\n{bullets}")
+        inv_str = "\n".join(f"\u2022 {inv}" for inv in invocations)
+    elif indicator_type == "none":
+        inv_str = ""
     else:
-        parts.append("No specific invocation documented in MITRE procedure text for this indicator.")
-    parts.append(DETECTION_CONTEXT.get(indicator_type, DETECTION_CONTEXT["none"]))
-    return "\n\n".join(parts)
+        inv_str = "No specific invocation documented in MITRE procedure text for this indicator."
+
+    det_str = DETECTION_CONTEXT.get(indicator_type, DETECTION_CONTEXT["none"])
+    return inv_str, det_str, had_inv
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -559,8 +581,9 @@ def atomise(group_meta: dict, technique_rows: list) -> list:
 
     for row in technique_rows:
         proc      = row["procedure_example"]
+        proc_display = clean_text(proc)
         tid       = row["technique_id"]
-        tname     = row["technique_name"]
+        tname     = clean_text(row["technique_name"])
         tactic    = row["tactic"]
         src_path  = row["source_path"]
         src_name  = row["source_name"]
@@ -576,7 +599,7 @@ def atomise(group_meta: dict, technique_rows: list) -> list:
             ref_url = f"https://attack.mitre.org/techniques/{tid_slash}/"
 
         nav_url  = group_meta["nav_url"]
-        gname    = group_meta["name"]
+        gname    = clean_text(group_meta["name"])
 
         if not evidence:
             dedup_key = (gname, tid, "(none)")
@@ -586,12 +609,13 @@ def atomise(group_meta: dict, technique_rows: list) -> list:
                     "evidential_element": "(no extractable indicators)",
                     "group":    gname,
                     "group_id": group_meta["id"],
-                    "procedure_example": proc,
+                    "procedure_example": proc_display,
                     "technique_id": tid,
                     "technique_name": tname,
                     "tactic": tactic,
                     "indicator_type": "none",
-                    "contextual_evidence": DETECTION_CONTEXT["none"],
+                    "invocations": "",
+                    "detection_guidance": DETECTION_CONTEXT["none"],
                     "ref_url":  ref_url,
                     "nav_url":  nav_url,
                     "source_type": "Website",
@@ -607,17 +631,18 @@ def atomise(group_meta: dict, technique_rows: list) -> list:
                     continue
                 seen.add(dedup_key)
 
-                ctx = build_contextual_evidence(proc, itype, indicator)
+                inv_str, det_str, had_inv = build_invocations_and_detection(proc, itype, indicator)
                 out.append({
                     "evidential_element": indicator,
                     "group":    gname,
                     "group_id": group_meta["id"],
-                    "procedure_example": proc,
+                    "procedure_example": proc_display,
                     "technique_id": tid,
                     "technique_name": tname,
                     "tactic": tactic,
                     "indicator_type": itype,
-                    "contextual_evidence": ctx,
+                    "invocations": inv_str,
+                    "detection_guidance": det_str,
                     "ref_url":  ref_url,
                     "nav_url":  nav_url,
                     "source_type": ITYPE_SOURCE.get(itype, "Website"),
@@ -707,14 +732,15 @@ HEADERS = [
     "Technique ID",
     "Technique Name",
     "Tactic",
-    "Contextual Evidence\n(MITRE Invocations + Detection Guidance)",
+    "MITRE Invocations\n(Procedure Text Extractions)",
+    "Detection Guidance",
     "Reference URL",
     "Navigation Layer URL\n(ATT\u0026CK Navigator JSON)",
     "Source Type",
     "Attribution Path",
 ]
 
-COL_WIDTHS = [48, 22, 10, 55, 14, 28, 20, 68, 45, 38, 16, 14]
+COL_WIDTHS = [48, 22, 10, 55, 14, 28, 20, 48, 48, 45, 38, 16, 14]
 
 def write_data_sheet(ws, all_rows: list, sheet_title: str, subtitle: str,
                      group_colour_map: dict):
@@ -758,11 +784,12 @@ def write_data_sheet(ws, all_rows: list, sheet_title: str, subtitle: str,
         dcell(ws, ri,  5, row["technique_id"],         alt_bg, C_GREEN,  bold=True, mono=True)
         dcell(ws, ri,  6, row["technique_name"],       alt_bg, C_WHITE)
         dcell(ws, ri,  7, row["tactic"],               alt_bg, C_YELLOW)
-        dcell(ws, ri,  8, row["contextual_evidence"],  alt_bg, C_SLATE,  mono=True)
-        dcell(ws, ri,  9, row["ref_url"],              alt_bg, C_CYAN,   url=row["ref_url"])
-        dcell(ws, ri, 10, row["nav_url"],              alt_bg, C_PURPLE, url=row["nav_url"] or None)
-        dcell(ws, ri, 11, row["source_type"],          alt_bg, C_ORANGE)
-        dcell(ws, ri, 12, row["source_path"],          alt_bg, C_GREY)
+        dcell(ws, ri,  8, row["invocations"],          alt_bg, C_SLATE,  mono=True)
+        dcell(ws, ri,  9, row["detection_guidance"],   alt_bg, C_SLATE,  mono=True)
+        dcell(ws, ri, 10, row["ref_url"],              alt_bg, C_CYAN,   url=row["ref_url"])
+        dcell(ws, ri, 11, row["nav_url"],              alt_bg, C_PURPLE, url=row["nav_url"] or None)
+        dcell(ws, ri, 12, row["source_type"],          alt_bg, C_ORANGE)
+        dcell(ws, ri, 13, row["source_path"],          alt_bg, C_GREY)
         ws.row_dimensions[ri].height = 70
 
     ws.freeze_panes = "A4"
@@ -801,7 +828,7 @@ def write_group_summary(wb, all_rows: list, group_meta_map: dict,
         g = row["group"]
         group_stats[g]["techs"].add(row["technique_id"])
         group_stats[g]["indicators"] += 1
-        if "MITRE documented invocation" in row["contextual_evidence"]:
+        if row["invocations"] and not row["invocations"].startswith("No specific"):
             group_stats[g]["invocations"] += 1
         if row["tactic"]:
             group_stats[g]["tactics"][row["tactic"]] += 1
@@ -818,7 +845,8 @@ def write_group_summary(wb, all_rows: list, group_meta_map: dict,
         inv_pct    = f"{100*st['invocations']//ind_count}%" if ind_count else "0%"
         top_tactic = st["tactics"].most_common(1)[0][0] if st["tactics"] else ""
         tactic_cov = ", ".join(t for t, _ in st["tactics"].most_common(5))
-        desc       = (meta.get("description", "")[:180] + "…") if meta.get("description") else ""
+        desc_raw   = clean_text(meta.get("description", ""))
+        desc       = (desc_raw[:180] + "…") if desc_raw else ""
 
         dcell(ws, ri, 1, gname,       alt_bg, gfg,     bold=True)
         dcell(ws, ri, 2, meta.get("id",""),  alt_bg, C_GREEN, bold=True, mono=True)
@@ -854,7 +882,7 @@ def write_tactic_pivot(wb, all_rows: list):
     for row in all_rows:
         tac = row["tactic"] or "(none)"
         tactic_map[tac].append(row["technique_id"])
-        if "MITRE documented invocation" in row["contextual_evidence"]:
+        if row["invocations"] and not row["invocations"].startswith("No specific"):
             inv_hits[tac] += 1
 
     for ci, w in enumerate([28, 16, 14, 18, 55], 1):
@@ -997,7 +1025,7 @@ def main():
 
     # Invocation coverage
     inv_count = sum(1 for r in all_rows
-                    if "MITRE documented invocation" in r["contextual_evidence"])
+                    if r["invocations"] and not r["invocations"].startswith("No specific"))
     pct = 100 * inv_count // len(all_rows) if all_rows else 0
     print(f"[+] Invocation coverage: {inv_count:,}/{len(all_rows):,} rows ({pct}%) "
           f"have MITRE-documented invocations")
