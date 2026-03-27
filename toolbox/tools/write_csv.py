@@ -105,7 +105,9 @@ def write_csv_summary(
                 primary_type,
                 primary_evidence,
             )
-            detectable_via = str(full_logsources)
+            detectable_via = "; ".join(
+                s.strip().strip("'\"") for s in full_logsources if s and str(s).strip()
+            )
 
             writer.writerow([
                 parts[0],                        # group_sw_id
