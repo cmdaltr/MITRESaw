@@ -437,7 +437,7 @@ _THIN_BORDER = Border(
     bottom=Side(style="thin", color=_BORDER_CLR),
 )
 
-_COL_WIDTHS = [50, 16, 55, 14, 28, 18, 50, 50, 40, 45, 38, 16]
+_COL_WIDTHS = [50, 16, 55, 14, 28, 18, 14, 14, 50, 50, 40, 45, 38, 16]
 
 _HEADER_LABELS = [
     "Evidential Element\n(Atomic Indicator / Command / Artefact)",
@@ -446,6 +446,8 @@ _HEADER_LABELS = [
     "Technique ID",
     "Technique Name",
     "Tactic",
+    "Platforms",
+    "Framework",
     "MITRE Invocations\n(Procedure Text Extractions)",
     "Detection Guidance",
     "Log Sources",
@@ -508,6 +510,8 @@ def generate_evidence_report(
         technique_id = str(row.get("technique_id", "") or "")
         technique_name = _clean_procedure_text(str(row.get("technique_name", "") or ""))
         tactic = str(row.get("tactic", "") or "")
+        platforms = str(row.get("platforms", "") or "")
+        framework = str(row.get("framework", "") or "")
         procedure_text = str(row.get("procedure_example", "") or "")
         procedure_display = _clean_procedure_text(procedure_text)
         detectable_via = str(row.get("detectable_via", "") or "")
@@ -577,6 +581,8 @@ def generate_evidence_report(
                     "technique_id": technique_id,
                     "technique_name": technique_name,
                     "tactic": tactic,
+                    "platforms": platforms if platforms != "nan" else "",
+                    "framework": framework if framework != "nan" else "",
                     "invocations": inv_str,
                     "detection_guidance": det_str,
                     "log_sources": detectable_via if detectable_via != "nan" else "",
@@ -598,6 +604,8 @@ def generate_evidence_report(
                     "technique_id": technique_id,
                     "technique_name": technique_name,
                     "tactic": tactic,
+                    "platforms": platforms if platforms != "nan" else "",
+                    "framework": framework if framework != "nan" else "",
                     "invocations": "",
                     "detection_guidance": _DETECTION_CONTEXT["none"],
                     "log_sources": detectable_via if detectable_via != "nan" else "",
@@ -624,12 +632,14 @@ def generate_evidence_report(
     font_col5 = Font(name="Calibri", size=10, color="E0F2FE")
     font_col3 = Font(name="Calibri", size=10, color="CBD5E1")
     font_col6 = Font(name="Calibri", size=10, color="FACC15")
-    font_col7 = Font(name="Courier New", size=10, color="CBD5E1")   # Invocations
-    font_col8 = Font(name="Courier New", size=10, color="CBD5E1")   # Detection Guidance
-    font_col9 = Font(name="Calibri", size=10, color="94A3B8")      # Log Sources
-    font_col10 = Font(name="Calibri", size=10, color="0EA5E9")     # Reference URL
-    font_col11 = Font(name="Calibri", size=10, color="A78BFA")     # Nav Layer URL
-    font_col12 = Font(name="Calibri", size=10, color="F97316")     # Source Type
+    font_col7 = Font(name="Calibri", size=10, color="94A3B8")      # Platforms
+    font_col8 = Font(name="Calibri", size=10, color="94A3B8")      # Framework
+    font_col9 = Font(name="Courier New", size=10, color="CBD5E1")   # Invocations
+    font_col10 = Font(name="Courier New", size=10, color="CBD5E1")  # Detection Guidance
+    font_col11 = Font(name="Calibri", size=10, color="94A3B8")     # Log Sources
+    font_col12 = Font(name="Calibri", size=10, color="0EA5E9")     # Reference URL
+    font_col13 = Font(name="Calibri", size=10, color="A78BFA")     # Nav Layer URL
+    font_col14 = Font(name="Calibri", size=10, color="F97316")     # Source Type
 
     fill_navy = PatternFill(start_color=_BG_NAVY, end_color=_BG_NAVY, fill_type="solid")
     align_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -702,6 +712,8 @@ def generate_evidence_report(
         10: font_col10,
         11: font_col11,
         12: font_col12,
+        13: font_col13,
+        14: font_col14,
     }
 
     for row_idx, item in enumerate(atomised, 4):
@@ -722,6 +734,8 @@ def generate_evidence_report(
             item["technique_id"],
             item["technique_name"],
             item["tactic"],
+            item.get("platforms", ""),
+            item.get("framework", ""),
             item["invocations"],
             item["detection_guidance"],
             item.get("log_sources", ""),
@@ -743,9 +757,9 @@ def generate_evidence_report(
                 cell.font = col_fonts[col_idx]
 
             # Hyperlinks for URL columns
-            if col_idx == 10 and val and val.startswith("http"):
+            if col_idx == 12 and val and val.startswith("http"):
                 cell.hyperlink = val
-            if col_idx == 11 and val and val != "N/A" and val.startswith("http"):
+            if col_idx == 13 and val and val != "N/A" and val.startswith("http"):
                 cell.hyperlink = val
 
         ws.row_dimensions[row_idx].height = 70

@@ -155,7 +155,8 @@ if preset and not columns:
     columns = (
         "group_sw_id,group_sw_name,group_sw_description,"
         "technique_id,technique_name,technique_description,"
-        "tactic,procedure_example,evidence,detectable_via"
+        "tactic,platforms,framework,"
+        "procedure_example,evidence,detectable_via"
     )
 
 attack_version = "16.1"  # Updated to latest version, will auto-fetch latest from TAXII

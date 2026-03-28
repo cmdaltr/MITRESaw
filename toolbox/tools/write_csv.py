@@ -60,7 +60,7 @@ def write_csv_summary(
     # [0]group_id  [1]group_name  [2]technique_id  [3]technique_name
     # [4]usage  [5]-  [6]group_desc  [7]tech_desc  [8]tech_detection
     # [9]tech_platforms  [10]tech_datasources  [11]tech_tactics
-    # [12]evidence_dict (JSON)
+    # [12]framework  [13]evidence_dict (JSON)
     import csv
 
     csv_path = os.path.join(mitresaw_output_directory, "ThreatActors_Techniques.csv")
@@ -69,7 +69,8 @@ def write_csv_summary(
         for dataset in consolidated_techniques:
             parts = dataset.split("||")
             technique_platforms = parts[9] if len(parts) > 9 else ""
-            evidence_json = parts[12] if len(parts) > 12 else "{}"
+            technique_framework = parts[12] if len(parts) > 12 else ""
+            evidence_json = parts[13] if len(parts) > 13 else "{}"
             # Extract primary evidence type for log source mapping
             try:
                 evidence_dict = json.loads(evidence_json)
@@ -117,6 +118,8 @@ def write_csv_summary(
                 parts[3],                        # technique_name
                 _clean_field(parts[7]),           # technique_description
                 parts[11] if len(parts) > 11 else "",  # tactic
+                technique_platforms,             # platforms
+                technique_framework,             # framework
                 _clean_field(parts[4]),           # procedure_example
                 evidence_json,                   # evidence
                 detectable_via,                  # detectable_via

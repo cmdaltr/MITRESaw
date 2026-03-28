@@ -608,6 +608,8 @@ def mainsaw(
             attack_data, groups, platforms, max_workers=10
         )
         for gid, techs in group_techniques_data.items():
+            for tech in techs:
+                tech["framework"] = fw
             all_group_techniques_data.setdefault(gid, []).extend(techs)
         all_group_info_data.update(group_info_data)
     group_techniques_data = all_group_techniques_data
@@ -628,6 +630,7 @@ def mainsaw(
             technique_tactics = ", ".join(technique["tactics"])
             technique_detection = technique.get("detection", "") or ""
             technique_data_sources = technique_datasource_map.get(technique_id, "")
+            technique_framework = technique.get("framework", "")
 
             # Build context string in the format expected by the rest of the tool
             # Format: group_id||group_name||technique_id||technique_name
@@ -668,14 +671,16 @@ def mainsaw(
             # [0]group_id || [1]group_name || [2]technique_id || [3]technique_name ||
             # [4]usage(relationship desc) || [5]- || [6]group_description(terms) ||
             # [7]technique_description || [8]technique_detection ||
-            # [9]technique_platforms || [10]technique_data_sources
+            # [9]technique_platforms || [10]technique_data_sources ||
+            # [11]technique_tactics || [12]framework
+            # extract.py appends [13]evidence_dict (JSON)
             # Sanitize free-text fields to avoid corrupting the || delimiter
             _usage = technique_usage.replace("||", " ")
             _gdesc = group_description.replace("||", " ")
             _tdesc = technique_description.replace("||", " ")
             _tdet = technique_detection.replace("||", " ")
             _ttactics = technique_tactics.replace("||", " ")
-            valid_procedure = f"{group_id}||{group_name}||{technique_id}||{technique_name}||{_usage}||-||{_gdesc}||{_tdesc}||{_tdet}||{technique_platforms}||{technique_data_sources}||{_ttactics}"
+            valid_procedure = f"{group_id}||{group_name}||{technique_id}||{technique_name}||{_usage}||-||{_gdesc}||{_tdesc}||{_tdet}||{technique_platforms}||{technique_data_sources}||{_ttactics}||{technique_framework}"
             valid_procedures.append(valid_procedure)
 
             # Track techniques
@@ -814,7 +819,8 @@ def mainsaw(
             valid_columns = [
                 "group_sw_id", "group_sw_name", "group_sw_description",
                 "technique_id", "technique_name", "technique_description",
-                "tactic", "procedure_example", "evidence", "detectable_via",
+                "tactic", "platforms", "framework",
+                "procedure_example", "evidence", "detectable_via",
                 "keywords",
             ]
             requested_columns = [c.strip() for c in columns.split(",")]

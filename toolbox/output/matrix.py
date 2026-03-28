@@ -45,7 +45,7 @@ def map_log_sources(detectable_threat_actor_technique):
     # [0]group_id  [1]group_name  [2]technique_id  [3]technique_name
     # [4]usage  [5]-  [6]group_desc  [7]tech_desc  [8]tech_detection
     # [9]tech_platforms  [10]tech_datasources  [11]tech_tactics
-    # [12]evidence_dict (JSON)
+    # [12]framework  [13]evidence_dict (JSON)
     log_sources = []
     parts = detectable_threat_actor_technique.split("||")
     group = parts[0]
@@ -56,9 +56,9 @@ def map_log_sources(detectable_threat_actor_technique):
 
     # Parse consolidated evidence dict
     evidence_dict = {}
-    if len(parts) > 12:
+    if len(parts) > 13:
         try:
-            evidence_dict = json.loads(parts[12])
+            evidence_dict = json.loads(parts[13])
         except (json.JSONDecodeError, IndexError):
             evidence_dict = {}
 
@@ -135,7 +135,7 @@ def build_matrix(
         os.path.join(mitresaw_output_directory, "ThreatActors_Techniques.csv"), "w"
     ) as mitresaw_csv:
         mitresaw_csv.write(
-            "group_sw_id,group_sw_name,group_sw_description,technique_id,technique_name,technique_description,tactic,procedure_example,evidence,detectable_via\n"
+            "group_sw_id,group_sw_name,group_sw_description,technique_id,technique_name,technique_description,tactic,platforms,framework,procedure_example,evidence,detectable_via\n"
         )
     mapped_log_sources = []
 
@@ -189,13 +189,13 @@ def build_matrix(
             if matching:
                 # Check if any entry has real evidence (non-empty dict)
                 has_evidence = any(
-                    e.split("||")[12] != "{}" for e in matching if len(e.split("||")) > 12
+                    e.split("||")[13] != "{}" for e in matching if len(e.split("||")) > 13
                 )
                 if has_evidence:
                     marker = "X"
                     for e in matching:
                         ep = e.split("||")
-                        if len(ep) > 12 and ep[12] != "{}":
+                        if len(ep) > 13 and ep[13] != "{}":
                             mapping = map_log_sources(e)
                             mapped_log_sources.append(mapping)
                             break
