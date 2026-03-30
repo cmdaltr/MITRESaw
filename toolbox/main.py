@@ -881,7 +881,6 @@ def mainsaw(
 
         # Generate evidence report if requested
         if evidence_report:
-            import pandas
             csv_path = os.path.join(mitresaw_output_directory, "ThreatActors_Techniques.csv")
             if os.path.exists(csv_path):
                 df = pandas.read_csv(csv_path, on_bad_lines="warn")
