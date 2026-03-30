@@ -361,11 +361,11 @@ def replace_commas_in_group_desc(csv_line):
     )
 
 
-def _collect_and_append_references(xlsx_path, result_rows, all_attack_data):
+def _collect_and_append_references(xlsx_path, consolidated_techniques, all_attack_data):
     """Fetch citation references and append a Reference Detail sheet to the XLSX.
 
-    Resolves (Citation: X) in procedure text → STIX external_references → URL,
-    fetches each URL, extracts relevant content, and writes a new sheet.
+    Uses RAW consolidated_techniques (with citations intact) instead of
+    the cleaned CSV, because _clean_field() strips (Citation: X) markers.
     """
     from toolbox.reference_collector import (
         resolve_citations, collect_reference_content,
@@ -376,7 +376,8 @@ def _collect_and_append_references(xlsx_path, result_rows, all_attack_data):
     print("\n     Collecting citation references...")
 
     # Build a lookup of all external_references from STIX relationships
-    ext_ref_lookup = {}  # (procedure_text_hash) → [external_references]
+    # Key on raw description text (which still contains citations)
+    ext_ref_lookup = {}
     for fw, attack_data in all_attack_data.items():
         stix_path = getattr(attack_data, 'stix_filepath', None) or getattr(attack_data, 'src', None)
         if not stix_path:
@@ -394,21 +395,35 @@ def _collect_and_append_references(xlsx_path, result_rows, all_attack_data):
         except Exception:
             continue
 
-    # Collect references for each row
+    # Parse raw consolidated_techniques to get procedure text WITH citations
+    # Format: [0]group_id||[1]group_name||[2]technique_id||[3]technique_name||
+    #         [4]usage(raw)||...||[12]framework||[13]evidence_json
+    raw_procedures = []
+    for entry in consolidated_techniques:
+        parts = entry.split("||")
+        if len(parts) >= 5:
+            raw_procedures.append({
+                "group": parts[1],
+                "technique_id": parts[2],
+                "technique_name": parts[3],
+                "raw_procedure": parts[4],  # Raw text with citations
+            })
+
+    # Collect references
     all_refs = []
     seen_citations = set()
-    total = len(result_rows)
+    total = len(raw_procedures)
 
-    for i, row in enumerate(result_rows):
-        proc = str(row.get("procedure_example", ""))
-        group = str(row.get("group_sw_name", ""))
-        tid = str(row.get("technique_id", ""))
-        tname = str(row.get("technique_name", ""))
+    for i, row in enumerate(raw_procedures):
+        proc = row["raw_procedure"]
+        group = row["group"]
+        tid = row["technique_id"]
+        tname = row["technique_name"]
 
         # Get STIX external_references for this procedure
         ext_refs = ext_ref_lookup.get(hash(proc), [])
 
-        # Resolve citations from procedure text
+        # Resolve citations from raw procedure text
         citations = resolve_citations(proc, ext_refs)
         if not citations:
             continue
@@ -1050,7 +1065,7 @@ def mainsaw(
                 # Reference collection (-R): fetch citation sources
                 if collect_references:
                     _collect_and_append_references(
-                        _er_path, result_rows, all_attack_data
+                        _er_path, consolidated_techniques, all_attack_data
                     )
 
                 # Move CSV alongside evidence report with matching name
