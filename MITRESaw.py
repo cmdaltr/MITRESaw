@@ -134,7 +134,11 @@ parser.add_argument(
 
 
 args = parser.parse_args()
-attack_frameworks = [f.strip().title() for f in args.framework.split(",")]
+_FRAMEWORK_CANONICAL = {"enterprise": "Enterprise", "ics": "ICS", "mobile": "Mobile"}
+attack_frameworks = [
+    _FRAMEWORK_CANONICAL.get(f.strip().lower(), f.strip().title())
+    for f in args.framework.split(",")
+]
 operating_platforms = [args.platforms]
 search_terms = [args.searchterms]
 provided_groups = [args.threatgroups]
