@@ -361,6 +361,149 @@ def replace_commas_in_group_desc(csv_line):
     )
 
 
+def _collect_and_append_references(xlsx_path, result_rows, all_attack_data):
+    """Fetch citation references and append a Reference Detail sheet to the XLSX.
+
+    Resolves (Citation: X) in procedure text → STIX external_references → URL,
+    fetches each URL, extracts relevant content, and writes a new sheet.
+    """
+    from toolbox.reference_collector import (
+        resolve_citations, collect_reference_content,
+    )
+    from openpyxl import load_workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    print("\n     Collecting citation references...")
+
+    # Build a lookup of all external_references from STIX relationships
+    ext_ref_lookup = {}  # (procedure_text_hash) → [external_references]
+    for fw, attack_data in all_attack_data.items():
+        stix_path = getattr(attack_data, 'stix_filepath', None) or getattr(attack_data, 'src', None)
+        if not stix_path:
+            continue
+        try:
+            import json as _json
+            with open(stix_path) as f:
+                bundle = _json.load(f)
+            for obj in bundle.get("objects", []):
+                if obj.get("type") != "relationship":
+                    continue
+                desc = obj.get("description", "")
+                if desc and obj.get("external_references"):
+                    ext_ref_lookup[hash(desc)] = obj["external_references"]
+        except Exception:
+            continue
+
+    # Collect references for each row
+    all_refs = []
+    seen_citations = set()
+    total = len(result_rows)
+
+    for i, row in enumerate(result_rows):
+        proc = str(row.get("procedure_example", ""))
+        group = str(row.get("group_sw_name", ""))
+        tid = str(row.get("technique_id", ""))
+        tname = str(row.get("technique_name", ""))
+
+        # Get STIX external_references for this procedure
+        ext_refs = ext_ref_lookup.get(hash(proc), [])
+
+        # Resolve citations from procedure text
+        citations = resolve_citations(proc, ext_refs)
+        if not citations:
+            continue
+
+        for cit in citations:
+            cit_key = (cit["citation_name"], tid)
+            if cit_key in seen_citations:
+                continue
+            seen_citations.add(cit_key)
+
+            # Fetch and extract content
+            fetched = collect_reference_content(
+                [cit], group, tname, tid, verbose=True,
+            )
+            for ref in fetched:
+                ref["group"] = group
+                ref["technique_id"] = tid
+                ref["technique_name"] = tname
+                all_refs.append(ref)
+
+        if (i + 1) % 50 == 0:
+            print(f"       [{i+1}/{total}] {len(all_refs)} citations collected")
+
+    if not all_refs:
+        print("     No citation references found.")
+        return
+
+    with_content = sum(1 for r in all_refs if r.get("extracted_content"))
+    print(f"     {len(all_refs)} citations collected, {with_content} with extracted content")
+
+    # Append Reference Detail sheet to the existing XLSX
+    wb = load_workbook(xlsx_path)
+    ws = wb.create_sheet("Reference Detail")
+    ws.sheet_view.showGridLines = False
+
+    border = Border(
+        left=Side(style="thin", color="1E3A5F"),
+        right=Side(style="thin", color="1E3A5F"),
+        top=Side(style="thin", color="1E3A5F"),
+        bottom=Side(style="thin", color="1E3A5F"),
+    )
+    fill_navy = PatternFill(start_color="0D1B2A", end_color="0D1B2A", fill_type="solid")
+    font_header = Font(name="Calibri", size=12, bold=True, color="E0F2FE")
+    font_data = Font(name="Calibri", size=10, color="CBD5E1")
+    font_url = Font(name="Calibri", size=10, color="0EA5E9")
+    align_wrap = Alignment(wrap_text=True, vertical="center", horizontal="left")
+    align_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    headers = ["Threat Group", "Technique ID", "Technique Name",
+               "Citation Name", "Source URL", "Source Description",
+               "Extracted Content", "Status"]
+    widths = [22, 14, 28, 30, 55, 50, 80, 14]
+
+    for ci, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=ci, value=h)
+        cell.font = font_header
+        cell.fill = fill_navy
+        cell.alignment = align_center
+        cell.border = border
+    for ci, w in enumerate(widths, 1):
+        from openpyxl.utils import get_column_letter
+        ws.column_dimensions[get_column_letter(ci)].width = w
+    ws.row_dimensions[1].height = 32
+
+    for ri, ref in enumerate(all_refs, 2):
+        bg = "0F1C2E" if ri % 2 == 0 else "0A1220"
+        row_fill = PatternFill(start_color=bg, end_color=bg, fill_type="solid")
+        values = [
+            ref.get("group", ""),
+            ref.get("technique_id", ""),
+            ref.get("technique_name", ""),
+            ref.get("citation_name", ""),
+            ref.get("url", ""),
+            ref.get("description", ""),
+            ref.get("extracted_content", ""),
+            ref.get("status", ""),
+        ]
+        for ci, val in enumerate(values, 1):
+            cell = ws.cell(row=ri, column=ci, value=val)
+            cell.font = font_url if ci == 5 else font_data
+            cell.fill = row_fill
+            cell.alignment = align_wrap
+            cell.border = border
+            if ci == 5 and val and val.startswith("http"):
+                cell.hyperlink = val
+        ws.row_dimensions[ri].height = 90
+
+    ws.freeze_panes = "A2"
+    if all_refs:
+        ws.auto_filter.ref = f"A1:H{1 + len(all_refs)}"
+
+    wb.save(xlsx_path)
+    print(f"     Reference Detail sheet added ({len(all_refs)} citations)")
+
+
 def mainsaw(
     operating_platforms,
     search_terms,
@@ -907,6 +1050,13 @@ def mainsaw(
                     searchterms_arg=",".join(str(s) for s in search_terms),
                     threatgroups_arg=",".join(str(g) for g in provided_groups),
                 )
+
+                # Reference collection (-R): fetch citation sources
+                if collect_references:
+                    _collect_and_append_references(
+                        _er_path, result_rows, all_attack_data
+                    )
+
                 # Move CSV alongside evidence report with matching name
                 import shutil
                 _csv_dest = os.path.join(_er_dir, "mitre_procedures.csv")
