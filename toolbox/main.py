@@ -893,16 +893,14 @@ def mainsaw(
         technique_combos.append(technique_combo)
     last_group_name = None
     _total_procedures = len(consolidated_procedures)
-    print(f"\n     Processing {_total_procedures} procedures...\n")
-    _progress_bar._start = None  # reset timer
+    if quiet:
+        print(f"\n     Processing {_total_procedures} procedures...\n")
+        _progress_bar._start = None
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         current_group_name = each_procedure.split("||")[1]
-        if last_group_name and current_group_name != last_group_name:
-            if quiet:
-                # Clear progress bar line before printing group completion
-                print(f"\r   \033[1;31m{last_group_name.ljust(25)}\033[0m | Completed" + " " * 40)
         last_group_name = current_group_name
-        _progress_bar(_proc_idx, _total_procedures, current_group_name)
+        if quiet:
+            _progress_bar(_proc_idx, _total_procedures, current_group_name)
         (
             technique_findings,
             previous_findings,
@@ -945,9 +943,9 @@ def mainsaw(
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
     )
-    # Clear progress bar and print completion
-    _progress_bar(_total_procedures, _total_procedures, "Complete")
-    print()  # newline after progress bar
+    if quiet:
+        _progress_bar(_total_procedures, _total_procedures, "Complete")
+        print()
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
 
