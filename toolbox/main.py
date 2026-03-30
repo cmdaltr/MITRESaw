@@ -854,7 +854,8 @@ def mainsaw(
                 else:
                     filtered_path = os.path.join(filtered_dir, f"{filtered_base_name}.csv")
                     df.to_csv(filtered_path, index=False)
-                print(f"      Filtered export written to {filtered_path}")
+                if not evidence_report:
+                    print(f"      Filtered export written to {filtered_path}")
 
         mitresaw_techniques = re.findall(
             r"\|\|(T\d{3}[\d\.]+)\|\|", str(consolidated_techniques)
