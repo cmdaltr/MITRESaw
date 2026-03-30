@@ -15,17 +15,30 @@ from typing import Dict, List, Tuple, Set
 from mitreattack.stix20 import MitreAttackData
 
 
-def _progress_bar(current, total, label="", bar_width=30):
-    """Draw a progress bar pinned to the bottom of the terminal.
+def _progress_setup():
+    """Reserve the bottom 2 rows for the progress bar by setting a scroll region.
 
-    Uses ANSI escape sequences:
-      \\033[s        — save cursor position
-      \\033[<row>;1H — move to row, column 1
-      \\033[K        — clear the line
-      \\033[u        — restore cursor position
-
-    Normal output scrolls above; the bar stays fixed at the bottom.
+    ANSI escape: \\033[<top>;<bottom>r — set scroll region to rows top..bottom.
+    All subsequent print/stdout output stays within the scroll region.
+    The bottom rows are outside it, so they persist.
     """
+    try:
+        tw = os.get_terminal_size().columns
+        th = os.get_terminal_size().lines
+    except OSError:
+        tw, th = 120, 40
+    # Set scroll region to rows 1..(th-2), leaving bottom 2 rows for the bar
+    sys.stdout.write(f"\033[1;{th - 2}r")
+    # Move cursor into the scroll region
+    sys.stdout.write(f"\033[{th - 2};1H")
+    # Draw separator and blank bar on reserved rows
+    sys.stdout.write(f"\033[s\033[{th - 1};1H\033[K\033[90m{'─' * tw}\033[0m\033[{th};1H\033[K\033[u")
+    sys.stdout.flush()
+    _progress_bar._start = None
+
+
+def _progress_bar(current, total, label="", bar_width=30):
+    """Update the progress bar on the reserved bottom row."""
     if total == 0:
         return
     try:
@@ -50,18 +63,22 @@ def _progress_bar(current, total, label="", bar_width=30):
 
     status = f" {bar} {current}/{total} ({pct:.0%}) ETA: {eta_str}  {label}"
 
-    # Save cursor, jump to bottom row, draw bar, restore cursor
-    sys.stdout.write(f"\033[s\033[{th};1H\033[K\033[90m{'─' * tw}\033[0m\033[{th};1H{status[:tw]}\033[u")
+    # Save cursor, draw on bottom row, restore cursor
+    sys.stdout.write(f"\033[s\033[{th};1H\033[K{status[:tw]}\033[u")
     sys.stdout.flush()
 
 
 def _progress_bar_clear():
-    """Remove the pinned progress bar from the bottom of the terminal."""
+    """Remove the progress bar and restore full terminal scroll region."""
     try:
+        tw = os.get_terminal_size().columns
         th = os.get_terminal_size().lines
     except OSError:
-        th = 40
-    sys.stdout.write(f"\033[s\033[{th};1H\033[K\033[u")
+        tw, th = 120, 40
+    # Clear the reserved rows
+    sys.stdout.write(f"\033[s\033[{th - 1};1H\033[K\033[{th};1H\033[K\033[u")
+    # Reset scroll region to full terminal
+    sys.stdout.write(f"\033[1;{th}r")
     sys.stdout.flush()
     _progress_bar._start = None
 from stix2 import TAXIICollectionSource, Filter
@@ -465,7 +482,7 @@ def _collect_and_append_references(xlsx_path, consolidated_techniques, all_attac
     seen_citations = set()
     total = len(raw_procedures)
 
-    _progress_bar._start = None
+    _progress_setup()
     for i, row in enumerate(raw_procedures, 1):
         proc = row["raw_procedure"]
         group = row["group"]
@@ -914,7 +931,7 @@ def mainsaw(
         technique_combos.append(technique_combo)
     last_group_name = None
     _total_procedures = len(consolidated_procedures)
-    _progress_bar._start = None
+    _progress_setup()
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         current_group_name = each_procedure.split("||")[1]
         last_group_name = current_group_name
