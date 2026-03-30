@@ -22,11 +22,18 @@ from urllib.parse import urlparse
 # ---------------------------------------------------------------------------
 
 CACHE_DIR = Path(".reference_cache")
-REQUEST_TIMEOUT = 15       # seconds
+REQUEST_TIMEOUT = 20       # seconds
 RATE_LIMIT_DELAY = 0.3     # seconds between fetches
 MAX_CONTENT_CHARS = 80000  # max chars to keep from a page
 MAX_RELEVANT_CHARS = 4000  # max chars per reference in output
-USER_AGENT = "MITRESaw-ReferenceCollector/1.0 (security research)"
+
+# Rotate realistic browser User-Agents to avoid bot detection
+_USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0",
+]
 
 # Domains that block automated requests or require auth
 _SKIP_DOMAINS = frozenset([
@@ -148,29 +155,57 @@ def _should_skip_url(url: str) -> bool:
 
 
 def _fetch_url(url: str) -> str:
-    """Fetch a URL and return extracted text. Returns empty string on failure."""
+    """Fetch a URL and return extracted text. Returns empty string on failure.
+
+    Uses realistic browser headers, SSL fallback, and retry on failure.
+    """
+    import random
     import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
 
-    try:
-        resp = requests.get(
-            url,
-            timeout=REQUEST_TIMEOUT,
-            headers={
-                "User-Agent": USER_AGENT,
-                "Accept": "text/html,application/xhtml+xml,*/*",
-            },
-            allow_redirects=True,
-        )
-        if resp.status_code != 200:
+    headers = {
+        "User-Agent": random.choice(_USER_AGENTS),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "DNT": "1",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+    }
+
+    # Session with retry and backoff
+    session = requests.Session()
+    retry = Retry(total=2, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+    session.mount("https://", HTTPAdapter(max_retries=retry))
+    session.mount("http://", HTTPAdapter(max_retries=retry))
+
+    for verify_ssl in (True, False):
+        try:
+            resp = session.get(
+                url,
+                timeout=REQUEST_TIMEOUT,
+                headers=headers,
+                allow_redirects=True,
+                verify=verify_ssl,
+            )
+            if resp.status_code == 200:
+                content_type = resp.headers.get("Content-Type", "").lower()
+                if "html" in content_type or "text" in content_type:
+                    return html_to_text(resp.text[:MAX_CONTENT_CHARS])
+                return ""
+            # If 403/401 on first try with SSL, retry without (corporate proxy)
+            if resp.status_code in (403, 401) and verify_ssl:
+                continue
+            return ""
+        except requests.exceptions.SSLError:
+            if verify_ssl:
+                continue  # Retry without SSL verification
+            return ""
+        except Exception:
             return ""
 
-        content_type = resp.headers.get("Content-Type", "").lower()
-        if "html" in content_type or "text" in content_type:
-            return html_to_text(resp.text[:MAX_CONTENT_CHARS])
-        else:
-            return ""
-    except Exception:
-        return ""
+    return ""
 
 
 # ---------------------------------------------------------------------------
