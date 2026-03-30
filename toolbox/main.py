@@ -16,32 +16,54 @@ from mitreattack.stix20 import MitreAttackData
 
 
 def _progress_bar(current, total, label="", bar_width=30):
-    """Print an inline progress bar that overwrites itself."""
+    """Draw a progress bar pinned to the bottom of the terminal.
+
+    Uses ANSI escape sequences:
+      \\033[s        — save cursor position
+      \\033[<row>;1H — move to row, column 1
+      \\033[K        — clear the line
+      \\033[u        — restore cursor position
+
+    Normal output scrolls above; the bar stays fixed at the bottom.
+    """
     if total == 0:
         return
+    try:
+        tw = os.get_terminal_size().columns
+        th = os.get_terminal_size().lines
+    except OSError:
+        tw, th = 120, 40
+
     pct = current / total
     filled = int(bar_width * pct)
     bar = "\033[36m" + "█" * filled + "\033[90m" + "░" * (bar_width - filled) + "\033[0m"
-    elapsed = getattr(_progress_bar, "_start", None)
+
     now = time.time()
-    if elapsed is None or current <= 1:
+    if getattr(_progress_bar, "_start", None) is None or current <= 1:
         _progress_bar._start = now
-        elapsed = now
-    else:
-        elapsed = _progress_bar._start
-    secs = now - elapsed
+    secs = now - _progress_bar._start
     if current > 0 and secs > 0:
         eta = (secs / current) * (total - current)
         eta_str = f"{int(eta // 60)}m{int(eta % 60):02d}s" if eta >= 60 else f"{int(eta)}s"
     else:
         eta_str = "..."
-    status = f"\r     {bar} {current}/{total} ({pct:.0%}) ETA: {eta_str}  {label}"
-    # Pad to overwrite previous line
+
+    status = f" {bar} {current}/{total} ({pct:.0%}) ETA: {eta_str}  {label}"
+
+    # Save cursor, jump to bottom row, draw bar, restore cursor
+    sys.stdout.write(f"\033[s\033[{th};1H\033[K\033[90m{'─' * tw}\033[0m\033[{th};1H{status[:tw]}\033[u")
+    sys.stdout.flush()
+
+
+def _progress_bar_clear():
+    """Remove the pinned progress bar from the bottom of the terminal."""
     try:
-        tw = os.get_terminal_size().columns
+        th = os.get_terminal_size().lines
     except OSError:
-        tw = 120
-    print(status.ljust(tw)[:tw], end="", flush=True)
+        th = 40
+    sys.stdout.write(f"\033[s\033[{th};1H\033[K\033[u")
+    sys.stdout.flush()
+    _progress_bar._start = None
 from stix2 import TAXIICollectionSource, Filter
 from taxii2client.v20 import Server, Collection
 
@@ -476,8 +498,7 @@ def _collect_and_append_references(xlsx_path, consolidated_techniques, all_attac
                 ref["technique_name"] = tname
                 all_refs.append(ref)
 
-    _progress_bar(total, total, f"{len(all_refs)} citations — Complete")
-    print()
+    _progress_bar_clear()
 
     if not all_refs:
         print("     No citation references found.")
@@ -893,14 +914,11 @@ def mainsaw(
         technique_combos.append(technique_combo)
     last_group_name = None
     _total_procedures = len(consolidated_procedures)
-    if quiet:
-        print(f"\n     Processing {_total_procedures} procedures...\n")
-        _progress_bar._start = None
+    _progress_bar._start = None
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         current_group_name = each_procedure.split("||")[1]
         last_group_name = current_group_name
-        if quiet:
-            _progress_bar(_proc_idx, _total_procedures, current_group_name)
+        _progress_bar(_proc_idx, _total_procedures, current_group_name)
         (
             technique_findings,
             previous_findings,
@@ -943,9 +961,7 @@ def mainsaw(
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
     )
-    if quiet:
-        _progress_bar(_total_procedures, _total_procedures, "Complete")
-        print()
+    _progress_bar_clear()
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
 
