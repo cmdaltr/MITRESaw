@@ -13,6 +13,35 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Tuple, Set
 
 from mitreattack.stix20 import MitreAttackData
+
+
+def _progress_bar(current, total, label="", bar_width=30):
+    """Print an inline progress bar that overwrites itself."""
+    if total == 0:
+        return
+    pct = current / total
+    filled = int(bar_width * pct)
+    bar = "\033[36m" + "█" * filled + "\033[90m" + "░" * (bar_width - filled) + "\033[0m"
+    elapsed = getattr(_progress_bar, "_start", None)
+    now = time.time()
+    if elapsed is None or current <= 1:
+        _progress_bar._start = now
+        elapsed = now
+    else:
+        elapsed = _progress_bar._start
+    secs = now - elapsed
+    if current > 0 and secs > 0:
+        eta = (secs / current) * (total - current)
+        eta_str = f"{int(eta // 60)}m{int(eta % 60):02d}s" if eta >= 60 else f"{int(eta)}s"
+    else:
+        eta_str = "..."
+    status = f"\r     {bar} {current}/{total} ({pct:.0%}) ETA: {eta_str}  {label}"
+    # Pad to overwrite previous line
+    try:
+        tw = os.get_terminal_size().columns
+    except OSError:
+        tw = 120
+    print(status.ljust(tw)[:tw], end="", flush=True)
 from stix2 import TAXIICollectionSource, Filter
 from taxii2client.v20 import Server, Collection
 
@@ -414,11 +443,14 @@ def _collect_and_append_references(xlsx_path, consolidated_techniques, all_attac
     seen_citations = set()
     total = len(raw_procedures)
 
-    for i, row in enumerate(raw_procedures):
+    _progress_bar._start = None
+    for i, row in enumerate(raw_procedures, 1):
         proc = row["raw_procedure"]
         group = row["group"]
         tid = row["technique_id"]
         tname = row["technique_name"]
+
+        _progress_bar(i, total, f"{len(all_refs)} citations")
 
         # Get STIX external_references for this procedure
         ext_refs = ext_ref_lookup.get(hash(proc), [])
@@ -436,7 +468,7 @@ def _collect_and_append_references(xlsx_path, consolidated_techniques, all_attac
 
             # Fetch and extract content
             fetched = collect_reference_content(
-                [cit], group, tname, tid, verbose=True,
+                [cit], group, tname, tid, verbose=False,
             )
             for ref in fetched:
                 ref["group"] = group
@@ -444,8 +476,8 @@ def _collect_and_append_references(xlsx_path, consolidated_techniques, all_attac
                 ref["technique_name"] = tname
                 all_refs.append(ref)
 
-        if (i + 1) % 50 == 0:
-            print(f"       [{i+1}/{total}] {len(all_refs)} citations collected")
+    _progress_bar(total, total, f"{len(all_refs)} citations — Complete")
+    print()
 
     if not all_refs:
         print("     No citation references found.")
@@ -860,19 +892,17 @@ def mainsaw(
         technique_combo = [parent_technique, sub_technique, technique_count]
         technique_combos.append(technique_combo)
     last_group_name = None
-    for each_procedure in consolidated_procedures:
+    _total_procedures = len(consolidated_procedures)
+    print(f"\n     Processing {_total_procedures} procedures...\n")
+    _progress_bar._start = None  # reset timer
+    for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         current_group_name = each_procedure.split("||")[1]
         if last_group_name and current_group_name != last_group_name:
-            try:
-                tw = os.get_terminal_size().columns
-            except OSError:
-                tw = 160
-            w_ind = max(20, tw - 25 - 55 - 12)
             if quiet:
-                print(f"   \033[1;31m{last_group_name.ljust(25)}\033[0m | Completed")
-                print(f"   {'=' * 25} | {'=' * 55} | {'=' * (w_ind + 3)}")
-            time.sleep(0.5)
+                # Clear progress bar line before printing group completion
+                print(f"\r   \033[1;31m{last_group_name.ljust(25)}\033[0m | Completed" + " " * 40)
         last_group_name = current_group_name
+        _progress_bar(_proc_idx, _total_procedures, current_group_name)
         (
             technique_findings,
             previous_findings,
@@ -915,14 +945,9 @@ def mainsaw(
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
     )
-    if quiet and last_group_name:
-        try:
-            tw = os.get_terminal_size().columns
-        except OSError:
-            tw = 160
-        w_ind = max(20, tw - 25 - 55 - 12)
-        print(f"   \033[1;31m{last_group_name.ljust(25)}\033[0m | Completed")
-        print(f"   {'=' * 25} | {'=' * 55} | {'=' * (w_ind + 3)}")
+    # Clear progress bar and print completion
+    _progress_bar(_total_procedures, _total_procedures, "Complete")
+    print()  # newline after progress bar
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
 
