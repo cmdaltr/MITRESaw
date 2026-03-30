@@ -457,10 +457,9 @@ def _collect_and_append_references(xlsx_path, result_rows, all_attack_data):
     align_wrap = Alignment(wrap_text=True, vertical="center", horizontal="left")
     align_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    headers = ["Threat Group", "Technique ID", "Technique Name",
-               "Citation Name", "Source URL", "Source Description",
+    headers = ["Citation Name", "Source URL", "Source Description",
                "Extracted Content", "Status"]
-    widths = [22, 14, 28, 30, 55, 50, 80, 14]
+    widths = [30, 55, 50, 80, 14]
 
     for ci, h in enumerate(headers, 1):
         cell = ws.cell(row=1, column=ci, value=h)
@@ -477,9 +476,6 @@ def _collect_and_append_references(xlsx_path, result_rows, all_attack_data):
         bg = "0F1C2E" if ri % 2 == 0 else "0A1220"
         row_fill = PatternFill(start_color=bg, end_color=bg, fill_type="solid")
         values = [
-            ref.get("group", ""),
-            ref.get("technique_id", ""),
-            ref.get("technique_name", ""),
             ref.get("citation_name", ""),
             ref.get("url", ""),
             ref.get("description", ""),
@@ -488,17 +484,17 @@ def _collect_and_append_references(xlsx_path, result_rows, all_attack_data):
         ]
         for ci, val in enumerate(values, 1):
             cell = ws.cell(row=ri, column=ci, value=val)
-            cell.font = font_url if ci == 5 else font_data
+            cell.font = font_url if ci == 2 else font_data
             cell.fill = row_fill
             cell.alignment = align_wrap
             cell.border = border
-            if ci == 5 and val and val.startswith("http"):
+            if ci == 2 and val and val.startswith("http"):
                 cell.hyperlink = val
         ws.row_dimensions[ri].height = 90
 
     ws.freeze_panes = "A2"
     if all_refs:
-        ws.auto_filter.ref = f"A1:H{1 + len(all_refs)}"
+        ws.auto_filter.ref = f"A1:E{1 + len(all_refs)}"
 
     wb.save(xlsx_path)
     print(f"     Reference Detail sheet added ({len(all_refs)} citations)")
