@@ -860,42 +860,16 @@ def mainsaw(
         if _citation_url_lookup:
             print(f"    -> {len(_citation_url_lookup)} unique citation sources indexed for collection\n")
 
-    # Sort by group name so all procedures for the same group are contiguous
     consolidated_procedures = sorted(consolidated_procedures, key=lambda p: p.split("||")[1].strip().lower())
 
     last_group_name = None
-    _last_group_key = None
     _total_procedures = len(consolidated_procedures)
     _pb_extract = _ProgressBar("Processing:")
-    _pending_cits = []  # citations for current group+technique
-
-    def _flush_pending_cits():
-        if not _pending_cits:
-            return
-        _pad = "     Citations: "
-        _cont = "                "
-        for _ci, _ref in enumerate(_pending_cits, 1):
-            _method = _ref.get("method", "unknown")
-            _icon = "\033[32m\u2705\033[0m" if _ref.get("extracted_content") else "\033[31m\u274c\033[0m"
-            _name = _ref.get("citation_name", "")[:28].ljust(28)
-            _method_short = _method[:14].ljust(14)
-            _url = _ref.get("url", "")
-            _url_part = f" - {_url[:65]}" if _url else ""
-            _prefix = _pad if _ci == 1 else _cont
-            print(f"{_prefix}\033[90m#{_ci}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
-        print()
-        _pending_cits.clear()
+    _cit_counter = {}  # (group_lower, tname_lower) → running count
 
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         _proc_parts = each_procedure.split("||")
         current_group_name = _proc_parts[1]
-        _current_group_key = current_group_name.strip().lower()
-
-        # When group changes, flush citations from previous group
-        if _last_group_key and _current_group_key != _last_group_key:
-            _flush_pending_cits()
-
-        _last_group_key = _current_group_key
         last_group_name = current_group_name
         if quiet:
             _cit_label = f"{current_group_name} ({len(_all_citation_refs)} refs)" if collect_citations else current_group_name
@@ -971,10 +945,26 @@ def mainsaw(
                         _ref["technique_id"] = _tid
                         _ref["technique_name"] = _tname
                         _all_citation_refs.append(_ref)
-                        _pending_cits.append(_ref)
+                        _new_cits.append(_ref)
 
-    # Flush citations from the last group+technique
-    _flush_pending_cits()
+            # Print citations immediately after this procedure's technique output
+            if _new_cits:
+                _gt_key = (_group.strip().lower(), _tname.strip().lower())
+                _start_num = _cit_counter.get(_gt_key, 0)
+                _pad = "     Citations: "
+                _cont = "                "
+                for _ci, _ref in enumerate(_new_cits):
+                    _num = _start_num + _ci + 1
+                    _method = _ref.get("method", "unknown")
+                    _icon = "\033[32m\u2705\033[0m" if _ref.get("extracted_content") else "\033[31m\u274c\033[0m"
+                    _name = _ref.get("citation_name", "")[:28].ljust(28)
+                    _method_short = _method[:14].ljust(14)
+                    _url = _ref.get("url", "")
+                    _url_part = f" - {_url[:65]}" if _url else ""
+                    _prefix = _pad if _ci == 0 and _start_num == 0 else _cont
+                    print(f"{_prefix}\033[90m#{_num}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
+                _cit_counter[_gt_key] = _start_num + len(_new_cits)
+                print()
 
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
