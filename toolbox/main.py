@@ -973,8 +973,7 @@ def mainsaw(
 
             # Print citations immediately after this procedure's technique output
             if _new_cits:
-                _pad = "     Citations: "
-                _cont = "                "
+                _indent = "          "
                 for _ref in _new_cits:
                     _cit_num += 1
                     _cn = _ref.get("citation_name", "")
@@ -985,8 +984,7 @@ def mainsaw(
                     _method_short = _method[:14].ljust(14)
                     _url = _ref.get("url", "")
                     _url_part = f" - {_url[:65]}" if _url else ""
-                    _prefix = _pad if _cit_num == 1 else _cont
-                    print(f"{_prefix}\033[90m{_num_str:>5}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
+                    print(f"{_indent}\033[90m{_num_str:>5}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
 
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
