@@ -978,9 +978,7 @@ def mainsaw(
                 for _ref in _new_cits:
                     _cit_num += 1
                     _cn = _ref.get("citation_name", "")
-                    # Use MITRE reference number if available
-                    _mitre_num = _mitre_ref_numbers.get((current_group_name.strip().lower(), _cn))
-                    _num_str = f"[{_mitre_num}]" if _mitre_num else f"#{_cit_num}"
+                    _num_str = f"[{_cit_num}]"
                     _method = _ref.get("method", "unknown")
                     _icon = "\033[32m\u2705\033[0m" if _ref.get("extracted_content") else "\033[31m\u274c\033[0m"
                     _name = _cn[:28].ljust(28)
