@@ -860,7 +860,11 @@ def mainsaw(
         if _citation_url_lookup:
             print(f"    -> {len(_citation_url_lookup)} unique citation sources indexed for collection\n")
 
-    consolidated_procedures = sorted(consolidated_procedures, key=lambda p: p.split("||")[1].strip().lower())
+    # Sort by (group, technique_name) so procedures for the same group+technique are contiguous
+    consolidated_procedures = sorted(consolidated_procedures, key=lambda p: (
+        p.split("||")[1].strip().lower(),
+        p.split("||")[3].strip().lower() if len(p.split("||")) > 3 else "",
+    ))
 
     last_group_name = None
     _total_procedures = len(consolidated_procedures)
