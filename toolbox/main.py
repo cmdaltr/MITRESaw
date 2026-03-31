@@ -846,10 +846,9 @@ def mainsaw(
                 import json as _json
                 with open(_sp) as _f:
                     _bundle = _json.load(_f)
-                # Build citation URL lookup from relationships
+                # Build citation URL lookup from ALL STIX objects
+                # (relationships, techniques, groups, software, campaigns)
                 for _obj in _bundle.get("objects", []):
-                    if _obj.get("type") != "relationship":
-                        continue
                     for _ref in _obj.get("external_references", []):
                         _sn = _ref.get("source_name", "")
                         if _sn and _sn != "mitre-attack" and _sn not in _citation_url_lookup:
@@ -942,7 +941,13 @@ def mainsaw(
             _tid = _parts[2] if len(_parts) > 2 else ""
             _tname = _parts[3] if len(_parts) > 3 else ""
 
-            _cit_names = re.findall(r"\(Citation:\s*([^)]+)\)", _raw_proc)
+            # Collect citations from procedure text, technique description, and detection guidance
+            _all_text = _raw_proc
+            if len(_parts) > 7:
+                _all_text += " " + _parts[7]  # technique_description
+            if len(_parts) > 8:
+                _all_text += " " + _parts[8]  # technique_detection
+            _cit_names = list(dict.fromkeys(re.findall(r"\(Citation:\s*([^)]+)\)", _all_text)))
             _new_cits = []
             if _cit_names:
                 from toolbox.citation_collector import collect_reference_content
