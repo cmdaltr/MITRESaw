@@ -865,7 +865,7 @@ def mainsaw(
     last_group_name = None
     _total_procedures = len(consolidated_procedures)
     _pb_extract = _ProgressBar("Processing:")
-    _cit_counter = {}  # (group_lower, tname_lower) → running count
+    _cit_counter = {}  # group_lower → running count
 
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         _proc_parts = each_procedure.split("||")
@@ -928,9 +928,11 @@ def mainsaw(
                 from toolbox.citation_collector import collect_reference_content
                 for _cn in _cit_names:
                     _cn = _cn.strip()
-                    if _cn in _seen_citations:
+                    # Dedup display per (group, citation) — same citation shows under each group
+                    _display_key = (_group.strip().lower(), _cn)
+                    if _display_key in _seen_citations:
                         continue
-                    _seen_citations.add(_cn)
+                    _seen_citations.add(_display_key)
 
                     _ref_data = _citation_url_lookup.get(_cn, {})
                     _cit = {
@@ -938,6 +940,7 @@ def mainsaw(
                         "url": _ref_data.get("url", ""),
                         "description": _ref_data.get("description", ""),
                     }
+                    # collect_reference_content uses disk cache, so already-fetched URLs are instant
                     _fetched = collect_reference_content(
                         [_cit], _group, _tname, _tid, verbose=False,
                     )
@@ -950,8 +953,8 @@ def mainsaw(
 
             # Print citations immediately after this procedure's technique output
             if _new_cits:
-                _gt_key = (_group.strip().lower(), _tname.strip().lower())
-                _start_num = _cit_counter.get(_gt_key, 0)
+                _g_key = _group.strip().lower()
+                _start_num = _cit_counter.get(_g_key, 0)
                 _pad = "     Citations: "
                 _cont = "                "
                 for _ci, _ref in enumerate(_new_cits):
@@ -964,7 +967,7 @@ def mainsaw(
                     _url_part = f" - {_url[:65]}" if _url else ""
                     _prefix = _pad if _ci == 0 and _start_num == 0 else _cont
                     print(f"{_prefix}\033[90m#{_num}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
-                _cit_counter[_gt_key] = _start_num + len(_new_cits)
+                _cit_counter[_g_key] = _start_num + len(_new_cits)
                 print()
 
     threat_actor_technique_id_name_findings = list(
