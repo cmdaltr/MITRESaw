@@ -863,8 +863,33 @@ def mainsaw(
     last_group_name = None
     _total_procedures = len(consolidated_procedures)
     _pb_extract = _ProgressBar("Processing:")
+    _pending_cits = []  # Buffer citations, flush when group changes
+
+    def _flush_pending_cits():
+        """Print buffered citations and clear the buffer."""
+        if not _pending_cits:
+            return
+        _pad = "     Citations: "
+        _cont = "                "
+        for _ci, _ref in enumerate(_pending_cits, 1):
+            _method = _ref.get("method", "unknown")
+            _icon = "\033[32m\u2705\033[0m" if _ref.get("extracted_content") else "\033[31m\u274c\033[0m"
+            _name = _ref.get("citation_name", "")[:28].ljust(28)
+            _method_short = _method[:14].ljust(14)
+            _url = _ref.get("url", "")
+            _url_part = f" - {_url[:65]}" if _url else ""
+            _prefix = _pad if _ci == 1 else _cont
+            print(f"{_prefix}\033[90m#{_ci}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
+        print()
+        _pending_cits.clear()
+
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         current_group_name = each_procedure.split("||")[1]
+
+        # When group changes, flush buffered citations from previous group
+        if last_group_name and current_group_name != last_group_name:
+            _flush_pending_cits()
+
         last_group_name = current_group_name
         if quiet:
             _cit_label = f"{current_group_name} ({len(_all_citation_refs)} refs)" if collect_citations else current_group_name
@@ -883,7 +908,7 @@ def mainsaw(
         )
         threat_actor_technique_id_name_findings = []
 
-        # constructing sub-technique pairing due to format of sub-techniques in mitre output files e.g. T1566.001||Spearphishing Attachment
+        # constructing sub-technique pairing
         for technique_found in technique_findings:
             threat_actor_found = technique_found.split("||")[1]
             technique_id_found = technique_found.split("||")[2]
@@ -909,7 +934,7 @@ def mainsaw(
                 threat_actor_technique_id_name_found
             )
 
-        # Collect citations AFTER technique output is printed (if -C enabled)
+        # Collect citations silently into buffer (if -C enabled)
         if collect_citations and _citation_url_lookup:
             _parts = each_procedure.split("||")
             _raw_proc = _parts[4] if len(_parts) > 4 else ""
@@ -918,7 +943,6 @@ def mainsaw(
             _tname = _parts[3] if len(_parts) > 3 else ""
 
             _cit_names = re.findall(r"\(Citation:\s*([^)]+)\)", _raw_proc)
-            _new_cits = []
             if _cit_names:
                 from toolbox.citation_collector import collect_reference_content
                 for _cn in _cit_names:
@@ -941,21 +965,10 @@ def mainsaw(
                         _ref["technique_id"] = _tid
                         _ref["technique_name"] = _tname
                         _all_citation_refs.append(_ref)
-                        _new_cits.append(_ref)
+                        _pending_cits.append(_ref)
 
-            if _new_cits:
-                _pad = "     Citations: "
-                _cont = "                "
-                for _ci, _ref in enumerate(_new_cits, 1):
-                    _method = _ref.get("method", "unknown")
-                    _icon = "\033[32m\u2705\033[0m" if _ref.get("extracted_content") else "\033[31m\u274c\033[0m"
-                    _name = _ref.get("citation_name", "")[:28].ljust(28)
-                    _method_short = _method[:14].ljust(14)
-                    _url = _ref.get("url", "")
-                    _url_part = f" - {_url[:65]}" if _url else ""
-                    _prefix = _pad if _ci == 1 else _cont
-                    print(f"{_prefix}\033[90m#{_ci}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
-                print()
+    # Flush any remaining citations from the last group
+    _flush_pending_cits()
 
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
