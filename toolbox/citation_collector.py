@@ -31,17 +31,22 @@ from urllib.parse import quote, urlparse
 # ---------------------------------------------------------------------------
 
 CACHE_DIR = Path(".citation_cache")
-REQUEST_TIMEOUT = 20
-RATE_LIMIT_DELAY = 0.3
+REQUEST_TIMEOUT = 25
+WAYBACK_TIMEOUT = 15
+RATE_LIMIT_DELAY = 1.5   # seconds between requests to same domain
+RATE_LIMIT_GLOBAL = 0.5  # seconds between any requests
 MAX_CONTENT_CHARS = 80000
 MAX_RELEVANT_CHARS = 4000
 
 _USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15",
 ]
+
+# Track last request time per domain to enforce per-domain rate limiting
+_domain_last_request = {}
 
 _SKIP_DOMAINS = frozenset([
     "twitter.com", "x.com", "linkedin.com", "facebook.com",
@@ -141,6 +146,24 @@ def _write_cache(url: str, text: str, method: str = ""):
 # HTTP session
 # ---------------------------------------------------------------------------
 
+def _rate_limit(url: str):
+    """Enforce per-domain and global rate limiting."""
+    domain = urlparse(url).netloc.lower()
+    now = time.time()
+    # Per-domain delay
+    last = _domain_last_request.get(domain, 0)
+    wait = RATE_LIMIT_DELAY - (now - last)
+    if wait > 0:
+        time.sleep(wait)
+    # Global delay
+    global_last = _domain_last_request.get("__global__", 0)
+    wait = RATE_LIMIT_GLOBAL - (time.time() - global_last)
+    if wait > 0:
+        time.sleep(wait)
+    _domain_last_request[domain] = time.time()
+    _domain_last_request["__global__"] = time.time()
+
+
 def _make_session():
     import random
     import requests
@@ -148,17 +171,26 @@ def _make_session():
     from urllib3.util.retry import Retry
 
     session = requests.Session()
-    retry = Retry(total=2, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+    retry = Retry(total=2, backoff_factor=2, status_forcelist=[429, 500, 502, 503, 504])
     session.mount("https://", HTTPAdapter(max_retries=retry))
     session.mount("http://", HTTPAdapter(max_retries=retry))
+    ua = random.choice(_USER_AGENTS)
     session.headers.update({
-        "User-Agent": random.choice(_USER_AGENTS),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "User-Agent": ua,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
         "DNT": "1",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Sec-Ch-Ua": '"Chromium";v="131", "Not_A Brand";v="24"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"macOS"',
+        "Cache-Control": "max-age=0",
     })
     return session
 
@@ -308,6 +340,42 @@ def _fetch_pdf(url: str, session=None) -> tuple:
         pass
 
     return "", "pdf:no_parser_available"
+
+
+# ---------------------------------------------------------------------------
+# Method 5 — Headless browser (for Cloudflare/JS-protected sites)
+# ---------------------------------------------------------------------------
+
+def _fetch_headless(url: str) -> tuple:
+    """Use Playwright headless browser to bypass JS challenges.
+    Requires: pip install playwright && playwright install chromium
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return "", "headless:playwright_not_installed"
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent=_USER_AGENTS[0],
+                viewport={"width": 1920, "height": 1080},
+            )
+            page = context.new_page()
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            # Wait for Cloudflare challenge to resolve
+            page.wait_for_timeout(3000)
+            content = page.content()
+            browser.close()
+
+            if content and len(content) > 500:
+                text = html_to_text(content[:MAX_CONTENT_CHARS])
+                if text and len(text) > 100:
+                    return text, "headless"
+            return "", "headless:no_content"
+    except Exception as e:
+        return "", f"headless:{type(e).__name__}"
 
 
 # ---------------------------------------------------------------------------
@@ -511,45 +579,56 @@ def collect_reference_content(
             results.append(entry)
             continue
 
-        # --- Method chain ---
+        # --- Method chain (tries each method until content is obtained) ---
         text = ""
         is_pdf = _is_pdf_url(url)
+        _got_403 = False
 
         # Method 4 first for PDFs
         if is_pdf:
+            _rate_limit(url)
             text, detail = _fetch_pdf(url, session)
             entry["attempts"].append(f"pdf → {detail}")
             if text:
                 _write_cache(url, text, "pdf")
                 entry["method"] = detail
-            time.sleep(RATE_LIMIT_DELAY)
 
-        # Method 1 — Direct (skip for PDFs that already succeeded)
+        # Method 1 — Direct fetch
         if not text and not is_pdf:
+            _rate_limit(url)
             text, detail = _fetch_direct(url, session)
             entry["attempts"].append(f"direct → {detail}")
             if text:
                 _write_cache(url, text, "direct")
                 entry["method"] = "direct"
-            time.sleep(RATE_LIMIT_DELAY)
+            elif "403" in detail or "401" in detail:
+                _got_403 = True
+
+        # Method 5 — Headless browser (if direct got 403/Cloudflare)
+        if not text and _got_403:
+            text, detail = _fetch_headless(url)
+            entry["attempts"].append(f"headless → {detail}")
+            if text:
+                _write_cache(url, text, "headless")
+                entry["method"] = "headless"
 
         # Method 2 — Wayback Machine
         if not text:
+            _rate_limit("https://archive.org")
             text, detail = _fetch_wayback(url, session)
             entry["attempts"].append(f"wayback → {detail}")
             if text:
                 _write_cache(url, text, "wayback")
                 entry["method"] = "wayback"
-            time.sleep(RATE_LIMIT_DELAY)
 
         # Method 3 — Google Cache
         if not text:
+            _rate_limit("https://webcache.googleusercontent.com")
             text, detail = _fetch_google_cache(url, session)
             entry["attempts"].append(f"google_cache → {detail}")
             if text:
                 _write_cache(url, text, "google_cache")
                 entry["method"] = "google_cache"
-            time.sleep(RATE_LIMIT_DELAY)
 
         # Extract relevant passages if we got content
         if text:
@@ -563,10 +642,7 @@ def collect_reference_content(
             entry["extracted_content"] = fb_text
             entry["method"] = fb_method
             entry["attempts"].append(f"fallback → {fb_method}")
-
-        # Cache empty result to avoid re-trying failed URLs
-        if not text:
-            _write_cache(url, "", "all_methods_failed")
+            # Don't cache failures — allow retry on next run
 
         results.append(entry)
 

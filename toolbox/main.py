@@ -997,6 +997,16 @@ def mainsaw(
                         _chain = " \033[90m→\033[0m ".join(f"\033[31m{a}\033[0m" for a in _attempts)
                         print(f"{_indent}       \033[90mTried: {_chain}\033[0m")
                 print()
+            elif technique_findings and not quiet:
+                # No citations — print separator after technique row
+                try:
+                    _tw = os.get_terminal_size().columns
+                except OSError:
+                    _tw = 160
+                _w_group = 25
+                _w_tech = 55
+                _w_ind = max(20, _tw - _w_group - _w_tech - 12)
+                print(f"   {'-' * _w_group} | {'-' * _w_tech} | {'-' * (_w_ind + 3)}")
 
 
     threat_actor_technique_id_name_findings = list(
