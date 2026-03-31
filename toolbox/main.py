@@ -893,7 +893,7 @@ def mainsaw(
             _cit_names = re.findall(r"\(Citation:\s*([^)]+)\)", _raw_proc)
             _new_cits = []
             if _cit_names:
-                from toolbox.reference_collector import collect_reference_content
+                from toolbox.citation_collector import collect_reference_content
                 for _cn in _cit_names:
                     _cn = _cn.strip()
                     _cit_key = (_cn, _tid)

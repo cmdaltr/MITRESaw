@@ -1134,11 +1134,11 @@ def main():
 
     # 5b. Reference collection (if enabled)
     if COLLECT_REFERENCES:
-        # Add parent path so we can import reference_collector
+        # Add parent path so we can import citation_collector
         _parent = str(Path(__file__).resolve().parent.parent)
         if _parent not in sys.path:
             sys.path.insert(0, _parent)
-        from reference_collector import (
+        from citation_collector import (
             resolve_citations, collect_reference_content
         )
 

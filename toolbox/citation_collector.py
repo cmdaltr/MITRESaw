@@ -1,0 +1,573 @@
+"""
+MITRESaw Reference Collector
+
+Fetches and extracts pertinent content from MITRE ATT&CK citation sources
+using a multi-method fallback chain:
+
+  Method 1 — Direct fetch (browser-like headers, SSL fallback)
+  Method 2 — Wayback Machine (web.archive.org snapshot)
+  Method 3 — Google Cache (webcache.googleusercontent.com)
+  Method 4 — PDF extraction (for .pdf URLs, requires PyPDF2 or pdfplumber)
+  Fallback  — STIX description metadata (author, title, date — always available)
+"""
+
+import hashlib
+import json
+import os
+import re
+import time
+import warnings
+
+# Suppress urllib3 InsecureRequestWarning from verify=False fallbacks
+warnings.filterwarnings("ignore", message="Unverified HTTPS request")
+from html.parser import HTMLParser
+from io import BytesIO
+from pathlib import Path
+from urllib.parse import quote, urlparse
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+CACHE_DIR = Path(".citation_cache")
+REQUEST_TIMEOUT = 20
+RATE_LIMIT_DELAY = 0.3
+MAX_CONTENT_CHARS = 80000
+MAX_RELEVANT_CHARS = 4000
+
+_USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0",
+]
+
+_SKIP_DOMAINS = frozenset([
+    "twitter.com", "x.com", "linkedin.com", "facebook.com",
+    "youtube.com", "vimeo.com",
+])
+
+_PDF_EXTENSIONS = frozenset([".pdf"])
+
+_BINARY_EXTENSIONS = frozenset([
+    ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".zip", ".gz", ".tar", ".7z", ".rar",
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".mp4", ".mp3",
+    ".exe", ".dll", ".bin",
+])
+
+
+# ---------------------------------------------------------------------------
+# HTML → plain text
+# ---------------------------------------------------------------------------
+
+class _HTMLTextExtractor(HTMLParser):
+    _SKIP_TAGS = frozenset(["script", "style", "noscript", "svg", "head", "meta", "link"])
+
+    def __init__(self):
+        super().__init__()
+        self._parts = []
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() in self._SKIP_TAGS:
+            self._skip_depth += 1
+        if tag.lower() in ("br", "p", "div", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6"):
+            self._parts.append("\n")
+
+    def handle_endtag(self, tag):
+        if tag.lower() in self._SKIP_TAGS:
+            self._skip_depth = max(0, self._skip_depth - 1)
+        if tag.lower() in ("p", "div", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6"):
+            self._parts.append("\n")
+
+    def handle_data(self, data):
+        if self._skip_depth == 0:
+            self._parts.append(data)
+
+    def get_text(self) -> str:
+        raw = " ".join(self._parts)
+        raw = re.sub(r"[ \t]+", " ", raw)
+        raw = re.sub(r"\n{3,}", "\n\n", raw)
+        return raw.strip()
+
+
+def html_to_text(html: str) -> str:
+    parser = _HTMLTextExtractor()
+    try:
+        parser.feed(html)
+    except Exception:
+        return ""
+    return parser.get_text()
+
+
+# ---------------------------------------------------------------------------
+# Cache
+# ---------------------------------------------------------------------------
+
+def _cache_key(url: str) -> str:
+    h = hashlib.sha256(url.encode()).hexdigest()[:16]
+    domain = urlparse(url).netloc.replace(".", "_")
+    return f"{domain}_{h}"
+
+
+def _read_cache(url: str) -> str | None:
+    path = CACHE_DIR / f"{_cache_key(url)}.json"
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+            return data.get("text", "")
+        except Exception:
+            return None
+    return None
+
+
+def _write_cache(url: str, text: str, method: str = ""):
+    CACHE_DIR.mkdir(exist_ok=True)
+    path = CACHE_DIR / f"{_cache_key(url)}.json"
+    try:
+        path.write_text(json.dumps({
+            "url": url,
+            "text": text[:MAX_CONTENT_CHARS],
+            "method": method,
+            "fetched": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }))
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# HTTP session
+# ---------------------------------------------------------------------------
+
+def _make_session():
+    import random
+    import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+
+    session = requests.Session()
+    retry = Retry(total=2, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+    session.mount("https://", HTTPAdapter(max_retries=retry))
+    session.mount("http://", HTTPAdapter(max_retries=retry))
+    session.headers.update({
+        "User-Agent": random.choice(_USER_AGENTS),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "DNT": "1",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+    })
+    return session
+
+
+# ---------------------------------------------------------------------------
+# Method 1 — Direct fetch
+# ---------------------------------------------------------------------------
+
+def _fetch_direct(url: str, session=None) -> tuple:
+    """Returns (text, status_detail). Empty text on failure."""
+    import requests
+    if session is None:
+        session = _make_session()
+
+    for verify_ssl in (True, False):
+        try:
+            resp = session.get(url, timeout=REQUEST_TIMEOUT, allow_redirects=True, verify=verify_ssl)
+            if resp.status_code == 200:
+                ct = resp.headers.get("Content-Type", "").lower()
+                if "html" in ct or "text" in ct:
+                    return html_to_text(resp.text[:MAX_CONTENT_CHARS]), "direct"
+                return "", f"direct:unsupported_content_type({ct[:30]})"
+            if resp.status_code in (403, 401) and verify_ssl:
+                continue
+            return "", f"direct:http_{resp.status_code}"
+        except requests.exceptions.SSLError:
+            if verify_ssl:
+                continue
+            return "", "direct:ssl_error"
+        except requests.exceptions.Timeout:
+            return "", "direct:timeout"
+        except Exception as e:
+            return "", f"direct:{type(e).__name__}"
+
+    return "", "direct:all_attempts_failed"
+
+
+# ---------------------------------------------------------------------------
+# Method 2 — Wayback Machine
+# ---------------------------------------------------------------------------
+
+def _fetch_wayback(url: str, session=None) -> tuple:
+    """Try the most recent Wayback Machine snapshot."""
+    import requests
+    if session is None:
+        session = _make_session()
+
+    wb_api = f"https://archive.org/wayback/available?url={quote(url, safe='')}"
+    try:
+        api_resp = session.get(wb_api, timeout=10, verify=True)
+        if api_resp.status_code != 200:
+            return "", "wayback:api_failed"
+        data = api_resp.json()
+        snapshot = data.get("archived_snapshots", {}).get("closest", {})
+        if not snapshot or not snapshot.get("available"):
+            return "", "wayback:no_snapshot"
+
+        snap_url = snapshot["url"]
+        resp = session.get(snap_url, timeout=REQUEST_TIMEOUT, allow_redirects=True, verify=True)
+        if resp.status_code == 200:
+            ct = resp.headers.get("Content-Type", "").lower()
+            if "html" in ct or "text" in ct:
+                return html_to_text(resp.text[:MAX_CONTENT_CHARS]), "wayback"
+        return "", f"wayback:http_{resp.status_code}"
+    except requests.exceptions.Timeout:
+        return "", "wayback:timeout"
+    except Exception as e:
+        return "", f"wayback:{type(e).__name__}"
+
+
+# ---------------------------------------------------------------------------
+# Method 3 — Google Cache
+# ---------------------------------------------------------------------------
+
+def _fetch_google_cache(url: str, session=None) -> tuple:
+    """Try Google's cached version of the page."""
+    import requests
+    if session is None:
+        session = _make_session()
+
+    cache_url = f"https://webcache.googleusercontent.com/search?q=cache:{quote(url, safe='')}"
+    try:
+        resp = session.get(cache_url, timeout=REQUEST_TIMEOUT, allow_redirects=True, verify=True)
+        if resp.status_code == 200:
+            text = html_to_text(resp.text[:MAX_CONTENT_CHARS])
+            if text and len(text) > 100:
+                return text, "google_cache"
+        return "", f"google_cache:http_{resp.status_code}"
+    except requests.exceptions.Timeout:
+        return "", "google_cache:timeout"
+    except Exception as e:
+        return "", f"google_cache:{type(e).__name__}"
+
+
+# ---------------------------------------------------------------------------
+# Method 4 — PDF extraction
+# ---------------------------------------------------------------------------
+
+def _fetch_pdf(url: str, session=None) -> tuple:
+    """Download PDF and extract text using PyPDF2 or pdfplumber."""
+    import requests
+    if session is None:
+        session = _make_session()
+
+    try:
+        resp = session.get(url, timeout=30, allow_redirects=True, verify=False)
+        if resp.status_code != 200:
+            return "", f"pdf:http_{resp.status_code}"
+        ct = resp.headers.get("Content-Type", "").lower()
+        if "pdf" not in ct and not url.lower().endswith(".pdf"):
+            return "", "pdf:not_a_pdf"
+    except Exception as e:
+        return "", f"pdf:download_{type(e).__name__}"
+
+    pdf_bytes = resp.content
+
+    # Try PyPDF2 first
+    try:
+        from PyPDF2 import PdfReader
+        reader = PdfReader(BytesIO(pdf_bytes))
+        pages = []
+        for page in reader.pages[:30]:  # Cap at 30 pages
+            text = page.extract_text()
+            if text:
+                pages.append(text)
+        if pages:
+            return "\n\n".join(pages)[:MAX_CONTENT_CHARS], "pdf:PyPDF2"
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # Try pdfplumber
+    try:
+        import pdfplumber
+        with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
+            pages = []
+            for page in pdf.pages[:30]:
+                text = page.extract_text()
+                if text:
+                    pages.append(text)
+            if pages:
+                return "\n\n".join(pages)[:MAX_CONTENT_CHARS], "pdf:pdfplumber"
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    return "", "pdf:no_parser_available"
+
+
+# ---------------------------------------------------------------------------
+# Fallback — STIX description metadata
+# ---------------------------------------------------------------------------
+
+def _stix_description_fallback(description: str) -> tuple:
+    """Use the STIX external_reference description as content.
+    Always available — contains author, title, date, publication."""
+    if description and len(description.strip()) > 10:
+        return description.strip(), "stix_metadata"
+    return "", "no_content"
+
+
+# ---------------------------------------------------------------------------
+# Relevance extraction
+# ---------------------------------------------------------------------------
+
+def _extract_relevant_passages(
+    full_text: str,
+    group_name: str,
+    technique_name: str,
+    technique_id: str,
+    indicators: list | None = None,
+) -> str:
+    if not full_text:
+        return ""
+
+    search_terms = set()
+    if group_name:
+        search_terms.add(group_name.lower())
+        for p in group_name.split():
+            if len(p) >= 4:
+                search_terms.add(p.lower())
+    if technique_name and len(technique_name) >= 4:
+        search_terms.add(technique_name.lower())
+    if technique_id:
+        search_terms.add(technique_id.lower())
+        if "." in technique_id:
+            search_terms.add(technique_id.split(".")[0].lower())
+    if indicators:
+        for ind in indicators[:5]:
+            if isinstance(ind, str) and len(ind) >= 4:
+                search_terms.add(ind.lower())
+
+    search_terms = {t for t in search_terms if len(t) >= 3}
+    if not search_terms:
+        return full_text[:MAX_RELEVANT_CHARS]  # Return head if no search terms
+
+    paragraphs = re.split(r"\n\s*\n", full_text)
+    relevant = []
+    total_len = 0
+
+    for para in paragraphs:
+        para = para.strip()
+        if len(para) < 30:
+            continue
+        para_lower = para.lower()
+        hits = sum(1 for t in search_terms if t in para_lower)
+        if hits >= 1:
+            relevant.append((hits, para))
+            total_len += len(para)
+            if total_len >= MAX_RELEVANT_CHARS:
+                break
+
+    if not relevant:
+        return ""
+
+    relevant.sort(key=lambda x: -x[0])
+    passages = []
+    chars = 0
+    for _, para in relevant:
+        passages.append(para)
+        chars += len(para)
+        if chars >= MAX_RELEVANT_CHARS:
+            break
+
+    return "\n\n".join(passages)
+
+
+# ---------------------------------------------------------------------------
+# URL classification
+# ---------------------------------------------------------------------------
+
+def _should_skip_url(url: str) -> bool:
+    if not url or not url.startswith("http"):
+        return True
+    parsed = urlparse(url)
+    if parsed.netloc.lower().lstrip("www.") in _SKIP_DOMAINS:
+        return True
+    ext = os.path.splitext(parsed.path)[1].lower()
+    if ext in _BINARY_EXTENSIONS:
+        return True
+    return False
+
+
+def _is_pdf_url(url: str) -> bool:
+    ext = os.path.splitext(urlparse(url).path)[1].lower()
+    return ext in _PDF_EXTENSIONS
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def resolve_citations(procedure_text: str, external_references: list) -> list:
+    """Map (Citation: X) in procedure text to reference metadata."""
+    if not procedure_text or not external_references:
+        return []
+
+    citation_names = re.findall(r"\(Citation:\s*([^)]+)\)", procedure_text)
+    if not citation_names:
+        return []
+
+    ref_lookup = {}
+    for ref in external_references:
+        sn = ref.get("source_name", "")
+        if sn:
+            ref_lookup[sn] = ref
+
+    results = []
+    seen = set()
+    for cname in citation_names:
+        cname = cname.strip()
+        if cname in seen:
+            continue
+        seen.add(cname)
+        ref = ref_lookup.get(cname, {})
+        results.append({
+            "citation_name": cname,
+            "url": ref.get("url", ""),
+            "description": ref.get("description", ""),
+        })
+
+    return results
+
+
+def collect_reference_content(
+    citations: list,
+    group_name: str,
+    technique_name: str,
+    technique_id: str,
+    indicators: list | None = None,
+    verbose: bool = False,
+) -> list:
+    """Fetch content from citation URLs using a multi-method fallback chain.
+
+    For each citation, tries methods in order until content is obtained:
+      1. Direct fetch (browser headers, SSL fallback)
+      2. Wayback Machine snapshot
+      3. Google Cache
+      4. PDF extraction (for .pdf URLs)
+      Fallback: STIX description metadata
+
+    Returns list of dicts with: citation_name, url, description,
+    extracted_content, method, attempts
+    """
+    results = []
+    session = _make_session()
+
+    for cit in citations:
+        url = cit.get("url", "")
+        stix_desc = cit.get("description", "")
+        entry = {
+            "citation_name": cit["citation_name"],
+            "url": url,
+            "description": stix_desc,
+            "extracted_content": "",
+            "method": "",
+            "attempts": [],
+        }
+
+        if not url:
+            # No URL — use STIX metadata directly
+            text, method = _stix_description_fallback(stix_desc)
+            entry["extracted_content"] = text
+            entry["method"] = method
+            entry["attempts"].append("no_url → stix_metadata")
+            results.append(entry)
+            continue
+
+        if _should_skip_url(url):
+            ext = os.path.splitext(urlparse(url).path)[1].lower()
+            entry["method"] = f"skipped ({ext})" if ext in _BINARY_EXTENSIONS else "skipped_domain"
+            entry["attempts"].append(entry["method"])
+            # Still use STIX metadata
+            text, _ = _stix_description_fallback(stix_desc)
+            entry["extracted_content"] = text
+            results.append(entry)
+            continue
+
+        # Check cache first
+        cached = _read_cache(url)
+        if cached is not None and cached:
+            relevant = _extract_relevant_passages(
+                cached, group_name, technique_name, technique_id, indicators
+            )
+            entry["extracted_content"] = relevant or cached[:MAX_RELEVANT_CHARS]
+            entry["method"] = "cached"
+            entry["attempts"].append("cache_hit")
+            results.append(entry)
+            continue
+
+        # --- Method chain ---
+        text = ""
+        is_pdf = _is_pdf_url(url)
+
+        # Method 4 first for PDFs
+        if is_pdf:
+            text, detail = _fetch_pdf(url, session)
+            entry["attempts"].append(f"pdf → {detail}")
+            if text:
+                _write_cache(url, text, "pdf")
+                entry["method"] = detail
+            time.sleep(RATE_LIMIT_DELAY)
+
+        # Method 1 — Direct (skip for PDFs that already succeeded)
+        if not text and not is_pdf:
+            text, detail = _fetch_direct(url, session)
+            entry["attempts"].append(f"direct → {detail}")
+            if text:
+                _write_cache(url, text, "direct")
+                entry["method"] = "direct"
+            time.sleep(RATE_LIMIT_DELAY)
+
+        # Method 2 — Wayback Machine
+        if not text:
+            text, detail = _fetch_wayback(url, session)
+            entry["attempts"].append(f"wayback → {detail}")
+            if text:
+                _write_cache(url, text, "wayback")
+                entry["method"] = "wayback"
+            time.sleep(RATE_LIMIT_DELAY)
+
+        # Method 3 — Google Cache
+        if not text:
+            text, detail = _fetch_google_cache(url, session)
+            entry["attempts"].append(f"google_cache → {detail}")
+            if text:
+                _write_cache(url, text, "google_cache")
+                entry["method"] = "google_cache"
+            time.sleep(RATE_LIMIT_DELAY)
+
+        # Extract relevant passages if we got content
+        if text:
+            relevant = _extract_relevant_passages(
+                text, group_name, technique_name, technique_id, indicators
+            )
+            entry["extracted_content"] = relevant or text[:MAX_RELEVANT_CHARS]
+        else:
+            # Fallback — STIX description metadata (always available)
+            fb_text, fb_method = _stix_description_fallback(stix_desc)
+            entry["extracted_content"] = fb_text
+            entry["method"] = fb_method
+            entry["attempts"].append(f"fallback → {fb_method}")
+
+        # Cache empty result to avoid re-trying failed URLs
+        if not text:
+            _write_cache(url, "", "all_methods_failed")
+
+        results.append(entry)
+
+    return results
