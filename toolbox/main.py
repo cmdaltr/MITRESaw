@@ -860,14 +860,11 @@ def mainsaw(
         if _citation_url_lookup:
             print(f"    -> {len(_citation_url_lookup)} unique citation sources indexed for collection\n")
 
-    # Sort by (group, technique_name) so all procedures for the same group+technique are contiguous
-    def _sort_key(p):
-        parts = p.split("||")
-        return (parts[1].strip().lower(), parts[3].strip().lower() if len(parts) > 3 else "")
-    consolidated_procedures = sorted(consolidated_procedures, key=_sort_key)
+    # Sort by group name so all procedures for the same group are contiguous
+    consolidated_procedures = sorted(consolidated_procedures, key=lambda p: p.split("||")[1].strip().lower())
 
     last_group_name = None
-    _last_gt_key = None  # (group, technique_name) normalised
+    _last_group_key = None
     _total_procedures = len(consolidated_procedures)
     _pb_extract = _ProgressBar("Processing:")
     _pending_cits = []  # citations for current group+technique
@@ -892,14 +889,13 @@ def mainsaw(
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         _proc_parts = each_procedure.split("||")
         current_group_name = _proc_parts[1]
-        _current_tname = _proc_parts[3].strip().lower() if len(_proc_parts) > 3 else ""
-        _current_gt_key = (current_group_name.strip().lower(), _current_tname)
+        _current_group_key = current_group_name.strip().lower()
 
-        # When group+technique changes, flush citations from previous
-        if _last_gt_key and _current_gt_key != _last_gt_key:
+        # When group changes, flush citations from previous group
+        if _last_group_key and _current_group_key != _last_group_key:
             _flush_pending_cits()
 
-        _last_gt_key = _current_gt_key
+        _last_group_key = _current_group_key
         last_group_name = current_group_name
         if quiet:
             _cit_label = f"{current_group_name} ({len(_all_citation_refs)} refs)" if collect_citations else current_group_name
