@@ -950,7 +950,7 @@ def mainsaw(
                     _method = _ref.get("method", "unknown")
                     _icon = "\033[32m\u2705\033[0m" if _ref.get("extracted_content") else "\033[31m\u274c\033[0m"
                     _name = _ref.get("citation_name", "")[:28].ljust(28)
-                    _method_short = _method[:10].ljust(10)
+                    _method_short = _method[:14].ljust(14)
                     _url = _ref.get("url", "")
                     _url_part = f" - {_url[:65]}" if _url else ""
                     _prefix = _pad if _ci == 1 else _cont
