@@ -82,6 +82,7 @@ def test_should_skip_url():
     assert _should_skip_url("") is True
     assert _should_skip_url("not-a-url") is True
     assert _should_skip_url("https://twitter.com/something") is True
-    assert _should_skip_url("https://example.com/report.pdf") is True
+    assert _should_skip_url("https://example.com/report.docx") is True  # Binary, not PDF
+    assert _should_skip_url("https://example.com/report.pdf") is False  # PDFs handled by Method 4
     assert _should_skip_url("https://example.com/report.html") is False
     assert _should_skip_url("https://www.fireeye.com/blog/threat-research") is False

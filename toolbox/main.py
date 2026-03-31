@@ -433,8 +433,11 @@ def _write_reference_sheet(xlsx_path, all_refs):
     align_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     headers = ["Citation Name", "Source URL", "Source Description",
-               "Extracted Content", "Status"]
-    widths = [30, 55, 50, 80, 14]
+               "Extracted Content", "Collection Method", "Attempts"]
+    widths = [30, 55, 45, 80, 18, 40]
+
+    font_method = Font(name="Courier New", size=9, color="4ADE80")
+    font_attempts = Font(name="Courier New", size=9, color="94A3B8")
 
     for ci, h in enumerate(headers, 1):
         cell = ws.cell(row=1, column=ci, value=h)
@@ -449,16 +452,26 @@ def _write_reference_sheet(xlsx_path, all_refs):
     for ri, ref in enumerate(all_refs, 2):
         bg = "0F1C2E" if ri % 2 == 0 else "0A1220"
         row_fill = PatternFill(start_color=bg, end_color=bg, fill_type="solid")
+        attempts_list = ref.get("attempts", [])
+        attempts_str = " → ".join(attempts_list) if attempts_list else ref.get("status", "")
         values = [
             ref.get("citation_name", ""),
             ref.get("url", ""),
             ref.get("description", ""),
             ref.get("extracted_content", ""),
-            ref.get("status", ""),
+            ref.get("method", ""),
+            attempts_str,
         ]
         for ci, val in enumerate(values, 1):
             cell = ws.cell(row=ri, column=ci, value=val)
-            cell.font = font_url if ci == 2 else font_data
+            if ci == 2:
+                cell.font = font_url
+            elif ci == 5:
+                cell.font = font_method
+            elif ci == 6:
+                cell.font = font_attempts
+            else:
+                cell.font = font_data
             cell.fill = row_fill
             cell.alignment = align_wrap
             cell.border = border
@@ -468,7 +481,7 @@ def _write_reference_sheet(xlsx_path, all_refs):
 
     ws.freeze_panes = "A2"
     if all_refs:
-        ws.auto_filter.ref = f"A1:E{1 + len(all_refs)}"
+        ws.auto_filter.ref = f"A1:F{1 + len(all_refs)}"
 
     wb.save(xlsx_path)
 
