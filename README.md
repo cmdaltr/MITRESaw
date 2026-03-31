@@ -191,7 +191,7 @@ For each `(Citation: X)` in the MITRE procedure text, the collector:
 3. Finds paragraphs mentioning the group name, technique, or indicators
 4. Writes the extracted content to a "Reference Detail" sheet in the XLSX
 
-Fetched pages are cached in `.reference_cache/` to avoid re-downloading. Rate-limited at 0.3s between requests.
+Fetched pages are cached in `.citation_cache/` to avoid re-downloading. Rate-limited at 0.3s between requests.
 
 The standalone all-groups script also supports this:
 ```bash

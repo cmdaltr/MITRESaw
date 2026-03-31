@@ -1,5 +1,6 @@
 #!/usr/bin/env python3 -tt
 import argparse
+import os
 from argparse import RawTextHelpFormatter
 from toolbox.main import mainsaw
 
@@ -124,6 +125,14 @@ parser.add_argument(
     default=False,
 )
 parser.add_argument(
+    "--clear-cache",
+    help="Clear the citation cache (.citation_cache/) before running.\n"
+         "Forces re-download of all citation sources.\n",
+    action="store_const",
+    const=True,
+    default=False,
+)
+parser.add_argument(
     "-F",
     "--fetch",
     help="Force a fresh download of ATT&CK STIX data (default: re-download if older than 7 days)\n",
@@ -154,6 +163,15 @@ quiet = args.quiet
 fetch = args.fetch
 evidence_report = args.evidence_report
 collect_citations = args.citations
+
+if args.clear_cache:
+    import shutil
+    cache_dir = ".citation_cache"
+    if os.path.exists(cache_dir):
+        shutil.rmtree(cache_dir)
+        print(f"    -> Cleared citation cache ({cache_dir}/)")
+    else:
+        print(f"    -> No citation cache to clear")
 
 if preset and not columns:
     columns = (

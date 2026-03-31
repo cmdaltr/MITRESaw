@@ -30,7 +30,7 @@ from urllib.parse import quote, urlparse
 # Configuration
 # ---------------------------------------------------------------------------
 
-CACHE_DIR = Path(".reference_cache")
+CACHE_DIR = Path(".citation_cache")
 REQUEST_TIMEOUT = 20
 RATE_LIMIT_DELAY = 0.3
 MAX_CONTENT_CHARS = 80000
