@@ -67,6 +67,7 @@ _SKIP_CITATION_URLS = frozenset([
     "www.7-zip.org", "www.rarlab.com", "www.winzip.com",
     "www.gnu.org", "www.perl.org", "www.python.org", "www.ruby-lang.org",
     "docs.microsoft.com", "learn.microsoft.com", "support.microsoft.com",
+    "docs.cloud.google.com",
     "developer.apple.com", "man7.org", "linux.die.net",
     "en.wikipedia.org", "wikipedia.org",
     "attack.mitre.org",  # Already have this data from STIX
@@ -75,6 +76,12 @@ _SKIP_CITATION_URLS = frozenset([
     "www.openssl.org", "curl.se", "nmap.org", "www.wireshark.org",
     "github.com/PowerShellMafia", "github.com/gentilkiwi",
 ])
+
+# URL path patterns that indicate documentation, not threat intel
+_SKIP_URL_PATHS = [
+    "/vpc/docs/", "/compute/docs/", "/iam/docs/", "/storage/docs/",
+    "/sdk/docs/", "/kubernetes/docs/", "/docs/reference/",
+]
 
 _PDF_EXTENSIONS = frozenset([".pdf"])
 
@@ -591,8 +598,12 @@ def collect_reference_content(
         if any(re.search(p, _cname) for p in _SKIP_CITATION_PATTERNS):
             continue
         if url:
-            _url_domain = urlparse(url).netloc.lower().lstrip("www.")
+            _parsed = urlparse(url)
+            _url_domain = _parsed.netloc.lower().lstrip("www.")
+            _url_path = _parsed.path.lower()
             if any(_url_domain.startswith(d.lstrip("www.")) for d in _SKIP_CITATION_URLS):
+                continue
+            if any(p in _url_path for p in _SKIP_URL_PATHS):
                 continue
 
         if not url:

@@ -13,3 +13,6 @@ ipywidgets>=8.0.0
 
 # Evidence report
 openpyxl>=3.1.0
+
+# Citation collection — PDF extraction
+PyPDF2>=3.0.0
