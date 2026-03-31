@@ -81,6 +81,7 @@ _SKIP_CITATION_URLS = frozenset([
 _SKIP_URL_PATHS = [
     "/vpc/docs/", "/compute/docs/", "/iam/docs/", "/storage/docs/",
     "/sdk/docs/", "/kubernetes/docs/", "/docs/reference/",
+    "/c/en/us/td/docs/",  # Cisco product documentation
 ]
 
 _PDF_EXTENSIONS = frozenset([".pdf"])
@@ -241,7 +242,10 @@ def _fetch_direct(url: str, session=None) -> tuple:
             if resp.status_code == 200:
                 ct = resp.headers.get("Content-Type", "").lower()
                 if "html" in ct or "text" in ct:
-                    return html_to_text(resp.text[:MAX_CONTENT_CHARS]), "direct"
+                    text = html_to_text(resp.text[:MAX_CONTENT_CHARS])
+                    if len(text) > 200:  # JS-rendered pages return near-empty shells
+                        return text, "direct"
+                    return "", "direct:js_rendered_page"
                 return "", f"direct:unsupported_content_type({ct[:30]})"
             if resp.status_code in (403, 401) and verify_ssl:
                 continue
@@ -270,7 +274,7 @@ def _fetch_wayback(url: str, session=None) -> tuple:
 
     wb_api = f"https://archive.org/wayback/available?url={quote(url, safe='')}"
     try:
-        api_resp = session.get(wb_api, timeout=10, verify=True)
+        api_resp = session.get(wb_api, timeout=WAYBACK_TIMEOUT, verify=True)
         if api_resp.status_code != 200:
             return "", "wayback:api_failed"
         data = api_resp.json()
@@ -283,7 +287,10 @@ def _fetch_wayback(url: str, session=None) -> tuple:
         if resp.status_code == 200:
             ct = resp.headers.get("Content-Type", "").lower()
             if "html" in ct or "text" in ct:
-                return html_to_text(resp.text[:MAX_CONTENT_CHARS]), "wayback"
+                text = html_to_text(resp.text[:MAX_CONTENT_CHARS])
+                if len(text) > 200:
+                    return text, "wayback"
+                return "", "wayback:insufficient_content"
         return "", f"wayback:http_{resp.status_code}"
     except requests.exceptions.Timeout:
         return "", "wayback:timeout"
