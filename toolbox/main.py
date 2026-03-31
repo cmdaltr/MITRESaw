@@ -923,6 +923,7 @@ def mainsaw(
             _tname = _parts[3] if len(_parts) > 3 else ""
 
             _cit_names = re.findall(r"\(Citation:\s*([^)]+)\)", _raw_proc)
+            _new_cits = []
             if _cit_names:
                 from toolbox.citation_collector import collect_reference_content
                 for _cn in _cit_names:
