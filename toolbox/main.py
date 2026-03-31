@@ -15,85 +15,52 @@ from typing import Dict, List, Tuple, Set
 from mitreattack.stix20 import MitreAttackData
 
 
-def _progress_setup():
-    """Reserve the bottom 2 rows for the progress bar by setting a scroll region.
+class _ProgressBar:
+    """Inline progress bar that overwrites a single line during progress,
+    then prints a permanent 100% line when done."""
 
-    ANSI escape: \\033[<top>;<bottom>r — set scroll region to rows top..bottom.
-    All subsequent print/stdout output stays within the scroll region.
-    The bottom rows are outside it, so they persist.
-    """
-    try:
-        tw = os.get_terminal_size().columns
-        th = os.get_terminal_size().lines
-    except OSError:
-        tw, th = 120, 40
-    # Set scroll region to rows 1..(th-2), leaving bottom 2 rows for the bar
-    sys.stdout.write(f"\033[1;{th - 2}r")
-    # Move cursor into the scroll region
-    sys.stdout.write(f"\033[{th - 2};1H")
-    # Draw separator and blank bar on reserved rows
-    sys.stdout.write(f"\033[s\033[{th - 1};1H\033[K\033[90m{'─' * tw}\033[0m\033[{th};1H\033[K\033[u")
-    sys.stdout.flush()
-    _progress_bar._start = None
+    def __init__(self, label=""):
+        self._start = None
+        self._label = label
 
+    def update(self, current, total, detail="", bar_width=30):
+        """Overwrite the current line with progress."""
+        if total == 0:
+            return
+        try:
+            tw = os.get_terminal_size().columns
+        except OSError:
+            tw = 120
 
-def _progress_bar(current, total, label="", bar_width=30):
-    """Update the progress bar on the reserved bottom row."""
-    if total == 0:
-        return
-    try:
-        tw = os.get_terminal_size().columns
-        th = os.get_terminal_size().lines
-    except OSError:
-        tw, th = 120, 40
+        pct = current / total
+        filled = int(bar_width * pct)
+        bar = "\033[36m" + "█" * filled + "\033[90m" + "░" * (bar_width - filled) + "\033[0m"
 
-    pct = current / total
-    filled = int(bar_width * pct)
-    bar = "\033[36m" + "█" * filled + "\033[90m" + "░" * (bar_width - filled) + "\033[0m"
+        now = time.time()
+        if self._start is None or current <= 1:
+            self._start = now
+        secs = now - self._start
+        if current > 0 and secs > 0:
+            eta = (secs / current) * (total - current)
+            eta_str = f"{int(eta // 60)}m{int(eta % 60):02d}s" if eta >= 60 else f"{int(eta)}s"
+        else:
+            eta_str = "..."
 
-    now = time.time()
-    if getattr(_progress_bar, "_start", None) is None or current <= 1:
-        _progress_bar._start = now
-    secs = now - _progress_bar._start
-    if current > 0 and secs > 0:
-        eta = (secs / current) * (total - current)
-        eta_str = f"{int(eta // 60)}m{int(eta % 60):02d}s" if eta >= 60 else f"{int(eta)}s"
-    else:
-        eta_str = "..."
+        line = f"     {self._label} {bar} {current}/{total} ({pct:.0%}) ETA: {eta_str}  {detail}"
+        sys.stdout.write(f"\r{line[:tw].ljust(tw)}")
+        sys.stdout.flush()
 
-    status = f" {bar} {current}/{total} ({pct:.0%}) ETA: {eta_str}  {label}"
+    def done(self, total, detail="Complete", bar_width=30):
+        """Print a permanent green 100% line and move to next line."""
+        try:
+            tw = os.get_terminal_size().columns
+        except OSError:
+            tw = 120
 
-    # Save cursor, draw on bottom row, restore cursor
-    sys.stdout.write(f"\033[s\033[{th};1H\033[K{status[:tw]}\033[u")
-    sys.stdout.flush()
-
-
-def _progress_bar_done(total, label="Complete"):
-    """Show 100% on the progress bar, then restore full terminal scroll region."""
-    try:
-        tw = os.get_terminal_size().columns
-        th = os.get_terminal_size().lines
-    except OSError:
-        tw, th = 120, 40
-
-    bar_width = 30
-    bar = "\033[32m" + "█" * bar_width + "\033[0m"
-    status = f" {bar} {total}/{total} (100%) {label}"
-
-    # Draw final 100% bar
-    sys.stdout.write(f"\033[s\033[{th};1H\033[K{status[:tw]}\033[u")
-    sys.stdout.flush()
-
-    # Pause briefly so user sees 100%
-    time.sleep(0.5)
-
-    # Clear reserved rows and reset scroll region
-    sys.stdout.write(f"\033[s\033[{th - 1};1H\033[K\033[{th};1H\033[K\033[u")
-    sys.stdout.write(f"\033[1;{th}r")
-    # Move cursor to end of scrollable content
-    sys.stdout.write(f"\033[{th - 2};1H\n")
-    sys.stdout.flush()
-    _progress_bar._start = None
+        bar = "\033[32m" + "█" * bar_width + "\033[0m"
+        line = f"     {self._label} {bar} {total}/{total} (100%) {detail}"
+        sys.stdout.write(f"\r{line[:tw].ljust(tw)}\n")
+        sys.stdout.flush()
 from stix2 import TAXIICollectionSource, Filter
 from taxii2client.v20 import Server, Collection
 
@@ -495,14 +462,14 @@ def _collect_and_append_references(xlsx_path, consolidated_techniques, all_attac
     seen_citations = set()
     total = len(raw_procedures)
 
-    _progress_setup()
+    _pb_refs = _ProgressBar("References:")
     for i, row in enumerate(raw_procedures, 1):
         proc = row["raw_procedure"]
         group = row["group"]
         tid = row["technique_id"]
         tname = row["technique_name"]
 
-        _progress_bar(i, total, f"{len(all_refs)} citations")
+        _pb_refs.update(i, total, f"{len(all_refs)} citations")
 
         # Get STIX external_references for this procedure
         ext_refs = ext_ref_lookup.get(hash(proc), [])
@@ -528,7 +495,7 @@ def _collect_and_append_references(xlsx_path, consolidated_techniques, all_attac
                 ref["technique_name"] = tname
                 all_refs.append(ref)
 
-    _progress_bar_done(total, f"{len(all_refs)} citations collected")
+    _pb_refs.done(total, f"{len(all_refs)} citations collected")
 
     if not all_refs:
         print("     No citation references found.")
@@ -944,11 +911,11 @@ def mainsaw(
         technique_combos.append(technique_combo)
     last_group_name = None
     _total_procedures = len(consolidated_procedures)
-    _progress_setup()
+    _pb_extract = _ProgressBar("Extracting:")
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         current_group_name = each_procedure.split("||")[1]
         last_group_name = current_group_name
-        _progress_bar(_proc_idx, _total_procedures, current_group_name)
+        _pb_extract.update(_proc_idx, _total_procedures, current_group_name)
         (
             technique_findings,
             previous_findings,
@@ -991,7 +958,7 @@ def mainsaw(
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
     )
-    _progress_bar_done(_total_procedures, "Extraction complete")
+    _pb_extract.done(_total_procedures, "Extraction complete")
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
 
