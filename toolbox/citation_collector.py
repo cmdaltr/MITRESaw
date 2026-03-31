@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
 import warnings
 
@@ -383,14 +384,47 @@ def _fetch_pdf(url: str, session=None) -> tuple:
 # Method 5 — Headless browser (for Cloudflare/JS-protected sites)
 # ---------------------------------------------------------------------------
 
+def _ensure_playwright_browsers():
+    """Check if Playwright Chromium is installed, install if missing."""
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            # Try to get the executable path — fails if not installed
+            p.chromium.executable_path
+    except Exception:
+        import subprocess
+        try:
+            subprocess.run(
+                ["playwright", "install", "chromium"],
+                check=True, capture_output=True, timeout=120,
+            )
+        except Exception:
+            # Try via python -m
+            try:
+                subprocess.run(
+                    [sys.executable, "-m", "playwright", "install", "chromium"],
+                    check=True, capture_output=True, timeout=120,
+                )
+            except Exception:
+                return False
+    return True
+
+_playwright_checked = False
+
+
 def _fetch_headless(url: str) -> tuple:
-    """Use Playwright headless browser to bypass JS challenges.
-    Requires: pip install playwright && playwright install chromium
-    """
+    """Use Playwright headless browser to bypass JS challenges."""
+    global _playwright_checked
+
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
         return "", "headless:playwright_not_installed"
+
+    if not _playwright_checked:
+        _playwright_checked = True
+        if not _ensure_playwright_browsers():
+            return "", "headless:chromium_install_failed"
 
     try:
         with sync_playwright() as p:
