@@ -983,6 +983,7 @@ def mainsaw(
                     _name = _cn[:28].ljust(28)
                     _method_short = _method[:14].ljust(14)
                     _url = _ref.get("url", "")
+                    _attempts = _ref.get("attempts", [])
                     try:
                         _tw = os.get_terminal_size().columns
                     except OSError:
@@ -991,6 +992,10 @@ def mainsaw(
                     _url_max = max(30, _tw - _used)
                     _url_part = f" - {_url[:_url_max]}" if _url else ""
                     print(f"{_indent}\033[90m{_num_str:>5}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
+                    # Show failure chain for failed citations
+                    if _method in ("stix_metadata", "no_content", "") and _attempts:
+                        _chain = " \033[90m→\033[0m ".join(f"\033[31m{a}\033[0m" for a in _attempts)
+                        print(f"{_indent}       \033[90mTried: {_chain}\033[0m")
                 print()
 
 
