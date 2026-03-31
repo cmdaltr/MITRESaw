@@ -973,7 +973,7 @@ def mainsaw(
 
             # Only print citations when this procedure produced visible technique output
             if _new_cits and technique_findings:
-                _indent = "        "
+                _indent = "      "
                 for _ref in _new_cits:
                     _cit_num += 1
                     _cn = _ref.get("citation_name", "")
@@ -987,11 +987,18 @@ def mainsaw(
                         _tw = os.get_terminal_size().columns
                     except OSError:
                         _tw = 120
-                    _used = 10 + 5 + 1 + 28 + 4 + 14 + 3 + 5
+                    _used = 6 + 5 + 1 + 28 + 4 + 14 + 3 + 5
                     _url_max = max(30, _tw - _used)
                     _url_part = f" - {_url[:_url_max]}" if _url else ""
                     print(f"{_indent}\033[90m{_num_str:>5}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
-                print()
+                # Newline only when next procedure is a different group or last
+                _is_last = (_proc_idx == _total_procedures)
+                _next_diff_group = False
+                if not _is_last:
+                    _next_g = consolidated_procedures[_proc_idx].split("||")[1].strip().lower()
+                    _next_diff_group = _next_g != current_group_name.strip().lower()
+                if _is_last or _next_diff_group:
+                    print()
 
 
     threat_actor_technique_id_name_findings = list(
