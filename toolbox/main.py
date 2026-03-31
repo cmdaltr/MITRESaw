@@ -965,7 +965,7 @@ def mainsaw(
 
                 _pad = "     Citations: "
                 _cont = "                "
-                for _ci, _ref in enumerate(_new_cits):
+                for _ref in _new_cits:
                     _cit_num += 1
                     _method = _ref.get("method", "unknown")
                     _icon = "\033[32m\u2705\033[0m" if _ref.get("extracted_content") else "\033[31m\u274c\033[0m"
@@ -973,9 +973,8 @@ def mainsaw(
                     _method_short = _method[:14].ljust(14)
                     _url = _ref.get("url", "")
                     _url_part = f" - {_url[:65]}" if _url else ""
-                    _prefix = _pad if _ci == 0 else _cont
+                    _prefix = _pad if _cit_num == 1 else _cont
                     print(f"{_prefix}\033[90m#{_cit_num}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
-                print()
 
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
