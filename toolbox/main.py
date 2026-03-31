@@ -834,6 +834,7 @@ def mainsaw(
     # Build citation lookup: collect ALL external_references from STIX relationships
     # Keyed by citation source_name → {url, description} for direct lookup
     _citation_url_lookup = {}  # source_name → {"url": ..., "description": ...}
+    _mitre_ref_numbers = {}   # (group_name_lower, source_name) → MITRE [N] number
     _all_citation_refs = []
     _seen_citations = set()
     if collect_citations:
@@ -845,6 +846,7 @@ def mainsaw(
                 import json as _json
                 with open(_sp) as _f:
                     _bundle = _json.load(_f)
+                # Build citation URL lookup from relationships
                 for _obj in _bundle.get("objects", []):
                     if _obj.get("type") != "relationship":
                         continue
@@ -855,6 +857,18 @@ def mainsaw(
                                 "url": _ref.get("url", ""),
                                 "description": _ref.get("description", ""),
                             }
+                # Build MITRE reference numbers from group objects
+                for _obj in _bundle.get("objects", []):
+                    if _obj.get("type") != "intrusion-set":
+                        continue
+                    _gname = _obj.get("name", "").strip().lower()
+                    _num = 0
+                    for _ref in _obj.get("external_references", []):
+                        _sn = _ref.get("source_name", "")
+                        if _sn == "mitre-attack":
+                            continue
+                        _num += 1
+                        _mitre_ref_numbers[(_gname, _sn)] = _num
             except Exception:
                 continue
         if _citation_url_lookup:
@@ -963,14 +977,18 @@ def mainsaw(
                 _cont = "                "
                 for _ref in _new_cits:
                     _cit_num += 1
+                    _cn = _ref.get("citation_name", "")
+                    # Use MITRE reference number if available
+                    _mitre_num = _mitre_ref_numbers.get((current_group_name.strip().lower(), _cn))
+                    _num_str = f"[{_mitre_num}]" if _mitre_num else f"#{_cit_num}"
                     _method = _ref.get("method", "unknown")
                     _icon = "\033[32m\u2705\033[0m" if _ref.get("extracted_content") else "\033[31m\u274c\033[0m"
-                    _name = _ref.get("citation_name", "")[:28].ljust(28)
+                    _name = _cn[:28].ljust(28)
                     _method_short = _method[:14].ljust(14)
                     _url = _ref.get("url", "")
                     _url_part = f" - {_url[:65]}" if _url else ""
                     _prefix = _pad if _cit_num == 1 else _cont
-                    print(f"{_prefix}\033[90m#{_cit_num}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
+                    print(f"{_prefix}\033[90m{_num_str:>5}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
 
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
