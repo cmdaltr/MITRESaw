@@ -984,7 +984,8 @@ def mainsaw(
                     _cn = _ref.get("citation_name", "")
                     _num_str = f"[{_cit_num}]"
                     _method = _ref.get("method", "unknown")
-                    _icon = "\033[32m\u2705\033[0m" if _ref.get("extracted_content") else "\033[31m\u274c\033[0m"
+                    _has_real_content = _ref.get("extracted_content") and _method not in ("stix_metadata", "no_content")
+                    _icon = "\033[32m\u2705\033[0m" if _has_real_content else "\033[31m\u274c\033[0m"
                     _name = _cn[:28].ljust(28)
                     _method_short = _method[:14].ljust(14)
                     _url = _ref.get("url", "")
