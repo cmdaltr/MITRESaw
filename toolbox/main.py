@@ -991,14 +991,7 @@ def mainsaw(
                     _url_max = max(30, _tw - _used)
                     _url_part = f" - {_url[:_url_max]}" if _url else ""
                     print(f"{_indent}\033[90m{_num_str:>5}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
-                # Newline only when next procedure is a different group or last
-                _is_last = (_proc_idx == _total_procedures)
-                _next_diff_group = False
-                if not _is_last:
-                    _next_g = consolidated_procedures[_proc_idx].split("||")[1].strip().lower()
-                    _next_diff_group = _next_g != current_group_name.strip().lower()
-                if _is_last or _next_diff_group:
-                    print()
+                print()
 
 
     threat_actor_technique_id_name_findings = list(
