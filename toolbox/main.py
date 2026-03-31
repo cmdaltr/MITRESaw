@@ -885,12 +885,14 @@ def mainsaw(
     _pb_extract = _ProgressBar("Processing:")
     _cit_num = 0  # running citation counter, resets per group
     _deferred_cits = []  # citations from procedures with no technique output
+    _last_printed_sep = False  # avoid consecutive separator lines
 
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         _proc_parts = each_procedure.split("||")
         current_group_name = _proc_parts[1]
         if last_group_name and current_group_name.strip().lower() != last_group_name.strip().lower():
-            _cit_num = 0  # reset counter for new group
+            _cit_num = 0
+            _deferred_cits = []  # don't carry citations across groups
         last_group_name = current_group_name
         if quiet:
             _cit_label = f"{current_group_name} ({len(_all_citation_refs)} refs)" if collect_citations else current_group_name
@@ -1000,8 +1002,12 @@ def mainsaw(
                     _url_part = f" - {_url[:_url_max]}" if _url else ""
                     print(f"{_indent}\033[90m{_num_str:>5}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
 
+        # Track that content was printed (resets separator guard)
+        if technique_findings:
+            _last_printed_sep = False
+
         # Print separator after the last procedure for each (group, technique)
-        if technique_findings and not quiet:
+        if not quiet and not _last_printed_sep:
             _is_last = (_proc_idx == _total_procedures)
             _next_is_diff = False
             if not _is_last:
@@ -1020,6 +1026,7 @@ def mainsaw(
                 _w_tech = 55
                 _w_ind = max(20, _tw - _w_group - _w_tech - 12)
                 print(f"   {'-' * _w_group} | {'-' * _w_tech} | {'-' * (_w_ind + 3)}")
+                _last_printed_sep = True
 
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
