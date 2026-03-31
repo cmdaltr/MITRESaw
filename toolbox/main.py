@@ -889,17 +889,16 @@ def mainsaw(
             _tid = _parts[2] if len(_parts) > 2 else ""
             _tname = _parts[3] if len(_parts) > 3 else ""
 
-            # Extract citation names directly from procedure text
+            # Extract citation names — skip any already collected globally
             _cit_names = re.findall(r"\(Citation:\s*([^)]+)\)", _raw_proc)
             _new_cits = []
             if _cit_names:
                 from toolbox.citation_collector import collect_reference_content
                 for _cn in _cit_names:
                     _cn = _cn.strip()
-                    _cit_key = (_cn, _tid)
-                    if _cit_key in _seen_citations:
+                    if _cn in _seen_citations:
                         continue
-                    _seen_citations.add(_cit_key)
+                    _seen_citations.add(_cn)
 
                     _ref_data = _citation_url_lookup.get(_cn, {})
                     _cit = {
