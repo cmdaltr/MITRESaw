@@ -926,6 +926,7 @@ def mainsaw(
                     _url = _ref.get("url", "")
                     _url_part = f" - {_url[:65]}" if _url else ""
                     print(f"         \033[90m#{_ci}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
+                print()
 
         threat_actor_technique_id_name_findings = []
 
