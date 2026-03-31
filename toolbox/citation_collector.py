@@ -460,6 +460,21 @@ def _extract_relevant_passages(
 # URL classification
 # ---------------------------------------------------------------------------
 
+def _rewrite_url(url: str) -> str:
+    """Rewrite known redirected/migrated URLs to their current location."""
+    if not url:
+        return url
+    # Mandiant blogs migrated to Google Cloud
+    if "www.mandiant.com/resources" in url:
+        slug = url.rsplit("/", 1)[-1]
+        return f"https://cloud.google.com/blog/topics/threat-intelligence/{slug}/"
+    # FireEye blogs also migrated to Mandiant/Google
+    if "www.fireeye.com/blog/" in url:
+        slug = url.rsplit("/", 1)[-1]
+        return f"https://cloud.google.com/blog/topics/threat-intelligence/{slug}/"
+    return url
+
+
 def _should_skip_url(url: str) -> bool:
     if not url or not url.startswith("http"):
         return True
@@ -537,7 +552,7 @@ def collect_reference_content(
     session = _make_session()
 
     for cit in citations:
-        url = cit.get("url", "")
+        url = _rewrite_url(cit.get("url", ""))
         stix_desc = cit.get("description", "")
         entry = {
             "citation_name": cit["citation_name"],
