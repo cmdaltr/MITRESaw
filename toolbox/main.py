@@ -409,102 +409,12 @@ def replace_commas_in_group_desc(csv_line):
     )
 
 
-def _collect_and_append_references(xlsx_path, consolidated_techniques, all_attack_data):
-    """Fetch citation references and append a Reference Detail sheet to the XLSX.
-
-    Uses RAW consolidated_techniques (with citations intact) instead of
-    the cleaned CSV, because _clean_field() strips (Citation: X) markers.
-    """
-    from toolbox.reference_collector import (
-        resolve_citations, collect_reference_content,
-    )
+def _write_reference_sheet(xlsx_path, all_refs):
+    """Append a Reference Detail sheet to an existing XLSX."""
     from openpyxl import load_workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
 
-    print("\n     Collecting citation references...")
-
-    # Build a lookup of all external_references from STIX relationships
-    # Key on raw description text (which still contains citations)
-    ext_ref_lookup = {}
-    for fw, attack_data in all_attack_data.items():
-        stix_path = getattr(attack_data, 'stix_filepath', None) or getattr(attack_data, 'src', None)
-        if not stix_path:
-            continue
-        try:
-            import json as _json
-            with open(stix_path) as f:
-                bundle = _json.load(f)
-            for obj in bundle.get("objects", []):
-                if obj.get("type") != "relationship":
-                    continue
-                desc = obj.get("description", "")
-                if desc and obj.get("external_references"):
-                    ext_ref_lookup[hash(desc)] = obj["external_references"]
-        except Exception:
-            continue
-
-    # Parse raw consolidated_techniques to get procedure text WITH citations
-    # Format: [0]group_id||[1]group_name||[2]technique_id||[3]technique_name||
-    #         [4]usage(raw)||...||[12]framework||[13]evidence_json
-    raw_procedures = []
-    for entry in consolidated_techniques:
-        parts = entry.split("||")
-        if len(parts) >= 5:
-            raw_procedures.append({
-                "group": parts[1],
-                "technique_id": parts[2],
-                "technique_name": parts[3],
-                "raw_procedure": parts[4],  # Raw text with citations
-            })
-
-    # Collect references
-    all_refs = []
-    seen_citations = set()
-    total = len(raw_procedures)
-
-    _pb_refs = _ProgressBar("References:")
-    for i, row in enumerate(raw_procedures, 1):
-        proc = row["raw_procedure"]
-        group = row["group"]
-        tid = row["technique_id"]
-        tname = row["technique_name"]
-
-        _pb_refs.update(i, total, f"{len(all_refs)} citations")
-
-        # Get STIX external_references for this procedure
-        ext_refs = ext_ref_lookup.get(hash(proc), [])
-
-        # Resolve citations from raw procedure text
-        citations = resolve_citations(proc, ext_refs)
-        if not citations:
-            continue
-
-        for cit in citations:
-            cit_key = (cit["citation_name"], tid)
-            if cit_key in seen_citations:
-                continue
-            seen_citations.add(cit_key)
-
-            # Fetch and extract content
-            fetched = collect_reference_content(
-                [cit], group, tname, tid, verbose=False,
-            )
-            for ref in fetched:
-                ref["group"] = group
-                ref["technique_id"] = tid
-                ref["technique_name"] = tname
-                all_refs.append(ref)
-
-    _pb_refs.done(total, f"{len(all_refs)} citations collected")
-
-    if not all_refs:
-        print("     No citation references found.")
-        return
-
-    with_content = sum(1 for r in all_refs if r.get("extracted_content"))
-    print(f"     {len(all_refs)} citations collected, {with_content} with extracted content")
-
-    # Append Reference Detail sheet to the existing XLSX
     wb = load_workbook(xlsx_path)
     ws = wb.create_sheet("Reference Detail")
     ws.sheet_view.showGridLines = False
@@ -533,7 +443,6 @@ def _collect_and_append_references(xlsx_path, consolidated_techniques, all_attac
         cell.alignment = align_center
         cell.border = border
     for ci, w in enumerate(widths, 1):
-        from openpyxl.utils import get_column_letter
         ws.column_dimensions[get_column_letter(ci)].width = w
     ws.row_dimensions[1].height = 32
 
@@ -562,7 +471,6 @@ def _collect_and_append_references(xlsx_path, consolidated_techniques, all_attac
         ws.auto_filter.ref = f"A1:E{1 + len(all_refs)}"
 
     wb.save(xlsx_path)
-    print(f"     Reference Detail sheet added ({len(all_refs)} citations)")
 
 
 def mainsaw(
@@ -909,13 +817,33 @@ def mainsaw(
             sub_technique = "-"
         technique_combo = [parent_technique, sub_technique, technique_count]
         technique_combos.append(technique_combo)
+    # Build STIX citation lookup if -R is enabled (before extraction loop)
+    _ext_ref_lookup = {}
+    _all_citation_refs = []
+    _seen_citations = set()
+    if collect_references:
+        for _fw, _ad in all_attack_data.items():
+            _sp = getattr(_ad, 'stix_filepath', None) or getattr(_ad, 'src', None)
+            if not _sp:
+                continue
+            try:
+                import json as _json
+                with open(_sp) as _f:
+                    _bundle = _json.load(_f)
+                for _obj in _bundle.get("objects", []):
+                    if _obj.get("type") == "relationship" and _obj.get("description") and _obj.get("external_references"):
+                        _ext_ref_lookup[hash(_obj["description"])] = _obj["external_references"]
+            except Exception:
+                continue
+
     last_group_name = None
     _total_procedures = len(consolidated_procedures)
-    _pb_extract = _ProgressBar("Extracting:")
+    _pb_extract = _ProgressBar("Processing:")
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         current_group_name = each_procedure.split("||")[1]
         last_group_name = current_group_name
-        _pb_extract.update(_proc_idx, _total_procedures, current_group_name)
+        _cit_label = f"{current_group_name} ({len(_all_citation_refs)} refs)" if collect_references else current_group_name
+        _pb_extract.update(_proc_idx, _total_procedures, _cit_label)
         (
             technique_findings,
             previous_findings,
@@ -928,6 +856,28 @@ def mainsaw(
             truncate,
             quiet,
         )
+        # Collect citations during extraction (if -R enabled)
+        if collect_references and _ext_ref_lookup:
+            _parts = each_procedure.split("||")
+            _raw_proc = _parts[4] if len(_parts) > 4 else ""
+            _ext_refs = _ext_ref_lookup.get(hash(_raw_proc), [])
+            if _ext_refs:
+                from toolbox.reference_collector import resolve_citations, collect_reference_content
+                _citations = resolve_citations(_raw_proc, _ext_refs)
+                for _cit in _citations:
+                    _cit_key = (_cit["citation_name"], _parts[2] if len(_parts) > 2 else "")
+                    if _cit_key not in _seen_citations:
+                        _seen_citations.add(_cit_key)
+                        _fetched = collect_reference_content(
+                            [_cit], _parts[1], _parts[3] if len(_parts) > 3 else "",
+                            _parts[2] if len(_parts) > 2 else "", verbose=False,
+                        )
+                        for _ref in _fetched:
+                            _ref["group"] = _parts[1] if len(_parts) > 1 else ""
+                            _ref["technique_id"] = _parts[2] if len(_parts) > 2 else ""
+                            _ref["technique_name"] = _parts[3] if len(_parts) > 3 else ""
+                            _all_citation_refs.append(_ref)
+
         threat_actor_technique_id_name_findings = []
 
         # constructing sub-technique pairing due to format of sub-techniques in mitre output files e.g. T1566.001||Spearphishing Attachment
@@ -958,7 +908,11 @@ def mainsaw(
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
     )
-    _pb_extract.done(_total_procedures, "Extraction complete")
+    _done_label = "Extraction complete"
+    if collect_references:
+        _with_content = sum(1 for r in _all_citation_refs if r.get("extracted_content"))
+        _done_label = f"Complete — {len(_all_citation_refs)} citations, {_with_content} with content"
+    _pb_extract.done(_total_procedures, _done_label)
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
 
@@ -1098,11 +1052,9 @@ def mainsaw(
                     threatgroups_arg=",".join(str(g) for g in provided_groups),
                 )
 
-                # Reference collection (-R): fetch citation sources
-                if collect_references:
-                    _collect_and_append_references(
-                        _er_path, consolidated_techniques, all_attack_data
-                    )
+                # Append Reference Detail sheet if citations were collected
+                if collect_references and _all_citation_refs:
+                    _write_reference_sheet(_er_path, _all_citation_refs)
 
                 # Move CSV alongside evidence report with matching name
                 import shutil
