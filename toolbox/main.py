@@ -973,7 +973,7 @@ def mainsaw(
 
             # Only print citations when this procedure produced visible technique output
             if _new_cits and technique_findings:
-                _indent = "          "
+                _indent = "        "
                 for _ref in _new_cits:
                     _cit_num += 1
                     _cn = _ref.get("citation_name", "")
