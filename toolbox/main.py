@@ -971,8 +971,8 @@ def mainsaw(
                         _all_citation_refs.append(_ref)
                         _new_cits.append(_ref)
 
-            # Print citations immediately after this procedure's technique output
-            if _new_cits:
+            # Print citations only if extract_indicators produced output for this procedure
+            if _new_cits and technique_findings:
                 _indent = "          "
                 for _ref in _new_cits:
                     _cit_num += 1
