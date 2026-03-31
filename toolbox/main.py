@@ -881,53 +881,6 @@ def mainsaw(
             truncate,
             quiet,
         )
-        # Collect citations during extraction (if -C enabled)
-        if collect_citations and _citation_url_lookup:
-            _parts = each_procedure.split("||")
-            _raw_proc = _parts[4] if len(_parts) > 4 else ""
-            _group = _parts[1] if len(_parts) > 1 else ""
-            _tid = _parts[2] if len(_parts) > 2 else ""
-            _tname = _parts[3] if len(_parts) > 3 else ""
-
-            # Extract citation names — skip any already collected globally
-            _cit_names = re.findall(r"\(Citation:\s*([^)]+)\)", _raw_proc)
-            _new_cits = []
-            if _cit_names:
-                from toolbox.citation_collector import collect_reference_content
-                for _cn in _cit_names:
-                    _cn = _cn.strip()
-                    if _cn in _seen_citations:
-                        continue
-                    _seen_citations.add(_cn)
-
-                    _ref_data = _citation_url_lookup.get(_cn, {})
-                    _cit = {
-                        "citation_name": _cn,
-                        "url": _ref_data.get("url", ""),
-                        "description": _ref_data.get("description", ""),
-                    }
-                    _fetched = collect_reference_content(
-                        [_cit], _group, _tname, _tid, verbose=False,
-                    )
-                    for _ref in _fetched:
-                        _ref["group"] = _group
-                        _ref["technique_id"] = _tid
-                        _ref["technique_name"] = _tname
-                        _all_citation_refs.append(_ref)
-                        _new_cits.append(_ref)
-
-            if _new_cits:
-                print(f"       \033[90mCitations...\033[0m")
-                for _ci, _ref in enumerate(_new_cits, 1):
-                    _method = _ref.get("method", "unknown")
-                    _icon = "\033[32m\u2705\033[0m" if _ref.get("extracted_content") else "\033[31m\u274c\033[0m"
-                    _name = _ref.get("citation_name", "")[:28].ljust(28)
-                    _method_short = _method[:10].ljust(10)
-                    _url = _ref.get("url", "")
-                    _url_part = f" - {_url[:65]}" if _url else ""
-                    print(f"         \033[90m#{_ci}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
-                print()
-
         threat_actor_technique_id_name_findings = []
 
         # constructing sub-technique pairing due to format of sub-techniques in mitre output files e.g. T1566.001||Spearphishing Attachment
@@ -955,6 +908,55 @@ def mainsaw(
             threat_actor_technique_id_name_findings.append(
                 threat_actor_technique_id_name_found
             )
+
+        # Collect citations AFTER technique output is printed (if -C enabled)
+        if collect_citations and _citation_url_lookup:
+            _parts = each_procedure.split("||")
+            _raw_proc = _parts[4] if len(_parts) > 4 else ""
+            _group = _parts[1] if len(_parts) > 1 else ""
+            _tid = _parts[2] if len(_parts) > 2 else ""
+            _tname = _parts[3] if len(_parts) > 3 else ""
+
+            _cit_names = re.findall(r"\(Citation:\s*([^)]+)\)", _raw_proc)
+            _new_cits = []
+            if _cit_names:
+                from toolbox.citation_collector import collect_reference_content
+                for _cn in _cit_names:
+                    _cn = _cn.strip()
+                    if _cn in _seen_citations:
+                        continue
+                    _seen_citations.add(_cn)
+
+                    _ref_data = _citation_url_lookup.get(_cn, {})
+                    _cit = {
+                        "citation_name": _cn,
+                        "url": _ref_data.get("url", ""),
+                        "description": _ref_data.get("description", ""),
+                    }
+                    _fetched = collect_reference_content(
+                        [_cit], _group, _tname, _tid, verbose=False,
+                    )
+                    for _ref in _fetched:
+                        _ref["group"] = _group
+                        _ref["technique_id"] = _tid
+                        _ref["technique_name"] = _tname
+                        _all_citation_refs.append(_ref)
+                        _new_cits.append(_ref)
+
+            if _new_cits:
+                _pad = "     Citations: "
+                _cont = "                "
+                for _ci, _ref in enumerate(_new_cits, 1):
+                    _method = _ref.get("method", "unknown")
+                    _icon = "\033[32m\u2705\033[0m" if _ref.get("extracted_content") else "\033[31m\u274c\033[0m"
+                    _name = _ref.get("citation_name", "")[:28].ljust(28)
+                    _method_short = _method[:10].ljust(10)
+                    _url = _ref.get("url", "")
+                    _url_part = f" - {_url[:65]}" if _url else ""
+                    _prefix = _pad if _ci == 1 else _cont
+                    print(f"{_prefix}\033[90m#{_ci}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
+                print()
+
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
     )
