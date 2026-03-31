@@ -53,6 +53,29 @@ _SKIP_DOMAINS = frozenset([
     "youtube.com", "vimeo.com",
 ])
 
+# Citation names that are tool homepages, vendor sites, or generic docs — no threat intel value
+_SKIP_CITATION_PATTERNS = [
+    r"(?i)homepage$",
+    r"(?i)^wikipedia ",
+    r"(?i)^microsoft docs",
+    r"(?i)^microsoft technet",
+    r"(?i)^microsoft windows ",
+    r"(?i)^apple developer",
+]
+
+_SKIP_CITATION_URLS = frozenset([
+    "www.7-zip.org", "www.rarlab.com", "www.winzip.com",
+    "www.gnu.org", "www.perl.org", "www.python.org", "www.ruby-lang.org",
+    "docs.microsoft.com", "learn.microsoft.com", "support.microsoft.com",
+    "developer.apple.com", "man7.org", "linux.die.net",
+    "en.wikipedia.org", "wikipedia.org",
+    "attack.mitre.org",  # Already have this data from STIX
+    "technet.microsoft.com", "msdn.microsoft.com",
+    "docs.docker.com", "kubernetes.io",
+    "www.openssl.org", "curl.se", "nmap.org", "www.wireshark.org",
+    "github.com/PowerShellMafia", "github.com/gentilkiwi",
+])
+
 _PDF_EXTENSIONS = frozenset([".pdf"])
 
 _BINARY_EXTENSIONS = frozenset([
@@ -562,6 +585,15 @@ def collect_reference_content(
             "method": "",
             "attempts": [],
         }
+
+        # Skip useless citations (homepages, docs, tool sites)
+        _cname = cit["citation_name"]
+        if any(re.search(p, _cname) for p in _SKIP_CITATION_PATTERNS):
+            continue
+        if url:
+            _url_domain = urlparse(url).netloc.lower().lstrip("www.")
+            if any(_url_domain.startswith(d.lstrip("www.")) for d in _SKIP_CITATION_URLS):
+                continue
 
         if not url:
             # No URL — use STIX metadata directly
