@@ -958,7 +958,7 @@ def mainsaw(
             # Print citations immediately after this procedure's technique output
             if _new_cits:
                 # Reset numbering if technique changed
-                _cur_tname_key = (_group.strip().lower(), _tname.strip().lower())
+                _cur_tname_key = _proc_parts[3].strip().lower() if len(_proc_parts) > 3 else ""
                 if _cur_tname_key != _last_cit_tname:
                     _cit_num = 0
                     _last_cit_tname = _cur_tname_key
