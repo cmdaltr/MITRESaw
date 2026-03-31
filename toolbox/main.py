@@ -891,6 +891,7 @@ def mainsaw(
 
             # Extract citation names directly from procedure text
             _cit_names = re.findall(r"\(Citation:\s*([^)]+)\)", _raw_proc)
+            _new_cits = []
             if _cit_names:
                 from toolbox.reference_collector import collect_reference_content
                 for _cn in _cit_names:
@@ -900,7 +901,6 @@ def mainsaw(
                         continue
                     _seen_citations.add(_cit_key)
 
-                    # Look up URL from the STIX citation index
                     _ref_data = _citation_url_lookup.get(_cn, {})
                     _cit = {
                         "citation_name": _cn,
@@ -915,10 +915,18 @@ def mainsaw(
                         _ref["technique_id"] = _tid
                         _ref["technique_name"] = _tname
                         _all_citation_refs.append(_ref)
-                        _method = _ref.get("method", "")
-                        _has_content = "yes" if _ref.get("extracted_content") else "no"
-                        _url_short = _ref.get("url", "")[:60]
-                        print(f"       \033[90m[citation {len(_all_citation_refs)}]\033[0m \033[36m{_cn[:50]}\033[0m → \033[33m{_method}\033[0m (content: {_has_content}) {_url_short}")
+                        _new_cits.append(_ref)
+
+            if _new_cits:
+                print(f"       \033[90mCitations...\033[0m")
+                for _ci, _ref in enumerate(_new_cits, 1):
+                    _method = _ref.get("method", "unknown")
+                    _icon = "\033[32m\u2705\033[0m" if _ref.get("extracted_content") else "\033[31m\u274c\033[0m"
+                    _name = _ref.get("citation_name", "")[:28].ljust(28)
+                    _method_short = _method[:10].ljust(10)
+                    _url = _ref.get("url", "")
+                    _url_part = f" - {_url[:65]}" if _url else ""
+                    print(f"         \033[90m#{_ci}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
 
         threat_actor_technique_id_name_findings = []
 
