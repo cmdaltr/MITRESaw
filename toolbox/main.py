@@ -987,11 +987,21 @@ def mainsaw(
                         _tw = os.get_terminal_size().columns
                     except OSError:
                         _tw = 120
-                    # Calculate remaining space for URL after the fixed-width prefix
-                    _used = 10 + 5 + 1 + 28 + 4 + 14 + 3 + 5  # indent + num + space + name + arrow + method + icon + " - "
+                    _used = 10 + 5 + 1 + 28 + 4 + 14 + 3 + 5
                     _url_max = max(30, _tw - _used)
                     _url_part = f" - {_url[:_url_max]}" if _url else ""
                     print(f"{_indent}\033[90m{_num_str:>5}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
+
+        # Print separator after technique row + citations (mirrors what extract.py used to print)
+        if technique_findings and not quiet:
+            try:
+                _tw = os.get_terminal_size().columns
+            except OSError:
+                _tw = 160
+            _w_group = 25
+            _w_tech = 55
+            _w_ind = max(20, _tw - _w_group - _w_tech - 12)
+            print(f"   {'-' * _w_group} | {'-' * _w_tech} | {'-' * (_w_ind + 3)}")
 
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
