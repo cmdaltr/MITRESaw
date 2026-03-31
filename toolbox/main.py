@@ -869,11 +869,13 @@ def mainsaw(
     last_group_name = None
     _total_procedures = len(consolidated_procedures)
     _pb_extract = _ProgressBar("Processing:")
-    _last_cit_tname = None  # track technique name for Citations: header
+    _cit_num = 0  # running citation counter, resets per group
 
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         _proc_parts = each_procedure.split("||")
         current_group_name = _proc_parts[1]
+        if last_group_name and current_group_name.strip().lower() != last_group_name.strip().lower():
+            _cit_num = 0  # reset counter for new group
         last_group_name = current_group_name
         if quiet:
             _cit_label = f"{current_group_name} ({len(_all_citation_refs)} refs)" if collect_citations else current_group_name
@@ -957,12 +959,6 @@ def mainsaw(
 
             # Print citations immediately after this procedure's technique output
             if _new_cits:
-                # Reset numbering if technique changed
-                _cur_tname_key = _proc_parts[3].strip().lower() if len(_proc_parts) > 3 else ""
-                if _cur_tname_key != _last_cit_tname:
-                    _cit_num = 0
-                    _last_cit_tname = _cur_tname_key
-
                 _pad = "     Citations: "
                 _cont = "                "
                 for _ref in _new_cits:
