@@ -884,6 +884,7 @@ def mainsaw(
     _total_procedures = len(consolidated_procedures)
     _pb_extract = _ProgressBar("Processing:")
     _cit_num = 0  # running citation counter, resets per group
+    _deferred_cits = []  # citations from procedures with no technique output
 
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         _proc_parts = each_procedure.split("||")
@@ -971,10 +972,17 @@ def mainsaw(
                         _all_citation_refs.append(_ref)
                         _new_cits.append(_ref)
 
-            # Print citations after technique output
-            if _new_cits:
+            # If no technique output, defer citations to print with next procedure that has output
+            if _new_cits and not technique_findings:
+                _deferred_cits.extend(_new_cits)
+                _new_cits = []
+
+            # Print deferred + new citations when technique output was produced
+            _print_cits = _deferred_cits + _new_cits
+            _deferred_cits = []
+            if _print_cits and technique_findings:
                 _indent = "          "
-                for _ref in _new_cits:
+                for _ref in _print_cits:
                     _cit_num += 1
                     _cn = _ref.get("citation_name", "")
                     _num_str = f"[{_cit_num}]"
@@ -992,14 +1000,18 @@ def mainsaw(
                     _url_part = f" - {_url[:_url_max]}" if _url else ""
                     print(f"{_indent}\033[90m{_num_str:>5}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
 
-        # Print separator when the next procedure is a different group or last procedure
+        # Print separator after the last procedure for each (group, technique)
         if technique_findings and not quiet:
             _is_last = (_proc_idx == _total_procedures)
-            _next_is_diff_group = False
+            _next_is_diff = False
             if not _is_last:
                 _next_parts = consolidated_procedures[_proc_idx].split("||")
-                _next_is_diff_group = _next_parts[1].strip().lower() != current_group_name.strip().lower()
-            if _is_last or _next_is_diff_group:
+                _next_group = _next_parts[1].strip().lower()
+                _next_tech = _next_parts[3].strip().lower() if len(_next_parts) > 3 else ""
+                _this_group = current_group_name.strip().lower()
+                _this_tech = _proc_parts[3].strip().lower() if len(_proc_parts) > 3 else ""
+                _next_is_diff = (_next_group != _this_group) or (_next_tech != _this_tech)
+            if _is_last or _next_is_diff:
                 try:
                     _tw = os.get_terminal_size().columns
                 except OSError:
