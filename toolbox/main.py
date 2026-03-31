@@ -861,19 +861,21 @@ def mainsaw(
             print(f"    -> {len(_citation_url_lookup)} unique citation sources indexed for collection\n")
 
     # Sort by group name so all procedures for the same group are contiguous
-    consolidated_procedures = sorted(consolidated_procedures, key=lambda p: p.split("||")[1])
+    consolidated_procedures = sorted(consolidated_procedures, key=lambda p: p.split("||")[1].strip().lower())
 
     last_group_name = None
     _total_procedures = len(consolidated_procedures)
     _pb_extract = _ProgressBar("Processing:")
-    _pending_cits = []
+    _group_cits = {}  # group_name_lower → list of citation refs
 
-    def _flush_pending_cits():
-        if not _pending_cits:
+    def _flush_group_cits(group_key):
+        """Print and clear citations for a group."""
+        cits = _group_cits.pop(group_key, [])
+        if not cits:
             return
         _pad = "     Citations: "
         _cont = "                "
-        for _ci, _ref in enumerate(_pending_cits, 1):
+        for _ci, _ref in enumerate(cits, 1):
             _method = _ref.get("method", "unknown")
             _icon = "\033[32m\u2705\033[0m" if _ref.get("extracted_content") else "\033[31m\u274c\033[0m"
             _name = _ref.get("citation_name", "")[:28].ljust(28)
@@ -883,14 +885,14 @@ def mainsaw(
             _prefix = _pad if _ci == 1 else _cont
             print(f"{_prefix}\033[90m#{_ci}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
         print()
-        _pending_cits.clear()
 
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         current_group_name = each_procedure.split("||")[1]
+        _current_group_key = current_group_name.strip().lower()
 
         # When group changes, flush citations from previous group
-        if last_group_name and current_group_name != last_group_name:
-            _flush_pending_cits()
+        if last_group_name and _current_group_key != last_group_name.strip().lower():
+            _flush_group_cits(last_group_name.strip().lower())
 
         last_group_name = current_group_name
         if quiet:
@@ -967,10 +969,11 @@ def mainsaw(
                         _ref["technique_id"] = _tid
                         _ref["technique_name"] = _tname
                         _all_citation_refs.append(_ref)
-                        _pending_cits.append(_ref)
+                        _group_cits.setdefault(_current_group_key, []).append(_ref)
 
     # Flush citations from the last group
-    _flush_pending_cits()
+    if last_group_name:
+        _flush_group_cits(last_group_name.strip().lower())
 
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
