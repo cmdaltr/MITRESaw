@@ -884,14 +884,12 @@ def mainsaw(
     _total_procedures = len(consolidated_procedures)
     _pb_extract = _ProgressBar("Processing:")
     _cit_num = 0  # running citation counter, resets per group
-    _deferred_cits = []  # citations from procedures with no technique output
 
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         _proc_parts = each_procedure.split("||")
         current_group_name = _proc_parts[1]
         if last_group_name and current_group_name.strip().lower() != last_group_name.strip().lower():
             _cit_num = 0
-            _deferred_cits = []  # don't carry citations across groups
         last_group_name = current_group_name
         if quiet:
             _cit_label = f"{current_group_name} ({len(_all_citation_refs)} refs)" if collect_citations else current_group_name
@@ -973,20 +971,10 @@ def mainsaw(
                         _all_citation_refs.append(_ref)
                         _new_cits.append(_ref)
 
-            # If no technique output, defer citations to print with next procedure that has output
-            if _new_cits and not technique_findings:
-                _deferred_cits.extend(_new_cits)
-                _new_cits = []
-
-            # Print deferred + new citations when technique output was produced
-            if technique_findings:
-                _print_cits = _deferred_cits + _new_cits
-                _deferred_cits = []
-            else:
-                _print_cits = []
-            if _print_cits:
+            # Only print citations when this procedure produced visible technique output
+            if _new_cits and technique_findings:
                 _indent = "          "
-                for _ref in _print_cits:
+                for _ref in _new_cits:
                     _cit_num += 1
                     _cn = _ref.get("citation_name", "")
                     _num_str = f"[{_cit_num}]"
