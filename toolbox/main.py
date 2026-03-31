@@ -68,17 +68,30 @@ def _progress_bar(current, total, label="", bar_width=30):
     sys.stdout.flush()
 
 
-def _progress_bar_clear():
-    """Remove the progress bar and restore full terminal scroll region."""
+def _progress_bar_done(total, label="Complete"):
+    """Show 100% on the progress bar, then restore full terminal scroll region."""
     try:
         tw = os.get_terminal_size().columns
         th = os.get_terminal_size().lines
     except OSError:
         tw, th = 120, 40
-    # Clear the reserved rows
+
+    bar_width = 30
+    bar = "\033[32m" + "█" * bar_width + "\033[0m"
+    status = f" {bar} {total}/{total} (100%) {label}"
+
+    # Draw final 100% bar
+    sys.stdout.write(f"\033[s\033[{th};1H\033[K{status[:tw]}\033[u")
+    sys.stdout.flush()
+
+    # Pause briefly so user sees 100%
+    time.sleep(0.5)
+
+    # Clear reserved rows and reset scroll region
     sys.stdout.write(f"\033[s\033[{th - 1};1H\033[K\033[{th};1H\033[K\033[u")
-    # Reset scroll region to full terminal
     sys.stdout.write(f"\033[1;{th}r")
+    # Move cursor to end of scrollable content
+    sys.stdout.write(f"\033[{th - 2};1H\n")
     sys.stdout.flush()
     _progress_bar._start = None
 from stix2 import TAXIICollectionSource, Filter
@@ -515,7 +528,7 @@ def _collect_and_append_references(xlsx_path, consolidated_techniques, all_attac
                 ref["technique_name"] = tname
                 all_refs.append(ref)
 
-    _progress_bar_clear()
+    _progress_bar_done(total, f"{len(all_refs)} citations collected")
 
     if not all_refs:
         print("     No citation references found.")
@@ -978,7 +991,7 @@ def mainsaw(
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
     )
-    _progress_bar_clear()
+    _progress_bar_done(_total_procedures, "Extraction complete")
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
 
