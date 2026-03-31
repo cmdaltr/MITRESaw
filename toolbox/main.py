@@ -915,6 +915,10 @@ def mainsaw(
                         _ref["technique_id"] = _tid
                         _ref["technique_name"] = _tname
                         _all_citation_refs.append(_ref)
+                        _method = _ref.get("method", "")
+                        _has_content = "yes" if _ref.get("extracted_content") else "no"
+                        _url_short = _ref.get("url", "")[:60]
+                        print(f"       \033[90m[citation {len(_all_citation_refs)}]\033[0m \033[36m{_cn[:50]}\033[0m → \033[33m{_method}\033[0m (content: {_has_content}) {_url_short}")
 
         threat_actor_technique_id_name_findings = []
 
