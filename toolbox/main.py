@@ -865,7 +865,7 @@ def mainsaw(
     last_group_name = None
     _total_procedures = len(consolidated_procedures)
     _pb_extract = _ProgressBar("Processing:")
-    _cit_counter = {}  # group_lower → running count
+    _last_cit_tname = None  # track technique name for Citations: header
 
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         _proc_parts = each_procedure.split("||")
@@ -953,21 +953,24 @@ def mainsaw(
 
             # Print citations immediately after this procedure's technique output
             if _new_cits:
-                _g_key = _group.strip().lower()
-                _start_num = _cit_counter.get(_g_key, 0)
+                # Reset numbering if technique changed
+                _cur_tname_key = (_group.strip().lower(), _tname.strip().lower())
+                if _cur_tname_key != _last_cit_tname:
+                    _cit_num = 0
+                    _last_cit_tname = _cur_tname_key
+
                 _pad = "     Citations: "
                 _cont = "                "
                 for _ci, _ref in enumerate(_new_cits):
-                    _num = _start_num + _ci + 1
+                    _cit_num += 1
                     _method = _ref.get("method", "unknown")
                     _icon = "\033[32m\u2705\033[0m" if _ref.get("extracted_content") else "\033[31m\u274c\033[0m"
                     _name = _ref.get("citation_name", "")[:28].ljust(28)
                     _method_short = _method[:14].ljust(14)
                     _url = _ref.get("url", "")
                     _url_part = f" - {_url[:65]}" if _url else ""
-                    _prefix = _pad if _ci == 0 and _start_num == 0 else _cont
-                    print(f"{_prefix}\033[90m#{_num}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
-                _cit_counter[_g_key] = _start_num + len(_new_cits)
+                    _prefix = _pad if _ci == 0 else _cont
+                    print(f"{_prefix}\033[90m#{_cit_num}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
                 print()
 
     threat_actor_technique_id_name_findings = list(
