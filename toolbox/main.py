@@ -858,41 +858,14 @@ def mainsaw(
             except Exception:
                 continue
         if _citation_url_lookup:
-            print(f"    -> {len(_citation_url_lookup)} unique citation sources indexed for collection")
+            print(f"    -> {len(_citation_url_lookup)} unique citation sources indexed for collection\n")
 
     last_group_name = None
-    _last_group_tech = None
     _total_procedures = len(consolidated_procedures)
     _pb_extract = _ProgressBar("Processing:")
-    _pending_cits = []
-
-    def _flush_pending_cits():
-        if not _pending_cits:
-            return
-        _pad = "     Citations: "
-        _cont = "                "
-        for _ci, _ref in enumerate(_pending_cits, 1):
-            _method = _ref.get("method", "unknown")
-            _icon = "\033[32m\u2705\033[0m" if _ref.get("extracted_content") else "\033[31m\u274c\033[0m"
-            _name = _ref.get("citation_name", "")[:28].ljust(28)
-            _method_short = _method[:14].ljust(14)
-            _url = _ref.get("url", "")
-            _url_part = f" - {_url[:65]}" if _url else ""
-            _prefix = _pad if _ci == 1 else _cont
-            print(f"{_prefix}\033[90m#{_ci}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
-        print()
-        _pending_cits.clear()
 
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         current_group_name = each_procedure.split("||")[1]
-        _current_tid = each_procedure.split("||")[2] if len(each_procedure.split("||")) > 2 else ""
-        _current_gt = (current_group_name, _current_tid)
-
-        # When group+technique changes, flush citations from previous
-        if _last_group_tech and _current_gt != _last_group_tech:
-            _flush_pending_cits()
-
-        _last_group_tech = _current_gt
         last_group_name = current_group_name
         if quiet:
             _cit_label = f"{current_group_name} ({len(_all_citation_refs)} refs)" if collect_citations else current_group_name
@@ -968,10 +941,6 @@ def mainsaw(
                         _ref["technique_id"] = _tid
                         _ref["technique_name"] = _tname
                         _all_citation_refs.append(_ref)
-                        _pending_cits.append(_ref)
-
-    # Flush any remaining citations from the last group
-    _flush_pending_cits()
 
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
@@ -982,9 +951,33 @@ def mainsaw(
             _with_content = sum(1 for r in _all_citation_refs if r.get("extracted_content"))
             _done_label = f"Complete — {len(_all_citation_refs)} citations, {_with_content} with content"
         _pb_extract.done(_total_procedures, _done_label)
-    elif collect_citations:
+
+    # Print citations grouped by group name (after all extraction output)
+    if _all_citation_refs:
+        # Group citations by group name
+        from collections import OrderedDict
+        _cits_by_group = OrderedDict()
+        for _ref in _all_citation_refs:
+            _g = _ref.get("group", "")
+            _cits_by_group.setdefault(_g, []).append(_ref)
+
         _with_content = sum(1 for r in _all_citation_refs if r.get("extracted_content"))
-        print(f"\n     {len(_all_citation_refs)} citations collected, {_with_content} with content")
+        print(f"\n     {len(_all_citation_refs)} citations collected, {_with_content} with content\n")
+
+        for _g, _refs in _cits_by_group.items():
+            print(f"     \033[1;31m{_g}\033[0m")
+            _pad = "     Citations: "
+            _cont = "                "
+            for _ci, _ref in enumerate(_refs, 1):
+                _method = _ref.get("method", "unknown")
+                _icon = "\033[32m\u2705\033[0m" if _ref.get("extracted_content") else "\033[31m\u274c\033[0m"
+                _name = _ref.get("citation_name", "")[:28].ljust(28)
+                _method_short = _method[:14].ljust(14)
+                _url = _ref.get("url", "")
+                _url_part = f" - {_url[:65]}" if _url else ""
+                _prefix = _pad if _ci == 1 else _cont
+                print(f"{_prefix}\033[90m#{_ci}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
+            print()
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
 
