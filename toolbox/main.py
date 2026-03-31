@@ -996,7 +996,6 @@ def mainsaw(
                     if _method in ("stix_metadata", "no_content", "") and _attempts:
                         _chain = " \033[90m→\033[0m ".join(f"\033[31m{a}\033[0m" for a in _attempts)
                         print(f"{_indent}       \033[90mTried: {_chain}\033[0m")
-                print()
 
 
     threat_actor_technique_id_name_findings = list(

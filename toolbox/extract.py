@@ -350,10 +350,10 @@ def extract_indicators(
         col_indicators = f"\033[1;33m{identifiers_str}\033[0m".ljust(w_indicators + 11)
         if not quiet:
             if truncate:
-                print(f"   {'-' * w_group} | {'-' * w_technique}")
+                print(f"\n   {'-' * w_group} | {'-' * w_technique}")
                 print(f"   {col_group} | {col_technique}")
             else:
-                print(f"   {'-' * w_group} | {'-' * w_technique} | {'-' * (w_indicators + 3)}")
+                print(f"\n   {'-' * w_group} | {'-' * w_technique} | {'-' * (w_indicators + 3)}")
                 print(f"   {col_group} | {col_technique} | {label} {col_indicators}")
             time.sleep(0.1)
 
