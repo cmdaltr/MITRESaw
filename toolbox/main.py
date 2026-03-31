@@ -861,12 +861,12 @@ def mainsaw(
             print(f"    -> {len(_citation_url_lookup)} unique citation sources indexed for collection")
 
     last_group_name = None
+    _last_group_tech = None
     _total_procedures = len(consolidated_procedures)
     _pb_extract = _ProgressBar("Processing:")
-    _pending_cits = []  # Buffer citations, flush when group changes
+    _pending_cits = []
 
     def _flush_pending_cits():
-        """Print buffered citations and clear the buffer."""
         if not _pending_cits:
             return
         _pad = "     Citations: "
@@ -885,11 +885,14 @@ def mainsaw(
 
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         current_group_name = each_procedure.split("||")[1]
+        _current_tid = each_procedure.split("||")[2] if len(each_procedure.split("||")) > 2 else ""
+        _current_gt = (current_group_name, _current_tid)
 
-        # When group changes, flush buffered citations from previous group
-        if last_group_name and current_group_name != last_group_name:
+        # When group+technique changes, flush citations from previous
+        if _last_group_tech and _current_gt != _last_group_tech:
             _flush_pending_cits()
 
+        _last_group_tech = _current_gt
         last_group_name = current_group_name
         if quiet:
             _cit_label = f"{current_group_name} ({len(_all_citation_refs)} refs)" if collect_citations else current_group_name
