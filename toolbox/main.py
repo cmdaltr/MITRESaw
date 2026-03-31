@@ -855,8 +855,9 @@ def mainsaw(
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         current_group_name = each_procedure.split("||")[1]
         last_group_name = current_group_name
-        _cit_label = f"{current_group_name} ({len(_all_citation_refs)} refs)" if collect_references else current_group_name
-        _pb_extract.update(_proc_idx, _total_procedures, _cit_label)
+        if quiet:
+            _cit_label = f"{current_group_name} ({len(_all_citation_refs)} refs)" if collect_references else current_group_name
+            _pb_extract.update(_proc_idx, _total_procedures, _cit_label)
         (
             technique_findings,
             previous_findings,
@@ -921,11 +922,15 @@ def mainsaw(
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
     )
-    _done_label = "Extraction complete"
-    if collect_references:
+    if quiet:
+        _done_label = "Extraction complete"
+        if collect_references:
+            _with_content = sum(1 for r in _all_citation_refs if r.get("extracted_content"))
+            _done_label = f"Complete — {len(_all_citation_refs)} citations, {_with_content} with content"
+        _pb_extract.done(_total_procedures, _done_label)
+    elif collect_references:
         _with_content = sum(1 for r in _all_citation_refs if r.get("extracted_content"))
-        _done_label = f"Complete — {len(_all_citation_refs)} citations, {_with_content} with content"
-    _pb_extract.done(_total_procedures, _done_label)
+        print(f"\n     {len(_all_citation_refs)} citations collected, {_with_content} with content")
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
 

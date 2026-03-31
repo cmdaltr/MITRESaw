@@ -16,6 +16,10 @@ import json
 import os
 import re
 import time
+import warnings
+
+# Suppress urllib3 InsecureRequestWarning from verify=False fallbacks
+warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 from html.parser import HTMLParser
 from io import BytesIO
 from pathlib import Path
