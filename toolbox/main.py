@@ -831,7 +831,9 @@ def mainsaw(
         technique_combo = [parent_technique, sub_technique, technique_count]
         technique_combos.append(technique_combo)
     # Build STIX citation lookup if -R is enabled (before extraction loop)
-    _ext_ref_lookup = {}
+    # Build citation lookup: collect ALL external_references from STIX relationships
+    # Keyed by citation source_name → {url, description} for direct lookup
+    _citation_url_lookup = {}  # source_name → {"url": ..., "description": ...}
     _all_citation_refs = []
     _seen_citations = set()
     if collect_references:
@@ -844,10 +846,19 @@ def mainsaw(
                 with open(_sp) as _f:
                     _bundle = _json.load(_f)
                 for _obj in _bundle.get("objects", []):
-                    if _obj.get("type") == "relationship" and _obj.get("description") and _obj.get("external_references"):
-                        _ext_ref_lookup[hash(_obj["description"])] = _obj["external_references"]
+                    if _obj.get("type") != "relationship":
+                        continue
+                    for _ref in _obj.get("external_references", []):
+                        _sn = _ref.get("source_name", "")
+                        if _sn and _sn != "mitre-attack" and _sn not in _citation_url_lookup:
+                            _citation_url_lookup[_sn] = {
+                                "url": _ref.get("url", ""),
+                                "description": _ref.get("description", ""),
+                            }
             except Exception:
                 continue
+        if _citation_url_lookup:
+            print(f"    -> {len(_citation_url_lookup)} unique citation sources indexed for collection")
 
     last_group_name = None
     _total_procedures = len(consolidated_procedures)
@@ -870,27 +881,40 @@ def mainsaw(
             truncate,
             quiet,
         )
-        # Collect citations during extraction (if -R enabled)
-        if collect_references and _ext_ref_lookup:
+        # Collect citations during extraction (if -C enabled)
+        if collect_references and _citation_url_lookup:
             _parts = each_procedure.split("||")
             _raw_proc = _parts[4] if len(_parts) > 4 else ""
-            _ext_refs = _ext_ref_lookup.get(hash(_raw_proc), [])
-            if _ext_refs:
-                from toolbox.reference_collector import resolve_citations, collect_reference_content
-                _citations = resolve_citations(_raw_proc, _ext_refs)
-                for _cit in _citations:
-                    _cit_key = (_cit["citation_name"], _parts[2] if len(_parts) > 2 else "")
-                    if _cit_key not in _seen_citations:
-                        _seen_citations.add(_cit_key)
-                        _fetched = collect_reference_content(
-                            [_cit], _parts[1], _parts[3] if len(_parts) > 3 else "",
-                            _parts[2] if len(_parts) > 2 else "", verbose=False,
-                        )
-                        for _ref in _fetched:
-                            _ref["group"] = _parts[1] if len(_parts) > 1 else ""
-                            _ref["technique_id"] = _parts[2] if len(_parts) > 2 else ""
-                            _ref["technique_name"] = _parts[3] if len(_parts) > 3 else ""
-                            _all_citation_refs.append(_ref)
+            _group = _parts[1] if len(_parts) > 1 else ""
+            _tid = _parts[2] if len(_parts) > 2 else ""
+            _tname = _parts[3] if len(_parts) > 3 else ""
+
+            # Extract citation names directly from procedure text
+            _cit_names = re.findall(r"\(Citation:\s*([^)]+)\)", _raw_proc)
+            if _cit_names:
+                from toolbox.reference_collector import collect_reference_content
+                for _cn in _cit_names:
+                    _cn = _cn.strip()
+                    _cit_key = (_cn, _tid)
+                    if _cit_key in _seen_citations:
+                        continue
+                    _seen_citations.add(_cit_key)
+
+                    # Look up URL from the STIX citation index
+                    _ref_data = _citation_url_lookup.get(_cn, {})
+                    _cit = {
+                        "citation_name": _cn,
+                        "url": _ref_data.get("url", ""),
+                        "description": _ref_data.get("description", ""),
+                    }
+                    _fetched = collect_reference_content(
+                        [_cit], _group, _tname, _tid, verbose=False,
+                    )
+                    for _ref in _fetched:
+                        _ref["group"] = _group
+                        _ref["technique_id"] = _tid
+                        _ref["technique_name"] = _tname
+                        _all_citation_refs.append(_ref)
 
         threat_actor_technique_id_name_findings = []
 

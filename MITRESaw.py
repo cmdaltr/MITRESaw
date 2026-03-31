@@ -114,8 +114,8 @@ parser.add_argument(
     default=False,
 )
 parser.add_argument(
-    "-R",
-    "--references",
+    "-C",
+    "--citations",
     help="Collect ALL citation/reference material for each technique.\n"
          "Fetches source URLs (blog posts, reports, advisories) and extracts\n"
          "pertinent content. Requires -E. Adds 'Reference Detail' sheet.\n",
@@ -153,7 +153,7 @@ export_format = args.export
 quiet = args.quiet
 fetch = args.fetch
 evidence_report = args.evidence_report
-collect_references = args.references
+collect_references = args.citations
 
 if preset and not columns:
     columns = (
