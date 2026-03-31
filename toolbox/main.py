@@ -979,9 +979,12 @@ def mainsaw(
                 _new_cits = []
 
             # Print deferred + new citations when technique output was produced
-            _print_cits = _deferred_cits + _new_cits
-            _deferred_cits = []
-            if _print_cits and technique_findings:
+            if technique_findings:
+                _print_cits = _deferred_cits + _new_cits
+                _deferred_cits = []
+            else:
+                _print_cits = []
+            if _print_cits:
                 _indent = "          "
                 for _ref in _print_cits:
                     _cit_num += 1
