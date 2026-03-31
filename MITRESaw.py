@@ -153,7 +153,7 @@ export_format = args.export
 quiet = args.quiet
 fetch = args.fetch
 evidence_report = args.evidence_report
-collect_references = args.citations
+collect_citations = args.citations
 
 if preset and not columns:
     columns = (
@@ -196,7 +196,7 @@ def main():
         quiet,
         fetch,
         evidence_report=evidence_report,
-        collect_references=collect_references,
+        collect_citations=collect_citations,
     )
 
 

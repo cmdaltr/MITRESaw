@@ -504,7 +504,7 @@ def mainsaw(
     quiet=False,
     fetch=False,
     evidence_report=False,
-    collect_references=False,
+    collect_citations=False,
 ):
 
     # checking latest version and loading STIX data
@@ -836,7 +836,7 @@ def mainsaw(
     _citation_url_lookup = {}  # source_name → {"url": ..., "description": ...}
     _all_citation_refs = []
     _seen_citations = set()
-    if collect_references:
+    if collect_citations:
         for _fw, _ad in all_attack_data.items():
             _sp = getattr(_ad, 'stix_filepath', None) or getattr(_ad, 'src', None)
             if not _sp:
@@ -867,7 +867,7 @@ def mainsaw(
         current_group_name = each_procedure.split("||")[1]
         last_group_name = current_group_name
         if quiet:
-            _cit_label = f"{current_group_name} ({len(_all_citation_refs)} refs)" if collect_references else current_group_name
+            _cit_label = f"{current_group_name} ({len(_all_citation_refs)} refs)" if collect_citations else current_group_name
             _pb_extract.update(_proc_idx, _total_procedures, _cit_label)
         (
             technique_findings,
@@ -882,7 +882,7 @@ def mainsaw(
             quiet,
         )
         # Collect citations during extraction (if -C enabled)
-        if collect_references and _citation_url_lookup:
+        if collect_citations and _citation_url_lookup:
             _parts = each_procedure.split("||")
             _raw_proc = _parts[4] if len(_parts) > 4 else ""
             _group = _parts[1] if len(_parts) > 1 else ""
@@ -948,11 +948,11 @@ def mainsaw(
     )
     if quiet:
         _done_label = "Extraction complete"
-        if collect_references:
+        if collect_citations:
             _with_content = sum(1 for r in _all_citation_refs if r.get("extracted_content"))
             _done_label = f"Complete — {len(_all_citation_refs)} citations, {_with_content} with content"
         _pb_extract.done(_total_procedures, _done_label)
-    elif collect_references:
+    elif collect_citations:
         _with_content = sum(1 for r in _all_citation_refs if r.get("extracted_content"))
         print(f"\n     {len(_all_citation_refs)} citations collected, {_with_content} with content")
     all_evidence.append(technique_findings)
@@ -1095,7 +1095,7 @@ def mainsaw(
                 )
 
                 # Append Reference Detail sheet if citations were collected
-                if collect_references and _all_citation_refs:
+                if collect_citations and _all_citation_refs:
                     _write_reference_sheet(_er_path, _all_citation_refs)
 
                 # Move CSV alongside evidence report with matching name
