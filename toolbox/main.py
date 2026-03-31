@@ -992,16 +992,23 @@ def mainsaw(
                     _url_part = f" - {_url[:_url_max]}" if _url else ""
                     print(f"{_indent}\033[90m{_num_str:>5}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
 
-        # Print separator after technique row + citations (mirrors what extract.py used to print)
+        # Print separator only before the next DIFFERENT technique (or at end)
         if technique_findings and not quiet:
-            try:
-                _tw = os.get_terminal_size().columns
-            except OSError:
-                _tw = 160
-            _w_group = 25
-            _w_tech = 55
-            _w_ind = max(20, _tw - _w_group - _w_tech - 12)
-            print(f"   {'-' * _w_group} | {'-' * _w_tech} | {'-' * (_w_ind + 3)}")
+            _is_last = (_proc_idx == _total_procedures)
+            _next_tname = ""
+            if not _is_last:
+                _next_parts = consolidated_procedures[_proc_idx].split("||")  # _proc_idx is 1-based, so this is the next item
+                _next_tname = (_next_parts[1].strip().lower(), _next_parts[3].strip().lower() if len(_next_parts) > 3 else "")
+            _this_tname = (current_group_name.strip().lower(), _proc_parts[3].strip().lower() if len(_proc_parts) > 3 else "")
+            if _is_last or _next_tname != _this_tname:
+                try:
+                    _tw = os.get_terminal_size().columns
+                except OSError:
+                    _tw = 160
+                _w_group = 25
+                _w_tech = 55
+                _w_ind = max(20, _tw - _w_group - _w_tech - 12)
+                print(f"   {'-' * _w_group} | {'-' * _w_tech} | {'-' * (_w_ind + 3)}")
 
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
