@@ -885,7 +885,6 @@ def mainsaw(
     _pb_extract = _ProgressBar("Processing:")
     _cit_num = 0  # running citation counter, resets per group
     _deferred_cits = []  # citations from procedures with no technique output
-    _last_printed_sep = False  # avoid consecutive separator lines
 
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         _proc_parts = each_procedure.split("||")
@@ -1002,31 +1001,6 @@ def mainsaw(
                     _url_part = f" - {_url[:_url_max]}" if _url else ""
                     print(f"{_indent}\033[90m{_num_str:>5}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
 
-        # Track that content was printed (resets separator guard)
-        if technique_findings:
-            _last_printed_sep = False
-
-        # Print separator after the last procedure for each (group, technique)
-        if not quiet and not _last_printed_sep:
-            _is_last = (_proc_idx == _total_procedures)
-            _next_is_diff = False
-            if not _is_last:
-                _next_parts = consolidated_procedures[_proc_idx].split("||")
-                _next_group = _next_parts[1].strip().lower()
-                _next_tech = _next_parts[3].strip().lower() if len(_next_parts) > 3 else ""
-                _this_group = current_group_name.strip().lower()
-                _this_tech = _proc_parts[3].strip().lower() if len(_proc_parts) > 3 else ""
-                _next_is_diff = (_next_group != _this_group) or (_next_tech != _this_tech)
-            if _is_last or _next_is_diff:
-                try:
-                    _tw = os.get_terminal_size().columns
-                except OSError:
-                    _tw = 160
-                _w_group = 25
-                _w_tech = 55
-                _w_ind = max(20, _tw - _w_group - _w_tech - 12)
-                print(f"   {'-' * _w_group} | {'-' * _w_tech} | {'-' * (_w_ind + 3)}")
-                _last_printed_sep = True
 
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)

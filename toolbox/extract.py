@@ -351,8 +351,10 @@ def extract_indicators(
         if not quiet:
             if truncate:
                 print(f"   {col_group} | {col_technique}")
+                print(f"   {'-' * w_group} | {'-' * w_technique}")
             else:
                 print(f"   {col_group} | {col_technique} | {label} {col_indicators}")
+                print(f"   {'-' * w_group} | {'-' * w_technique} | {'-' * (w_indicators + 3)}")
             time.sleep(0.1)
 
     software_group_name = valid_procedure.split("||")[1]
