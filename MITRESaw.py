@@ -85,7 +85,7 @@ parser.add_argument(
     default=None,
 )
 parser.add_argument(
-    "-d",
+    "-D",
     "--default",
     help="Export an express CSV (ThreatActors_Keywords.csv) with key columns:\n"
          "group_sw_id, group_sw_name, group_sw_description,\n"
@@ -133,10 +133,10 @@ parser.add_argument(
     default=False,
 )
 parser.add_argument(
-    "--import-citations",
+    "-I", "--import-citations",
     help="Import manually saved citation files (PDF/HTML) into cache.\n"
-         "Default directory: citations/\n"
-         "Save blocked pages as PDF from your browser into citations/\n",
+         "Default directory: data/citations/\n"
+         "Save blocked pages as PDF from your browser into data/citations/\n",
     nargs="?",
     const="data/citations",
     metavar="DIR",

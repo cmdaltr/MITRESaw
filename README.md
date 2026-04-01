@@ -82,7 +82,8 @@ options:
   -q, --quiet                 Suppress per-identifier output; print only group completion
   -r, --truncate              Truncate indicator output (still written to file)
   -c, --columns COLUMNS       Export filtered CSV with specified columns (comma-separated)
-  -d, --default               Export key procedure columns to mitre_procedures.csv
+  -D, --default               Export key procedure columns to mitre_procedures.csv
+  -I, --import-citations      Import manually saved PDF/HTML citations (default: data/citations/)
   -x, --export {csv,json,xml} Export format for output files (default: csv)
   -E, --evidence-report       Generate styled XLSX evidence report (one row per indicator)
   -C, --citations             Collect citation sources with multi-method fallback (requires -E)
@@ -92,10 +93,10 @@ options:
 
 ### Quick Start — If In Doubt
 
-The `-d` (default) flag is the catch-all option. It extracts all groups across all platforms with the key procedure columns and produces a clean CSV ready for SIEM ingestion. Combine with `-E` to also get the styled XLSX evidence report:
+The `-D` (default) flag is the catch-all option. It extracts all groups across all platforms with the key procedure columns and produces a clean CSV ready for SIEM ingestion. Combine with `-E` to also get the styled XLSX evidence report:
 
 ```bash
-./MITRESaw.py -d -E -C
+./MITRESaw.py -D -E -C
 ```
 
 This gives you everything you need to get started: `mitre_procedures.csv` for lookups, `mitre_procedures.xlsx` for analysis, and citation source content from blog posts, vendor reports, and PDFs. Add `-q` for quieter output, or layer on `-g`, `-p`, `-t` filters to narrow scope.
@@ -104,10 +105,10 @@ This gives you everything you need to get started: `mitre_procedures.csv` for lo
 
 ```bash
 # Default export with all groups (fastest way to get results)
-./MITRESaw.py -d
+./MITRESaw.py -D
 
 # Quiet mode - show group completion instead of every indicator
-./MITRESaw.py -d -q
+./MITRESaw.py -D -q
 
 # Filter by platform and threat group
 ./MITRESaw.py -p Windows -g APT29
@@ -128,10 +129,10 @@ This gives you everything you need to get started: `mitre_procedures.csv` for lo
 ./MITRESaw.py -g APT29 -p Windows -E -C
 
 # Full run: all groups, evidence report, citations, clear stale cache
-./MITRESaw.py -d -E -C --clear-cache
+./MITRESaw.py -D -E -C --clear-cache
 
 # Force refresh STIX data and clear citation cache
-./MITRESaw.py -d -E -C --clear-cache -F
+./MITRESaw.py -D -E -C --clear-cache -F
 ```
 
 Valid column names for `--columns`:
@@ -264,7 +265,7 @@ For large runs (all groups with citation collection), MITRESaw can take a signif
 tmux new -s mitresaw
 
 # Run MITRESaw
-./MITRESaw.py -d -E -C
+./MITRESaw.py -D -E -C
 
 # Detach from tmux: press Ctrl+B then D
 
@@ -276,7 +277,7 @@ Alternatively, run with `nohup` and monitor the log:
 
 ```bash
 # Run in background
-nohup ./MITRESaw.py -d -E -C -q > mitresaw.log 2>&1 &
+nohup ./MITRESaw.py -D -E -C -q > mitresaw.log 2>&1 &
 
 # Check progress
 tail -5 mitresaw.log

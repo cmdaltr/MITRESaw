@@ -1257,7 +1257,7 @@ def mainsaw(
                     filtered_base_name = "mitre_procedures"
                     filtered_dir = mitresaw_root_date
                 else:
-                    filtered_base_name = "ThreatActors_Keywords"
+                    filtered_base_name = "mitre_procedures"
                     filtered_dir = mitresaw_output_directory
                 if export_format == "json":
                     filtered_path = os.path.join(filtered_dir, f"{filtered_base_name}.json")
