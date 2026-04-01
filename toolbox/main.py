@@ -1023,7 +1023,7 @@ def mainsaw(
                     if _ref.get("extracted_content") and _method not in ("stix_metadata", "no_content"):
                         _icon = "\033[32m\u2705\033[0m"  # real content fetched
                     elif _method == "stix_metadata":
-                        _icon = "\033[33m\u26a0\ufe0f\033[0m"   # metadata only
+                        _icon = "\033[33m\u26a0\ufe0f\033[0m "   # metadata only
                     else:
                         _icon = "\033[31m\u274c\033[0m"  # no content
                     _name = _cn[:28].ljust(28)
