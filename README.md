@@ -67,7 +67,8 @@ All arguments are optional named flags with sensible defaults. To display usage,
 ```
 usage: MITRESaw.py [-h] [-f FRAMEWORK] [-p PLATFORMS] [-t SEARCHTERMS]
                    [-g THREATGROUPS] [-a] [-n] [-Q] [-q] [-r]
-                   [-c COLUMNS] [-d] [-x {csv,json,xml}] [-E] [-R] [-F]
+                   [-c COLUMNS] [-d] [-x {csv,json,xml}] [-E] [-C]
+                   [--clear-cache] [-F]
 
 options:
   -h, --help                  show this help message and exit
@@ -84,7 +85,8 @@ options:
   -d, --default               Export key procedure columns to mitre_procedures.csv
   -x, --export {csv,json,xml} Export format for output files (default: csv)
   -E, --evidence-report       Generate styled XLSX evidence report (one row per indicator)
-  -R, --references            Fetch citation sources and extract pertinent content (requires -E)
+  -C, --citations             Collect citation sources with multi-method fallback (requires -E)
+  --clear-cache               Clear the citation cache before running
   -F, --fetch                 Force fresh download of ATT&CK STIX data
 ```
 
@@ -93,10 +95,10 @@ options:
 The `-d` (default) flag is the catch-all option. It extracts all groups across all platforms with the key procedure columns and produces a clean CSV ready for SIEM ingestion. Combine with `-E` to also get the styled XLSX evidence report:
 
 ```bash
-./MITRESaw.py -d -E
+./MITRESaw.py -d -E -C
 ```
 
-This gives you everything you need to get started: `mitre_procedures.csv` for lookups and `mitre_procedures.xlsx` for analysis. Add `-q` for quieter output, or layer on `-g`, `-p`, `-t` filters to narrow scope.
+This gives you everything you need to get started: `mitre_procedures.csv` for lookups, `mitre_procedures.xlsx` for analysis, and citation source content from blog posts, vendor reports, and PDFs. Add `-q` for quieter output, or layer on `-g`, `-p`, `-t` filters to narrow scope.
 
 ### Examples
 
@@ -122,15 +124,21 @@ This gives you everything you need to get started: `mitre_procedures.csv` for lo
 # Evidence report with SIEM queries
 ./MITRESaw.py -g APT29,APT33,OilRig -p Windows -E -Q
 
-# Evidence report with full reference collection
-./MITRESaw.py -g APT29 -p Windows -E -R
+# Evidence report with citation collection
+./MITRESaw.py -g APT29 -p Windows -E -C
+
+# Full run: all groups, evidence report, citations, clear stale cache
+./MITRESaw.py -d -E -C --clear-cache
+
+# Force refresh STIX data and clear citation cache
+./MITRESaw.py -d -E -C --clear-cache -F
 ```
 
 Valid column names for `--columns`:
 ```
 group_sw_id, group_sw_name, group_sw_description, technique_id,
-technique_name, technique_description, tactic, procedure_example,
-evidence, detectable_via, keywords
+technique_name, technique_description, tactic, platforms, framework,
+procedure_example, evidence, detectable_via, keywords
 ```
 
 ## Output Files
@@ -145,22 +153,25 @@ Outputs written to: ./2026-03-28/Windows__APT29/
 
 When no group/platform/term filters are provided, both files are placed in the date root directory (e.g. `./2026-03-28/`) alongside each other.
 
-**`mitre_procedures.csv`** — One row per group+technique pair. Suitable for direct ingestion as a lookup table into Splunk (`| inputlookup`), Microsoft Defender for Endpoint, Elastic, or any SIEM. Fields are properly quoted per RFC 4180. Columns: `group_sw_id`, `group_sw_name`, `group_sw_description`, `technique_id`, `technique_name`, `technique_description`, `tactic`, `procedure_example`, `evidence`, `detectable_via`.
+**`mitre_procedures.csv`** — One row per group+technique pair. Suitable for direct ingestion as a lookup table into Splunk (`| inputlookup`), Microsoft Defender for Endpoint, Elastic, or any SIEM. Fields are properly quoted per RFC 4180. Columns: `group_sw_id`, `group_sw_name`, `group_sw_description`, `technique_id`, `technique_name`, `technique_description`, `tactic`, `platforms`, `framework`, `procedure_example`, `evidence`, `detectable_via`.
 
 **`mitre_procedures.xlsx`** — Styled evidence report with multiple sheets:
 
 | Sheet | Description |
 |-------|-------------|
-| Evidence Report | One row per atomic indicator with 12 columns (see schema below) |
+| Evidence Report | One row per atomic indicator with 14 columns (see schema below) |
 | Group Summary | Per-group stats: technique count, indicator count, tactic coverage, invocation coverage |
 | Tactic Pivot | Indicators per tactic, sorted by count, with example technique IDs |
 | Technique Matrix | Intersection matrix (only when 2+ groups): techniques as rows, groups as columns, `1` where a group uses that technique, sorted by group coverage descending for prioritising hunting |
+| Reference Detail | Citation sources with extracted content, collection method, and URL (only with `-C`) |
+
+**`citations_failed.csv`** / **`citations_failed.yaml`** — List of citations that fell back to STIX metadata (URL fetch failed across all methods). Includes the full attempt chain for diagnostics. Only generated with `-C`.
 
 ## Evidence Report (-E)
 
 The `--evidence-report` / `-E` flag generates a styled XLSX evidence report (`mitre_procedures.xlsx`) with **one row per atomic indicator** extracted from MITRE ATT&CK procedure examples, plus a companion `mitre_procedures.csv` for SIEM ingestion.
 
-### 12-Column Schema
+### 14-Column Schema
 
 | # | Column | Description |
 |---|--------|-------------|
@@ -170,33 +181,102 @@ The `--evidence-report` / `-E` flag generates a styled XLSX evidence report (`mi
 | 4 | Technique ID | ATT&CK technique ID (e.g. T1059.001) |
 | 5 | Technique Name | ATT&CK technique name |
 | 6 | Tactic | ATT&CK tactic |
-| 7 | MITRE Invocations | Invocation strings extracted from procedure text — backtick-wrapped commands, CLI flags, registry paths, file paths as MITRE documented them. Where none are found, states this explicitly. |
-| 8 | Detection Guidance | Detection context per indicator type (Sysmon EIDs, detection methods) |
-| 9 | Log Sources | MITRESaw-mapped log sources for detection (e.g. `Sysmon: 1`, `Security EventLog: 4688`, `AppLocker EventLog`, `netflow`, `PCAP`, `*nix /var/log`) |
-| 10 | Reference URL | URL from procedure text or constructed ATT&CK technique URL |
-| 11 | Navigation Layer URL | ATT&CK Navigator JSON layer URL for the group |
-| 12 | Source Type | Website or GitHub \| Website |
+| 7 | Platforms | Target platforms (e.g. Windows, Linux, macOS) |
+| 8 | Framework | ATT&CK framework (Enterprise, ICS, Mobile) |
+| 9 | MITRE Invocations | Invocation strings extracted from procedure text — backtick-wrapped commands, CLI flags, registry paths, file paths as MITRE documented them |
+| 10 | Detection Guidance | Detection context per indicator type (Sysmon EIDs, detection methods) |
+| 11 | Log Sources | MITRESaw-mapped log sources (e.g. `Sysmon: 1`, `Security EventLog: 4688`, `AppLocker EventLog`, `netflow`, `PCAP`, `*nix /var/log`) |
+| 12 | Reference URL | URL from procedure text or constructed ATT&CK technique URL |
+| 13 | Navigation Layer URL | ATT&CK Navigator JSON layer URL for the group |
+| 14 | Source Type | Website or GitHub \| Website |
 
 ### Technique Matrix
 
 When 2+ groups are provided (e.g. `-g APT29,APT33,OilRig`), a **Technique Matrix** sheet is added showing which techniques are shared across groups. Techniques are sorted by the number of groups that use them (descending), helping prioritise which TTPs to hunt for first — techniques used by all targeted groups offer the highest detection ROI.
 
-## Reference Collection (-R)
+## Citation Collection (-C)
 
-The `-R` flag fetches ALL citation/reference sources for each technique — blog posts, vendor reports, government advisories, GitHub repositories — and extracts pertinent content relating to each group's use of that technique.
+The `-C` / `--citations` flag collects ALL citation source material for each technique — blog posts, vendor reports, government advisories, PDFs, and more. Citations are collected inline during extraction and displayed per technique.
 
-For each `(Citation: X)` in the MITRE procedure text, the collector:
-1. Resolves the citation name to its source URL via STIX `external_references`
-2. Fetches the source page (HTML to plain text extraction)
-3. Finds paragraphs mentioning the group name, technique, or indicators
-4. Writes the extracted content to a "Reference Detail" sheet in the XLSX
+### Multi-Method Fallback Chain
 
-Fetched pages are cached in `.citation_cache/` to avoid re-downloading. Rate-limited at 0.3s between requests.
+For each `(Citation: X)` found in procedure text, technique descriptions, and detection guidance, the collector tries multiple methods in order until content is obtained:
 
-The standalone all-groups script also supports this:
+| Method | Description | Status Icon |
+|--------|-------------|-------------|
+| **direct** | Standard HTTP fetch with browser-like headers | ✅ |
+| **headless** | Playwright Chromium for Cloudflare/JS-protected sites | ✅ |
+| **wayback** | Wayback Machine (web.archive.org) archived snapshot | ✅ |
+| **google_cache** | Google's cached version of the page | ✅ |
+| **pdf:PyPDF2** | PDF downloaded and text extracted | ✅ |
+| **cached** | Previously fetched, loaded from `.citation_cache/` | ✅ |
+| **stix_metadata** | STIX description field only (author, title, date) | ⚠️ |
+
+### URL Rewriting
+
+Known migrated URLs are automatically rewritten:
+- `www.mandiant.com/resources/...` → `cloud.google.com/blog/topics/threat-intelligence/...`
+- `www.fireeye.com/blog/...` → `cloud.google.com/blog/topics/threat-intelligence/...`
+
+### Filtered Citations
+
+Homepages and documentation sites are automatically skipped (7-zip, WinRAR, Wikipedia, Microsoft docs, Cisco product docs, etc.) — these have no threat intelligence value.
+
+### Cache
+
+Fetched pages are cached in `.citation_cache/` to avoid re-downloading on subsequent runs. Use `--clear-cache` to force re-fetching all sources. Failed URLs are NOT cached, allowing retry on the next run.
+
+### Optional Dependencies
+
+| Package | Purpose | Install |
+|---------|---------|---------|
+| `PyPDF2` | PDF text extraction | `pip install PyPDF2` |
+| `playwright` | Headless browser for JS/Cloudflare sites | `pip install playwright && playwright install chromium` |
+
+Both are optional — the collector works without them but will skip PDF extraction and headless browsing.
+
+### Failed Citations Report
+
+Citations that fell back to `stix_metadata` are written to `citations_failed.csv` and `citations_failed.yaml` in the output directory, with the full attempt chain for each URL.
+
+## Running in the Background
+
+For large runs (all groups with citation collection), MITRESaw can take a significant amount of time. Use `tmux` to run it in the background and reconnect later:
+
 ```bash
-python3 toolbox/scripts/mitre_all_groups_evidence.py -R
+# Start a tmux session
+tmux new -s mitresaw
+
+# Run MITRESaw
+./MITRESaw.py -d -E -C
+
+# Detach from tmux: press Ctrl+B then D
+
+# Re-attach anytime to see live progress
+tmux attach -t mitresaw
 ```
+
+Alternatively, run with `nohup` and monitor the log:
+
+```bash
+# Run in background
+nohup ./MITRESaw.py -d -E -C -q > mitresaw.log 2>&1 &
+
+# Check progress
+tail -5 mitresaw.log
+
+# Watch live
+tail -f mitresaw.log
+```
+
+### Progress Bar
+
+A dual progress bar is pinned to the bottom of the terminal showing:
+- **Procedures** — extraction progress across all group+technique pairs
+- **Citations** — collection progress across all citation sources
+- **ETA** — estimated time remaining
+
+The progress bar stays in place while extraction output scrolls above it.
 
 ### Notices
 
