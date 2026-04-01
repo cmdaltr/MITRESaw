@@ -36,8 +36,8 @@ class _ProgressBar:
             th = os.get_terminal_size().lines
         except OSError:
             th = 40
-        # Set scroll region, keep cursor where it is (no jump)
-        sys.stdout.write(f"\033[1;{th - self._ROWS}r")
+        # Save cursor, set scroll region, restore cursor
+        sys.stdout.write(f"\033[s\033[1;{th - self._ROWS}r\033[u")
         sys.stdout.flush()
         self._active = True
 
