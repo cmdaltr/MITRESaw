@@ -133,6 +133,15 @@ parser.add_argument(
     default=False,
 )
 parser.add_argument(
+    "--import-citations",
+    help="Import manually saved citation files (PDF/HTML) from a directory.\n"
+         "File names must contain the citation URL domain or be named as the URL.\n"
+         "Example: save a blocked page as 'securelist.com_apt-luminousmoth.pdf'\n"
+         "         or 'https___securelist.com_apt-luminousmoth_103332.html'\n",
+    metavar="DIR",
+    default=None,
+)
+parser.add_argument(
     "-F",
     "--fetch",
     help="Force a fresh download of ATT&CK STIX data (default: re-download if older than 7 days)\n",
@@ -172,6 +181,11 @@ if args.clear_cache:
         print(f"    -> Cleared citation cache ({cache_dir}/)")
     else:
         print(f"    -> No citation cache to clear")
+
+if args.import_citations:
+    from toolbox.citation_collector import import_citation_files
+    _count = import_citation_files(args.import_citations)
+    print(f"    -> {_count} citation files imported into cache")
 
 if preset and not columns:
     columns = (

@@ -799,6 +799,99 @@ def collect_reference_content(
     return results
 
 
+def import_citation_files(import_dir: str) -> int:
+    """Import manually saved PDF/HTML files into the citation cache.
+
+    File naming convention — use any of these formats:
+      securelist.com_apt-luminousmoth.pdf
+      https___securelist.com_apt-luminousmoth_103332.html
+      unit42.paloaltonetworks.com_medusa-ransomware.pdf
+      any-descriptive-name.pdf  (matched by content, not URL)
+
+    For URL-named files, the filename is decoded back to a URL for cache keying.
+    For other files, they're cached by filename and matched during collection
+    by searching the extracted text for citation names.
+
+    Args:
+        import_dir: Path to directory containing PDF/HTML files.
+
+    Returns:
+        Number of files successfully imported.
+    """
+    import_path = Path(import_dir)
+    if not import_path.exists():
+        print(f"    Import directory not found: {import_dir}")
+        return 0
+
+    imported = 0
+    for f in sorted(import_path.iterdir()):
+        if f.name.startswith("."):
+            continue
+        ext = f.suffix.lower()
+        if ext not in (".pdf", ".html", ".htm", ".txt"):
+            continue
+
+        text = ""
+
+        # Extract text based on file type
+        if ext == ".pdf":
+            try:
+                from PyPDF2 import PdfReader
+                reader = PdfReader(str(f))
+                pages = []
+                for page in reader.pages[:50]:
+                    t = page.extract_text()
+                    if t:
+                        pages.append(t)
+                text = "\n\n".join(pages)[:MAX_CONTENT_CHARS]
+            except ImportError:
+                try:
+                    import pdfplumber
+                    with pdfplumber.open(str(f)) as pdf:
+                        pages = [p.extract_text() for p in pdf.pages[:50] if p.extract_text()]
+                    text = "\n\n".join(pages)[:MAX_CONTENT_CHARS]
+                except ImportError:
+                    print(f"    Skipping {f.name}: no PDF parser (pip install PyPDF2)")
+                    continue
+            except Exception as e:
+                print(f"    Skipping {f.name}: {e}")
+                continue
+        else:
+            # HTML or text file
+            try:
+                raw = f.read_text(errors="ignore")
+                if ext in (".html", ".htm"):
+                    text = html_to_text(raw[:MAX_CONTENT_CHARS])
+                else:
+                    text = raw[:MAX_CONTENT_CHARS]
+            except Exception as e:
+                print(f"    Skipping {f.name}: {e}")
+                continue
+
+        if not text or len(text) < 50:
+            print(f"    Skipping {f.name}: insufficient content")
+            continue
+
+        # Derive URL from filename
+        # Try to decode: https___securelist.com_apt-luminousmoth_103332.html → URL
+        stem = f.stem
+        url = ""
+        if stem.startswith("http"):
+            url = stem.replace("___", "://").replace("__", "/").replace("_", "/")
+            # Fix common issues
+            if not url.startswith("http"):
+                url = "https://" + url
+        else:
+            # Use filename as-is for cache key
+            url = f"file://{f.name}"
+
+        _write_cache(url, text, "imported")
+        imported += 1
+        print(f"    Imported: {f.name} ({len(text)} chars) → cached as [{url[:60]}]")
+
+    return imported
+
+
 def collect_references_parallel(
     citations: list,
     group_name: str,
