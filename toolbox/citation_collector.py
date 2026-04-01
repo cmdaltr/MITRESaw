@@ -702,8 +702,10 @@ def collect_reference_content(
                 entry["method"] = "direct"
             elif "403" in detail or "401" in detail:
                 _got_403 = True
+            elif "js_rendered" in detail:
+                _got_403 = True  # also try headless for JS-rendered pages
 
-        # Method 5 — Headless browser (if direct got 403/Cloudflare)
+        # Method 5 — Headless browser (if direct got 403/Cloudflare or JS-rendered)
         if not text and _got_403:
             text, detail = _fetch_headless(url)
             entry["attempts"].append(f"headless → {detail}")
