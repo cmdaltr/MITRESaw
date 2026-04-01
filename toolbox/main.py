@@ -16,37 +16,47 @@ from mitreattack.stix20 import MitreAttackData
 
 
 class _ProgressBar:
-    """Progress bar pinned to the bottom of the terminal using scroll regions.
+    """Dual progress bar pinned to the bottom 3 rows of the terminal.
 
-    Sets a scroll region that excludes the last row, so all print() output
-    stays within the scroll region while the bar persists at the bottom.
+    Row th-2: Procedures bar
+    Row th-1: Citations bar
+    Row th:   Separator + ETA
     """
 
-    def __init__(self, label=""):
+    _ROWS = 3  # rows reserved at bottom
+
+    def __init__(self):
         self._start = None
-        self._label = label
         self._active = False
+        self._total_procs = 0
+        self._total_cits = 0
 
     def _setup(self):
-        """Reserve the bottom row by setting a terminal scroll region."""
         try:
-            tw = os.get_terminal_size().columns
             th = os.get_terminal_size().lines
         except OSError:
-            tw, th = 120, 40
-        # Set scroll region to rows 1..(th-1), reserving last row for bar
-        sys.stdout.write(f"\033[1;{th - 1}r")
-        # Move cursor into the scroll region
-        sys.stdout.write(f"\033[{th - 1};1H")
+            th = 40
+        sys.stdout.write(f"\033[1;{th - self._ROWS}r")
+        sys.stdout.write(f"\033[{th - self._ROWS};1H")
         sys.stdout.flush()
         self._active = True
 
-    def update(self, current, total, detail="", bar_width=30):
-        """Update the pinned progress bar on the bottom row."""
+    def _bar(self, current, total, bar_width=60):
         if total == 0:
-            return
+            return "\033[90m" + "░" * bar_width + "\033[0m", "0%"
+        pct = current / total
+        filled = int(bar_width * pct)
+        bar = "\033[36m" + "█" * filled + "\033[90m" + "░" * (bar_width - filled) + "\033[0m"
+        return bar, f"{pct:.0%}"
 
+    def _bar_done(self, total, bar_width=60):
+        bar = "\033[32m" + "█" * bar_width + "\033[0m"
+        return bar
+
+    def update(self, proc_current, proc_total, cit_current, cit_total, group_name=""):
         if not self._active:
+            self._total_procs = proc_total
+            self._total_cits = cit_total
             self._setup()
 
         try:
@@ -55,49 +65,75 @@ class _ProgressBar:
         except OSError:
             tw, th = 120, 40
 
-        pct = current / total
-        filled = int(bar_width * pct)
-        bar = "\033[36m" + "█" * filled + "\033[90m" + "░" * (bar_width - filled) + "\033[0m"
+        bw = min(60, tw - 30)
 
+        # ETA
         now = time.time()
-        if self._start is None or current <= 1:
+        if self._start is None or proc_current <= 1:
             self._start = now
         secs = now - self._start
-        if current > 0 and secs > 0:
-            eta = (secs / current) * (total - current)
-            eta_str = f"{int(eta // 60)}m{int(eta % 60):02d}s" if eta >= 60 else f"{int(eta)}s"
+        if proc_current > 0 and secs > 0:
+            eta = (secs / proc_current) * (proc_total - proc_current)
+            if eta >= 3600:
+                eta_str = f"{int(eta // 3600)}h {int((eta % 3600) // 60)}m {int(eta % 60)}s"
+            elif eta >= 60:
+                eta_str = f"{int(eta // 60)}m {int(eta % 60):02d}s"
+            else:
+                eta_str = f"{int(eta)}s"
         else:
             eta_str = "..."
 
-        line = f" {self._label} {bar} {current}/{total} ({pct:.0%}) ETA: {eta_str}  {detail}"
-        # Save cursor, jump to bottom row, draw bar, restore cursor
-        sys.stdout.write(f"\033[s\033[{th};1H\033[K{line[:tw]}\033[u")
+        # Build lines
+        p_bar, p_pct = self._bar(proc_current, proc_total, bw)
+        c_bar, c_pct = self._bar(cit_current, cit_total, bw)
+
+        line1 = f" {p_bar} {proc_current}/{proc_total}  ({p_pct})  {group_name}"
+        line2 = f" {c_bar} {cit_current}/{cit_total}  ({c_pct})  citations"
+        sep = "\033[90m" + "─" * tw + "\033[0m"
+        line3 = f" ETA: {eta_str}"
+
+        r1 = th - 2
+        sys.stdout.write(
+            f"\033[s"
+            f"\033[{r1};1H\033[K{line1[:tw]}"
+            f"\033[{r1+1};1H\033[K{line2[:tw]}"
+            f"\033[{r1+2};1H\033[K{sep}\033[{r1+2};1H{line3[:tw]}"
+            f"\033[u"
+        )
         sys.stdout.flush()
 
-    def done(self, total, detail="Complete", bar_width=30):
-        """Show 100%, then remove the bar and restore full scroll region."""
+    def done(self, proc_total, cit_total, detail="Complete"):
         try:
             tw = os.get_terminal_size().columns
             th = os.get_terminal_size().lines
         except OSError:
             tw, th = 120, 40
 
-        bar = "\033[32m" + "█" * bar_width + "\033[0m"
-        line = f" {self._label} {bar} {total}/{total} (100%) {detail}"
+        bw = min(60, tw - 30)
+        p_bar = self._bar_done(proc_total, bw)
+        c_bar = self._bar_done(cit_total, bw)
 
-        # Draw final bar
-        sys.stdout.write(f"\033[s\033[{th};1H\033[K{line[:tw]}\033[u")
+        r1 = th - 2
+        sys.stdout.write(
+            f"\033[s"
+            f"\033[{r1};1H\033[K {p_bar} {proc_total}/{proc_total}  (100%)"
+            f"\033[{r1+1};1H\033[K {c_bar} {cit_total}/{cit_total}  (100%)  citations"
+            f"\033[{r1+2};1H\033[K {detail}"
+            f"\033[u"
+        )
         sys.stdout.flush()
-        time.sleep(0.3)
+        time.sleep(0.5)
 
-        # Clear bottom row and reset scroll region to full terminal
-        sys.stdout.write(f"\033[s\033[{th};1H\033[K\033[u")
+        # Clear reserved rows and reset scroll region
+        sys.stdout.write(f"\033[s\033[{r1};1H\033[K\033[{r1+1};1H\033[K\033[{r1+2};1H\033[K\033[u")
         sys.stdout.write(f"\033[1;{th}r")
         sys.stdout.flush()
         self._active = False
 
-        # Print the final status as a permanent line in the scroll area
-        print(f"\n     {self._label} {bar} {total}/{total} (100%) {detail}")
+        # Permanent summary
+        print(f"\n     {p_bar} {proc_total}/{proc_total} procedures (100%)")
+        print(f"     {c_bar} {cit_total}/{cit_total} citations (100%)")
+        print(f"     {detail}")
 from stix2 import TAXIICollectionSource, Filter
 from taxii2client.v20 import Server, Collection
 
@@ -918,7 +954,8 @@ def mainsaw(
 
     last_group_name = None
     _total_procedures = len(consolidated_procedures)
-    _pb_extract = _ProgressBar("Processing:")
+    _pb_extract = _ProgressBar()
+    _total_cit_sources = len(_citation_url_lookup) if collect_citations else 0
     _cit_num = 0  # running citation counter, resets per group
 
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
@@ -927,8 +964,11 @@ def mainsaw(
         if last_group_name and current_group_name.strip().lower() != last_group_name.strip().lower():
             _cit_num = 0
         last_group_name = current_group_name
-        _cit_label = f"{current_group_name} ({len(_all_citation_refs)} refs)" if collect_citations else current_group_name
-        _pb_extract.update(_proc_idx, _total_procedures, _cit_label)
+        _pb_extract.update(
+            _proc_idx, _total_procedures,
+            len(_all_citation_refs), _total_cit_sources,
+            current_group_name,
+        )
         (
             technique_findings,
             previous_findings,
@@ -1047,12 +1087,12 @@ def mainsaw(
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
     )
-    _done_label = "Extraction complete"
+    _with_content = 0
     if collect_citations and _all_citation_refs:
         _with_content = sum(1 for r in _all_citation_refs
                            if r.get("extracted_content") and r.get("method") not in ("stix_metadata", "no_content", ""))
-        _done_label = f"Complete — {len(_all_citation_refs)} citations, {_with_content} with content"
-    _pb_extract.done(_total_procedures, _done_label)
+    _done_label = f"Complete — {_with_content} citations with content" if collect_citations else "Extraction complete"
+    _pb_extract.done(_total_procedures, len(_all_citation_refs), _done_label)
 
     # Write failed citations report
     if collect_citations and _all_citation_refs:
