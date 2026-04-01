@@ -7,7 +7,7 @@ import tempfile
 import pytest
 from openpyxl import load_workbook
 
-from toolbox.evidence_report import extract_procedure_invocations, generate_evidence_report
+from src.evidence_report import extract_procedure_invocations, generate_evidence_report
 
 
 # ---------------------------------------------------------------------------

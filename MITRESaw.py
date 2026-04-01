@@ -2,7 +2,7 @@
 import argparse
 import os
 from argparse import RawTextHelpFormatter
-from toolbox.main import mainsaw
+from src.main import mainsaw
 
 parser = argparse.ArgumentParser(formatter_class=RawTextHelpFormatter)
 parser.add_argument(
@@ -184,7 +184,7 @@ if args.clear_cache:
         print(f"    -> No citation cache to clear")
 
 if args.import_citations:
-    from toolbox.citation_collector import import_citation_files
+    from src.citation_collector import import_citation_files
     _count = import_citation_files(args.import_citations)
     print(f"    -> {_count} citation files imported into cache")
 

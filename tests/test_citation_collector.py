@@ -1,6 +1,6 @@
 """Tests for the MITRESaw reference collector module."""
 
-from toolbox.citation_collector import (
+from src.citation_collector import (
     resolve_citations,
     html_to_text,
     _extract_relevant_passages,

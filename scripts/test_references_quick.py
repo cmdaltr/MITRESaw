@@ -11,7 +11,7 @@ Usage:
 import json
 import sys
 
-from toolbox.citation_collector import resolve_citations, collect_reference_content
+from src.citation_collector import resolve_citations, collect_reference_content
 
 
 def main():
