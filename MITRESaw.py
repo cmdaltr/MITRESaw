@@ -126,7 +126,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--clear-cache",
-    help="Clear the citation cache (.citation_cache/) before running.\n"
+    help="Clear the citation cache (data/.citation_cache/) before running.\n"
          "Forces re-download of all citation sources.\n",
     action="store_const",
     const=True,
@@ -134,10 +134,11 @@ parser.add_argument(
 )
 parser.add_argument(
     "--import-citations",
-    help="Import manually saved citation files (PDF/HTML) from a directory.\n"
-         "File names must contain the citation URL domain or be named as the URL.\n"
-         "Example: save a blocked page as 'securelist.com_apt-luminousmoth.pdf'\n"
-         "         or 'https___securelist.com_apt-luminousmoth_103332.html'\n",
+    help="Import manually saved citation files (PDF/HTML) into cache.\n"
+         "Default directory: citations/\n"
+         "Save blocked pages as PDF from your browser into citations/\n",
+    nargs="?",
+    const="data/citations",
     metavar="DIR",
     default=None,
 )
@@ -175,7 +176,7 @@ collect_citations = args.citations
 
 if args.clear_cache:
     import shutil
-    cache_dir = ".citation_cache"
+    cache_dir = "data/.citation_cache"
     if os.path.exists(cache_dir):
         shutil.rmtree(cache_dir)
         print(f"    -> Cleared citation cache ({cache_dir}/)")

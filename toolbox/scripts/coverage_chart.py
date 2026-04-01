@@ -9,7 +9,7 @@ The three collection methods are:
 Usage:
     python coverage_chart.py -g Scattered_Spider
     python coverage_chart.py -g APT29 -o apt29_coverage.png
-    python coverage_chart.py -g Lazarus_Group --stix stix_data/enterprise-attack.json
+    python coverage_chart.py -g Lazarus_Group --stix data/stix/enterprise-attack.json
 """
 
 import argparse

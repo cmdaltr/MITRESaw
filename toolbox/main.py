@@ -339,7 +339,7 @@ def load_attack_data(framework: str = "enterprise", force_fetch: bool = False) -
     }
 
     stix_source = framework_map.get(framework.lower(), "enterprise-attack")
-    stix_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "stix_data")
+    stix_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "stix")
     os.makedirs(stix_dir, exist_ok=True)
     stix_filepath = os.path.join(stix_dir, f"{stix_source}.json")
 
@@ -658,7 +658,7 @@ def mainsaw(
     # Setup output directories
     frameworks_label = ", ".join(attack_frameworks)
     frameworks_slug = "-".join(fw.lower() for fw in attack_frameworks)
-    mitresaw_root_date = os.path.join(".", str(datetime.now())[0:10])
+    mitresaw_root_date = os.path.join("data", str(datetime.now())[0:10])
     if not os.path.exists(mitresaw_root_date):
         os.makedirs(mitresaw_root_date)
     mitre_files = os.path.join(

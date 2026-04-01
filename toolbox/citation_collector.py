@@ -31,7 +31,7 @@ from urllib.parse import quote, urlparse
 # Configuration
 # ---------------------------------------------------------------------------
 
-CACHE_DIR = Path(".citation_cache")
+CACHE_DIR = Path("data/.citation_cache")
 REQUEST_TIMEOUT = 15
 WAYBACK_TIMEOUT = 10
 RATE_LIMIT_DELAY = 0.5   # seconds between requests to same domain
