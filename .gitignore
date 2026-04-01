@@ -11,9 +11,7 @@ xcode/
 
 # Data directory contents (auto-generated at runtime)
 data/stix/
-data/.citation_cache/
-.citation_cache/
-data/citations/*
-!data/citations/.gitkeep
 data/20[0-9][0-9]-*/
 data/mitre_procedures.*
+data/citations/*
+!data/citations/.gitkeep
