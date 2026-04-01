@@ -23,13 +23,14 @@ class _ProgressBar:
     Row th:   Separator + ETA
     """
 
-    _ROWS = 5  # rows reserved at bottom (blank + procedures + citations + sep + eta)
+    _ROWS = 6  # rows reserved at bottom (blank + procedures + citations + sep + eta + elapsed)
 
     def __init__(self):
         self._start = None
         self._active = False
         self._total_procs = 0
         self._total_cits = 0
+        self._recent_times = []  # timestamps of recent completions for rolling ETA
 
     def _setup(self):
         try:
@@ -43,11 +44,11 @@ class _ProgressBar:
 
     def _bar(self, current, total, bar_width=60):
         if total == 0:
-            return "\033[90m" + "░" * bar_width + "\033[0m", "0%"
+            return "\033[90m" + "░" * bar_width + "\033[0m", "0.0%"
         pct = current / total
         filled = int(bar_width * pct)
         bar = "\033[36m" + "█" * filled + "\033[90m" + "░" * (bar_width - filled) + "\033[0m"
-        return bar, f"{pct:.0%}"
+        return bar, f"{pct:.1%}"
 
     def _bar_done(self, total, bar_width=60):
         bar = "\033[32m" + "█" * bar_width + "\033[0m"
@@ -68,13 +69,23 @@ class _ProgressBar:
         bw = min(60, tw - 35)
         _lbl_w = 14  # "   Procedures: " width
 
-        # ETA
+        # ETA using rolling average of last 50 procedures
         now = time.time()
         if self._start is None or proc_current <= 1:
             self._start = now
+            self._recent_times = []
         secs = now - self._start
-        if proc_current > 0 and secs > 0:
-            eta = (secs / proc_current) * (proc_total - proc_current)
+
+        self._recent_times.append(now)
+        if len(self._recent_times) > 51:
+            self._recent_times = self._recent_times[-51:]
+
+        remaining = proc_total - proc_current
+        if len(self._recent_times) >= 2:
+            window = self._recent_times[-1] - self._recent_times[0]
+            window_count = len(self._recent_times) - 1
+            avg_per_proc = window / window_count if window_count > 0 else 0
+            eta = avg_per_proc * remaining
             if eta >= 3600:
                 eta_str = f"{int(eta // 3600)}h {int((eta % 3600) // 60)}m {int(eta % 60)}s"
             elif eta >= 60:
@@ -95,12 +106,21 @@ class _ProgressBar:
         _p_count = f"{proc_current:>{_max_digits}}/{proc_total}"
         _c_count = f"{cit_current:>{_max_digits}}/{cit_total}"
 
-        line1 = f"   Procedures: {p_bar} {_p_count}  ({p_pct:>4})"
-        line2 = f"   Citations:  {c_bar} {_c_count}  ({c_pct:>4})"
+        # Elapsed time
+        if secs >= 3600:
+            elapsed_str = f"{int(secs // 3600)}h {int((secs % 3600) // 60)}m {int(secs % 60)}s"
+        elif secs >= 60:
+            elapsed_str = f"{int(secs // 60)}m {int(secs % 60):02d}s"
+        else:
+            elapsed_str = f"{int(secs)}s"
+
+        line1 = f"   Procedures: {p_bar} {_p_count}  ({p_pct:>5})"
+        line2 = f"   Citations:  {c_bar} {_c_count}  ({c_pct:>5})"
         line3 = f"               {sep}"
         line4 = f"   \033[1mETA:        {eta_str}\033[0m"
+        line5 = f"   \033[90mElapsed:    {elapsed_str}\033[0m"
 
-        r0 = th - 4  # blank line
+        r0 = th - 5  # blank line
         sys.stdout.write(
             f"\033[s"
             f"\033[{r0};1H\033[K"
@@ -108,6 +128,7 @@ class _ProgressBar:
             f"\033[{r0+2};1H\033[K{line2[:tw]}"
             f"\033[{r0+3};1H\033[K{line3[:tw]}"
             f"\033[{r0+4};1H\033[K{line4[:tw]}"
+            f"\033[{r0+5};1H\033[K{line5[:tw]}"
             f"\033[u"
         )
         sys.stdout.flush()
@@ -128,30 +149,41 @@ class _ProgressBar:
         _p_count = f"{proc_total:>{_digits}}/{proc_total}"
         _c_count = f"{cit_total:>{_digits}}/{cit_total}"
 
-        r0 = th - 4
+        # Total elapsed
+        secs = time.time() - self._start if self._start else 0
+        if secs >= 3600:
+            elapsed_str = f"{int(secs // 3600)}h {int((secs % 3600) // 60)}m {int(secs % 60)}s"
+        elif secs >= 60:
+            elapsed_str = f"{int(secs // 60)}m {int(secs % 60):02d}s"
+        else:
+            elapsed_str = f"{int(secs)}s"
+
+        r0 = th - 5
         sys.stdout.write(
             f"\033[s"
             f"\033[{r0};1H\033[K"
-            f"\033[{r0+1};1H\033[K   Procedures: {p_bar} {_p_count}  (100%)"
-            f"\033[{r0+2};1H\033[K   Citations:  {c_bar} {_c_count}  (100%)"
+            f"\033[{r0+1};1H\033[K   Procedures: {p_bar} {_p_count}  (100.0%)"
+            f"\033[{r0+2};1H\033[K   Citations:  {c_bar} {_c_count}  (100.0%)"
             f"\033[{r0+3};1H\033[K               {sep}"
-            f"\033[{r0+4};1H\033[K   {detail}"
+            f"\033[{r0+4};1H\033[K   \033[1mCompleted in {elapsed_str}\033[0m"
+            f"\033[{r0+5};1H\033[K   {detail}"
             f"\033[u"
         )
         sys.stdout.flush()
         time.sleep(0.5)
 
         # Clear reserved rows and reset scroll region
-        for _r in range(r0, r0 + 5):
+        for _r in range(r0, r0 + 6):
             sys.stdout.write(f"\033[{_r};1H\033[K")
         sys.stdout.write(f"\033[u\033[1;{th}r")
         sys.stdout.flush()
         self._active = False
 
         # Permanent summary
-        print(f"\n   Procedures: {p_bar} {_p_count}  (100%)")
-        print(f"   Citations:  {c_bar} {_c_count}  (100%)")
+        print(f"\n   Procedures: {p_bar} {_p_count}  (100.0%)")
+        print(f"   Citations:  {c_bar} {_c_count}  (100.0%)")
         print(f"               {sep}")
+        print(f"   \033[1mCompleted in {elapsed_str}\033[0m")
         print(f"   {detail}")
 from stix2 import TAXIICollectionSource, Filter
 from taxii2client.v20 import Server, Collection
