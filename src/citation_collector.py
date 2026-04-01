@@ -799,6 +799,86 @@ def collect_reference_content(
     return results
 
 
+def extract_indicators_from_text(text: str) -> dict:
+    """Extract indicators from fetched citation text using MITRESaw's patterns.
+
+    Returns dict: {type: [values]} matching MITRESaw's evidence format.
+    Types: cmd, reg, cve, paths, software, ports
+    """
+    if not text or len(text) < 50:
+        return {}
+
+    indicators = {}
+
+    # Backtick-quoted strings (highest confidence)
+    backtick_re = re.compile(r"`([^`]{3,120})`")
+    backticks = backtick_re.findall(text)
+    if backticks:
+        # Classify backtick content
+        for bt in backticks[:30]:
+            bt = bt.strip()
+            if len(bt) < 3 or len(bt) > 200:
+                continue
+            bt_lower = bt.lower()
+            if re.match(r"HK(?:LM|CU|CR|U|CC)\\", bt, re.IGNORECASE):
+                indicators.setdefault("reg", []).append(bt)
+            elif re.match(r"[A-Za-z]:\\", bt) or bt.startswith("\\\\") or re.match(r"/(?:etc|var|tmp|usr|home|opt|bin|proc)/", bt):
+                indicators.setdefault("paths", []).append(bt)
+            elif re.search(r"\.(?:exe|dll|ps1|bat|vbs|sh|py|cmd)\b", bt_lower):
+                indicators.setdefault("software", []).append(bt)
+            elif len(bt.split()) >= 2 or re.search(r"[-/]", bt):
+                indicators.setdefault("cmd", []).append(bt)
+
+    # CVE IDs
+    cve_re = re.compile(r"CVE-\d{4}-\d{4,7}")
+    cves = list(set(cve_re.findall(text)))
+    if cves:
+        indicators["cve"] = cves[:10]
+
+    # Registry paths (outside backticks)
+    reg_re = re.compile(r"HK(?:LM|CU|CR|U|CC)\\[^\s\n\"'`]{6,200}")
+    regs = list(set(reg_re.findall(text)))
+    if regs:
+        indicators.setdefault("reg", []).extend(regs)
+
+    # Windows file paths (outside backticks)
+    win_path_re = re.compile(r"[A-Za-z]:\\[^\s\n\"'`]{4,200}")
+    unix_path_re = re.compile(r"/(?:etc|var|tmp|usr|home|opt|bin|sbin|proc)/[^\s\n\"'`]{2,150}")
+    paths = list(set(win_path_re.findall(text) + unix_path_re.findall(text)))
+    if paths:
+        indicators.setdefault("paths", []).extend(paths)
+
+    # Port numbers (e.g. "port 445", "TCP/3389")
+    port_re = re.compile(r"(?:port\s+|TCP/|UDP/|:\s*)(\d{2,5})\b", re.IGNORECASE)
+    ports = list(set(port_re.findall(text)))
+    if ports:
+        indicators["ports"] = ports[:10]
+
+    # Deduplicate within each type
+    for k in indicators:
+        seen = set()
+        deduped = []
+        for v in indicators[k]:
+            vl = v.lower()
+            if vl not in seen:
+                seen.add(vl)
+                deduped.append(v)
+        indicators[k] = deduped[:15]  # cap at 15 per type
+
+    return indicators
+
+
+# Emoji mapping matching MITRESaw's extract.py
+_INDICATOR_EMOJI = {
+    "cmd": "💻",
+    "reg": "🔑",
+    "cve": "🔒",
+    "paths": "📁",
+    "software": "📦",
+    "ports": "🌐",
+}
+
+
 def import_citation_files(import_dir: str) -> int:
     """Import manually saved PDF/HTML files into the citation cache.
 

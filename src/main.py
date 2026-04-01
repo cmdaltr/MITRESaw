@@ -1103,8 +1103,25 @@ def mainsaw(
                         _all_citation_refs.append(_ref)
                         _new_cits.append(_ref)
 
-            # Only print citations when this procedure produced visible technique output
-            if _new_cits and technique_findings:
+            # Print citations for ALL techniques (even when no native indicators)
+            if _new_cits:
+                from src.citation_collector import extract_indicators_from_text, _INDICATOR_EMOJI
+
+                # Build set of existing indicators for dedup
+                _existing_indicators = set()
+                _ev_json = _parts[13] if len(_parts) > 13 else "{}"
+                try:
+                    _ev = json.loads(_ev_json)
+                    for _vals in _ev.values():
+                        if isinstance(_vals, list):
+                            for _v in _vals:
+                                if isinstance(_v, dict):
+                                    _existing_indicators.update(str(k).lower() for k in _v.keys())
+                                else:
+                                    _existing_indicators.add(str(_v).lower())
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
                 _indent = "      "
                 for _ref in _new_cits:
                     _cit_num += 1
@@ -1122,7 +1139,6 @@ def mainsaw(
                     _name = _cn[:28].ljust(28)
                     _method_short = _method[:14].ljust(14)
                     _url = _ref.get("url", "")
-                    _attempts = _ref.get("attempts", [])
                     try:
                         _tw = os.get_terminal_size().columns
                     except OSError:
@@ -1131,6 +1147,30 @@ def mainsaw(
                     _url_max = max(30, _tw - _used)
                     _url_part = f" [{_url[:_url_max]}]" if _url else ""
                     print(f"{_indent}\033[90m{_num_str:>5}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
+
+                    # Extract indicators from fetched content
+                    _content = _ref.get("extracted_content", "")
+                    if _content and _method not in ("stix_metadata", "no_content", ""):
+                        _extracted = extract_indicators_from_text(_content)
+                        if _extracted:
+                            # Filter out indicators already in MITRESaw's native extraction
+                            _new_indicators = {}
+                            for _etype, _evals in _extracted.items():
+                                _novel = [v for v in _evals if v.lower() not in _existing_indicators]
+                                if _novel:
+                                    _new_indicators[_etype] = _novel
+                                    # Add to existing set so subsequent citations don't repeat
+                                    _existing_indicators.update(v.lower() for v in _novel)
+
+                            # Print new indicators with emojis
+                            if _new_indicators:
+                                for _etype, _evals in _new_indicators.items():
+                                    _emoji = _INDICATOR_EMOJI.get(_etype, "")
+                                    _vals_str = ", ".join(f"`{v}`" for v in _evals[:8])
+                                    print(f"{_indent}       {_emoji} \033[33m{_vals_str}\033[0m")
+
+                                # Store extracted indicators on the ref for XLSX enrichment
+                                _ref["extracted_indicators"] = _new_indicators
 
 
     threat_actor_technique_id_name_findings = list(
