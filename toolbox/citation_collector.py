@@ -32,10 +32,10 @@ from urllib.parse import quote, urlparse
 # ---------------------------------------------------------------------------
 
 CACHE_DIR = Path(".citation_cache")
-REQUEST_TIMEOUT = 25
-WAYBACK_TIMEOUT = 15
-RATE_LIMIT_DELAY = 1.5   # seconds between requests to same domain
-RATE_LIMIT_GLOBAL = 0.5  # seconds between any requests
+REQUEST_TIMEOUT = 15
+WAYBACK_TIMEOUT = 10
+RATE_LIMIT_DELAY = 0.5   # seconds between requests to same domain
+RATE_LIMIT_GLOBAL = 0.2  # seconds between any requests
 MAX_CONTENT_CHARS = 80000
 MAX_RELEVANT_CHARS = 4000
 
@@ -203,7 +203,7 @@ def _make_session():
     from urllib3.util.retry import Retry
 
     session = requests.Session()
-    retry = Retry(total=2, backoff_factor=2, status_forcelist=[429, 500, 502, 503, 504])
+    retry = Retry(total=1, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504])
     session.mount("https://", HTTPAdapter(max_retries=retry))
     session.mount("http://", HTTPAdapter(max_retries=retry))
     ua = random.choice(_USER_AGENTS)
@@ -470,33 +470,21 @@ def _fetch_headless(url: str) -> tuple:
             context.add_init_script(_STEALTH_JS)
             page = context.new_page()
 
-            # Navigate and wait for network to settle
+            # Navigate with short timeout
             try:
-                page.goto(url, wait_until="networkidle", timeout=45000)
+                page.goto(url, wait_until="domcontentloaded", timeout=15000)
             except Exception:
-                # networkidle can timeout on busy pages — try domcontentloaded
-                try:
-                    page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                except Exception:
-                    browser.close()
-                    return "", "headless:navigation_failed"
+                browser.close()
+                return "", "headless:navigation_failed"
 
-            # Wait for JS rendering + Cloudflare challenge
-            page.wait_for_timeout(5000)
+            # Brief wait for JS rendering
+            page.wait_for_timeout(3000)
 
-            # Scroll down to trigger lazy-loaded content
-            page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
-            page.wait_for_timeout(2000)
+            # Quick scroll to trigger lazy content
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(1000)
 
             content = page.content()
-
-            # If insufficient content, wait longer (Cloudflare can take 5-8s)
-            if content and len(html_to_text(content[:5000])) < 200:
-                page.wait_for_timeout(5000)
-                content = page.content()
-
             browser.close()
 
             if content and len(content) > 500:
@@ -802,7 +790,9 @@ def collect_reference_content(
             entry["extracted_content"] = fb_text
             entry["method"] = fb_method
             entry["attempts"].append(f"fallback → {fb_method}")
-            # Don't cache failures — allow retry on next run
+            # Cache failure to skip on subsequent procedures in same run
+            # --clear-cache removes these for fresh retry next time
+            _write_cache(url, "", "failed")
 
         results.append(entry)
 
