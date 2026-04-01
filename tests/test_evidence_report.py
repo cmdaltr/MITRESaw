@@ -7,7 +7,11 @@ import tempfile
 import pytest
 from openpyxl import load_workbook
 
-from src.evidence_report import extract_procedure_invocations, generate_evidence_report
+from src.evidence_report import (
+    extract_procedure_invocations,
+    generate_evidence_report,
+    _clean_procedure_text,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -312,3 +316,75 @@ def test_technique_matrix_not_created_single_group():
         assert "Technique Matrix" not in wb.sheetnames
     finally:
         os.unlink(path)
+
+
+# ---------------------------------------------------------------------------
+# Platforms and framework columns
+# ---------------------------------------------------------------------------
+
+def test_platforms_column():
+    row = _make_row(platforms="Windows, Linux")
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
+        path = f.name
+    try:
+        generate_evidence_report([row], path)
+        wb = load_workbook(path)
+        ws = wb.active
+        val = ws.cell(row=4, column=7).value  # Platforms is col 7
+        assert "Windows" in val
+    finally:
+        os.unlink(path)
+
+
+def test_framework_column():
+    row = _make_row(framework="Enterprise")
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
+        path = f.name
+    try:
+        generate_evidence_report([row], path)
+        wb = load_workbook(path)
+        ws = wb.active
+        val = ws.cell(row=4, column=8).value  # Framework is col 8
+        assert val == "Enterprise"
+    finally:
+        os.unlink(path)
+
+
+def test_log_sources_column():
+    row = _make_row(detectable_via="Sysmon: 1; Security EventLog: 4688")
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as f:
+        path = f.name
+    try:
+        generate_evidence_report([row], path)
+        wb = load_workbook(path)
+        ws = wb.active
+        val = ws.cell(row=4, column=11).value  # Log Sources is col 11
+        assert "Sysmon" in val
+    finally:
+        os.unlink(path)
+
+
+# ---------------------------------------------------------------------------
+# Procedure text cleaning
+# ---------------------------------------------------------------------------
+
+def test_clean_procedure_markdown_links():
+    text = "[Axiom](https://attack.mitre.org/groups/G0001) used [Mimikatz](https://attack.mitre.org/software/S0002)."
+    result = _clean_procedure_text(text)
+    assert "Axiom (G0001)" in result
+    assert "Mimikatz (S0002)" in result
+    assert "[" not in result
+    assert "](" not in result
+
+
+def test_clean_procedure_citations_removed():
+    text = "APT29 used PowerShell.(Citation: FireEye APT29 2020)(Citation: CISA Alert)"
+    result = _clean_procedure_text(text)
+    assert "APT29 used PowerShell" in result
+    assert "Citation" not in result
+    assert "FireEye" not in result
+
+
+def test_clean_procedure_empty():
+    assert _clean_procedure_text("") == ""
+    assert _clean_procedure_text(None) is None
