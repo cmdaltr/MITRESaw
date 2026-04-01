@@ -797,3 +797,46 @@ def collect_reference_content(
         results.append(entry)
 
     return results
+
+
+def collect_references_parallel(
+    citations: list,
+    group_name: str,
+    technique_name: str,
+    technique_id: str,
+    indicators: list | None = None,
+    max_workers: int = 10,
+) -> list:
+    """Fetch multiple citations concurrently using a thread pool.
+
+    Each citation is fetched independently. Per-domain rate limiting
+    still applies within each thread.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    if not citations:
+        return []
+
+    # Single citation — no need for threading overhead
+    if len(citations) == 1:
+        return collect_reference_content(
+            citations, group_name, technique_name, technique_id, indicators
+        )
+
+    results = []
+
+    def _fetch_one(cit):
+        return collect_reference_content(
+            [cit], group_name, technique_name, technique_id, indicators
+        )
+
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(citations))) as pool:
+        futures = {pool.submit(_fetch_one, cit): cit for cit in citations}
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+                results.extend(result)
+            except Exception:
+                pass
+
+    return results

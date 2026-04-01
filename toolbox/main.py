@@ -599,18 +599,14 @@ def mainsaw(
     collect_citations=False,
 ):
 
-    # checking latest version and loading STIX data
+    # Load STIX data (only check version if -F is used)
     try:
-        print("    -> Checking for latest ATT&CK version...")
-        latest_version = get_latest_attack_version()
-
-        if latest_version != "Unknown" and latest_version != attack_version:
-            print(
-                "\n\n\tNote: ATT&CK version in \033[1;36mMITRESaw.py\033[1;m (\033[1;31m{}\033[1;m) differs from \n\tlatest published version (\033[1;31m{}\033[1;m). \n\tUsing latest STIX data from TAXII server...\n".format(
-                    attack_version, latest_version
-                )
-            )
-            attack_version = latest_version
+        if fetch:
+            print("    -> Checking for latest ATT&CK version...")
+            latest_version = get_latest_attack_version()
+            if latest_version != "Unknown" and latest_version != attack_version:
+                print(f"    -> Updating from v{attack_version} to v{latest_version}")
+                attack_version = latest_version
 
         # Load STIX data for all requested frameworks
         all_attack_data = {}
@@ -1045,24 +1041,28 @@ def mainsaw(
             _cit_names = list(dict.fromkeys(re.findall(r"\(Citation:\s*([^)]+)\)", _all_text)))
             _new_cits = []
             if _cit_names:
-                from toolbox.citation_collector import collect_reference_content
+                from toolbox.citation_collector import collect_references_parallel
+
+                # Build batch of unseen citations for this procedure
+                _batch = []
                 for _cn in _cit_names:
                     _cn = _cn.strip()
-                    # Dedup display per (group, citation) — same citation shows under each group
                     _display_key = (_group.strip().lower(), _cn)
                     if _display_key in _seen_citations:
                         continue
                     _seen_citations.add(_display_key)
 
                     _ref_data = _citation_url_lookup.get(_cn, {})
-                    _cit = {
+                    _batch.append({
                         "citation_name": _cn,
                         "url": _ref_data.get("url", ""),
                         "description": _ref_data.get("description", ""),
-                    }
-                    # collect_reference_content uses disk cache, so already-fetched URLs are instant
-                    _fetched = collect_reference_content(
-                        [_cit], _group, _tname, _tid, verbose=False,
+                    })
+
+                # Fetch all citations for this procedure in parallel
+                if _batch:
+                    _fetched = collect_references_parallel(
+                        _batch, _group, _tname, _tid, max_workers=10,
                     )
                     for _ref in _fetched:
                         _ref["group"] = _group
