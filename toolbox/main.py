@@ -36,8 +36,8 @@ class _ProgressBar:
             th = os.get_terminal_size().lines
         except OSError:
             th = 40
+        # Set scroll region, keep cursor where it is (no jump)
         sys.stdout.write(f"\033[1;{th - self._ROWS}r")
-        sys.stdout.write(f"\033[{th - self._ROWS};1H")
         sys.stdout.flush()
         self._active = True
 
@@ -86,8 +86,7 @@ class _ProgressBar:
 
         p_bar, p_pct = self._bar(proc_current, proc_total, bw)
         c_bar, c_pct = self._bar(cit_current, cit_total, bw)
-        sep_w = max(40, bw - 10)
-        sep = "\033[90m" + "─" * sep_w + "\033[0m"
+        sep = "\033[90m" + "─" * bw + "\033[0m"
 
         # Fixed-width count fields so percentages align
         _p_digits = len(str(proc_total))
@@ -123,8 +122,7 @@ class _ProgressBar:
         bw = min(60, tw - 35)
         p_bar = self._bar_done(proc_total, bw)
         c_bar = self._bar_done(cit_total, bw)
-        sep_w = max(40, bw - 10)
-        sep = "\033[90m" + "─" * sep_w + "\033[0m"
+        sep = "\033[90m" + "─" * bw + "\033[0m"
 
         _digits = max(len(str(proc_total)), len(str(cit_total)))
         _p_count = f"{proc_total:>{_digits}}/{proc_total}"
