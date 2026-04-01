@@ -92,8 +92,12 @@ def main():
             )
             for r in results:
                 content_len = len(r.get("extracted_content", ""))
-                print(f"      {r['citation_name']}: status={r['status']}, "
+                method = r.get("method", "unknown")
+                attempts = r.get("attempts", [])
+                print(f"      {r['citation_name']}: method={method}, "
                       f"content={content_len} chars")
+                if attempts:
+                    print(f"        Attempts: {' → '.join(attempts)}")
                 if content_len > 0:
                     print(f"        Preview: {r['extracted_content'][:150]}...")
 
