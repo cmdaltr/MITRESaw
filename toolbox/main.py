@@ -1012,9 +1012,32 @@ def mainsaw(
     )
     _done_label = "Extraction complete"
     if collect_citations and _all_citation_refs:
-        _with_content = sum(1 for r in _all_citation_refs if r.get("extracted_content"))
+        _with_content = sum(1 for r in _all_citation_refs
+                           if r.get("extracted_content") and r.get("method") not in ("stix_metadata", "no_content", ""))
         _done_label = f"Complete — {len(_all_citation_refs)} citations, {_with_content} with content"
     _pb_extract.done(_total_procedures, _done_label)
+
+    # Write failed citations report
+    if collect_citations and _all_citation_refs:
+        _failed = [r for r in _all_citation_refs
+                   if r.get("method") in ("stix_metadata", "no_content", "")]
+        if _failed:
+            _failed_path = os.path.join(mitresaw_root_date, "citations_failed.csv")
+            import csv
+            with open(_failed_path, "w", newline="") as _f:
+                _w = csv.writer(_f)
+                _w.writerow(["citation_name", "url", "method", "attempts", "group", "technique_id"])
+                for _r in _failed:
+                    _attempts_str = " → ".join(_r.get("attempts", []))
+                    _w.writerow([
+                        _r.get("citation_name", ""),
+                        _r.get("url", ""),
+                        _r.get("method", ""),
+                        _attempts_str,
+                        _r.get("group", ""),
+                        _r.get("technique_id", ""),
+                    ])
+            print(f"     {len(_failed)} failed citations written to: {_failed_path}")
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
 
