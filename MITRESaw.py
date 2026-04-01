@@ -19,9 +19,9 @@ parser.add_argument(
     help="Filter results based on provided platforms e.g. Windows,Linux,IaaS,Azure_AD (use _ instead of spaces)\n Use . to not filter i.e. obtain all Platforms (default: .)\n Valid options are: 'Azure_AD', 'Containers', 'Google_Workspace', 'IaaS', 'Linux', 'Network', 'Office_365', 'PRE', 'SaaS', 'Windows', 'macOS'\n\n",
 )
 parser.add_argument(
-    "-t", "--searchterms",
+    "-s", "--strings",
     default=".",
-    help="Filter Threat Actor results based on specific industries e.g. mining,technology,defense,law (use _ instead of spaces)\n Use . to not filter i.e. obtain all Threat Actors (default: .)\n\n",
+    help="Filter results based on search strings e.g. mining,technology,defense,law (use _ instead of spaces)\n Use . to not filter i.e. obtain all results (default: .)\n\n",
 )
 parser.add_argument(
     "-g", "--threatgroups",
@@ -69,7 +69,7 @@ parser.add_argument(
     default=False,
 )
 parser.add_argument(
-    "-r",
+    "-t",
     "--truncate",
     help="Truncate printing of indicators for a cleaner output (they are still written to output file)\n",
     action="store_const",
@@ -159,7 +159,7 @@ attack_frameworks = [
     for f in args.framework.split(",")
 ]
 operating_platforms = [args.platforms]
-search_terms = [args.searchterms]
+search_terms = [args.strings]
 provided_groups = [args.threatgroups]
 show_others = args.showotherlogsources
 art = args.asciiart

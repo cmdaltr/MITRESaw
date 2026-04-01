@@ -65,22 +65,22 @@ MITRESaw has evolved to also produce search queries based on extracted indicator
 
 All arguments are optional named flags with sensible defaults. To display usage, simply run: `./MITRESaw.py -h`
 ```
-usage: MITRESaw.py [-h] [-f FRAMEWORK] [-p PLATFORMS] [-t SEARCHTERMS]
-                   [-g THREATGROUPS] [-a] [-n] [-Q] [-q] [-r]
-                   [-c COLUMNS] [-d] [-x {csv,json,xml}] [-E] [-C]
-                   [--clear-cache] [-F]
+usage: MITRESaw.py [-h] [-f FRAMEWORK] [-p PLATFORMS] [-s STRINGS]
+                   [-g THREATGROUPS] [-a] [-n] [-Q] [-q] [-t]
+                   [-c COLUMNS] [-D] [-x {csv,json,xml}] [-E] [-C]
+                   [-I [DIR]] [--clear-cache] [-F]
 
 options:
   -h, --help                  show this help message and exit
   -f, --framework FRAMEWORK   Specify which framework - Enterprise, ICS or Mobile (default: Enterprise)
   -p, --platforms PLATFORMS   Filter by platform e.g. Windows,Linux,IaaS (default: . for all)
-  -t, --searchterms TERMS     Filter by industry e.g. mining,technology,defense (default: . for all)
+  -s, --strings TERMS     Filter by industry e.g. mining,technology,defense (default: . for all)
   -g, --threatgroups GROUPS   Filter by group e.g. APT29,HAFNIUM,Turla (default: . for all)
   -a, --asciiart              Show ASCII Art of the saw
   -n, --navlayers             Obtain ATT&CK Navigator layers for identified Groups
   -Q, --queries               Build search queries for Splunk, Azure Sentinel, Elastic/Kibana
   -q, --quiet                 Suppress per-identifier output; print only group completion
-  -r, --truncate              Truncate indicator output (still written to file)
+  -t, --truncate              Truncate indicator output (still written to file)
   -c, --columns COLUMNS       Export filtered CSV with specified columns (comma-separated)
   -D, --default               Export key procedure columns to mitre_procedures.csv
   -I, --import-citations      Import manually saved PDF/HTML citations (default: data/citations/)
