@@ -16,21 +16,44 @@ from mitreattack.stix20 import MitreAttackData
 
 
 class _ProgressBar:
-    """Inline progress bar that overwrites a single line during progress,
-    then prints a permanent 100% line when done."""
+    """Progress bar pinned to the bottom of the terminal using scroll regions.
+
+    Sets a scroll region that excludes the last row, so all print() output
+    stays within the scroll region while the bar persists at the bottom.
+    """
 
     def __init__(self, label=""):
         self._start = None
         self._label = label
+        self._active = False
 
-    def update(self, current, total, detail="", bar_width=30):
-        """Overwrite the current line with progress."""
-        if total == 0:
-            return
+    def _setup(self):
+        """Reserve the bottom row by setting a terminal scroll region."""
         try:
             tw = os.get_terminal_size().columns
+            th = os.get_terminal_size().lines
         except OSError:
-            tw = 120
+            tw, th = 120, 40
+        # Set scroll region to rows 1..(th-1), reserving last row for bar
+        sys.stdout.write(f"\033[1;{th - 1}r")
+        # Move cursor into the scroll region
+        sys.stdout.write(f"\033[{th - 1};1H")
+        sys.stdout.flush()
+        self._active = True
+
+    def update(self, current, total, detail="", bar_width=30):
+        """Update the pinned progress bar on the bottom row."""
+        if total == 0:
+            return
+
+        if not self._active:
+            self._setup()
+
+        try:
+            tw = os.get_terminal_size().columns
+            th = os.get_terminal_size().lines
+        except OSError:
+            tw, th = 120, 40
 
         pct = current / total
         filled = int(bar_width * pct)
@@ -46,21 +69,35 @@ class _ProgressBar:
         else:
             eta_str = "..."
 
-        line = f"     {self._label} {bar} {current}/{total} ({pct:.0%}) ETA: {eta_str}  {detail}"
-        sys.stdout.write(f"\r{line[:tw].ljust(tw)}")
+        line = f" {self._label} {bar} {current}/{total} ({pct:.0%}) ETA: {eta_str}  {detail}"
+        # Save cursor, jump to bottom row, draw bar, restore cursor
+        sys.stdout.write(f"\033[s\033[{th};1H\033[K{line[:tw]}\033[u")
         sys.stdout.flush()
 
     def done(self, total, detail="Complete", bar_width=30):
-        """Print a permanent green 100% line and move to next line."""
+        """Show 100%, then remove the bar and restore full scroll region."""
         try:
             tw = os.get_terminal_size().columns
+            th = os.get_terminal_size().lines
         except OSError:
-            tw = 120
+            tw, th = 120, 40
 
         bar = "\033[32m" + "█" * bar_width + "\033[0m"
-        line = f"     {self._label} {bar} {total}/{total} (100%) {detail}"
-        sys.stdout.write(f"\r{line[:tw].ljust(tw)}\n")
+        line = f" {self._label} {bar} {total}/{total} (100%) {detail}"
+
+        # Draw final bar
+        sys.stdout.write(f"\033[s\033[{th};1H\033[K{line[:tw]}\033[u")
         sys.stdout.flush()
+        time.sleep(0.3)
+
+        # Clear bottom row and reset scroll region to full terminal
+        sys.stdout.write(f"\033[s\033[{th};1H\033[K\033[u")
+        sys.stdout.write(f"\033[1;{th}r")
+        sys.stdout.flush()
+        self._active = False
+
+        # Print the final status as a permanent line in the scroll area
+        print(f"\n     {self._label} {bar} {total}/{total} (100%) {detail}")
 from stix2 import TAXIICollectionSource, Filter
 from taxii2client.v20 import Server, Collection
 
