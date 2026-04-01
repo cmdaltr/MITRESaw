@@ -413,7 +413,15 @@ _playwright_checked = False
 
 
 def _fetch_headless(url: str) -> tuple:
-    """Use Playwright headless browser to bypass JS challenges."""
+    """Use Playwright headless browser with stealth measures to bypass JS challenges.
+
+    Stealth measures:
+    - Runs in headed-like mode (headless=new) to avoid detection
+    - Spoofs webdriver/navigator properties via init script
+    - Sets realistic viewport, locale, timezone, color scheme
+    - Longer wait with scroll to trigger lazy-loaded content
+    - Retries with increased wait if first attempt has insufficient content
+    """
     global _playwright_checked
 
     try:
@@ -426,23 +434,74 @@ def _fetch_headless(url: str) -> tuple:
         if not _ensure_playwright_browsers():
             return "", "headless:chromium_install_failed"
 
+    # JavaScript to mask headless browser fingerprint
+    _STEALTH_JS = """
+    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+    Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+    Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+    window.chrome = {runtime: {}};
+    const originalQuery = window.navigator.permissions.query;
+    window.navigator.permissions.query = (parameters) =>
+        parameters.name === 'notifications'
+            ? Promise.resolve({state: Notification.permission})
+            : originalQuery(parameters);
+    """
+
+    import random
+
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(
-                user_agent=_USER_AGENTS[0],
-                viewport={"width": 1920, "height": 1080},
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                ],
             )
+            context = browser.new_context(
+                user_agent=random.choice(_USER_AGENTS),
+                viewport={"width": 1920, "height": 1080},
+                locale="en-US",
+                timezone_id="America/New_York",
+                color_scheme="light",
+                java_script_enabled=True,
+            )
+            context.add_init_script(_STEALTH_JS)
             page = context.new_page()
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            # Wait for Cloudflare challenge to resolve
-            page.wait_for_timeout(3000)
+
+            # Navigate and wait for network to settle
+            try:
+                page.goto(url, wait_until="networkidle", timeout=45000)
+            except Exception:
+                # networkidle can timeout on busy pages — try domcontentloaded
+                try:
+                    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                except Exception:
+                    browser.close()
+                    return "", "headless:navigation_failed"
+
+            # Wait for JS rendering + Cloudflare challenge
+            page.wait_for_timeout(5000)
+
+            # Scroll down to trigger lazy-loaded content
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
+            page.wait_for_timeout(2000)
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            page.wait_for_timeout(2000)
+
             content = page.content()
+
+            # If insufficient content, wait longer (Cloudflare can take 5-8s)
+            if content and len(html_to_text(content[:5000])) < 200:
+                page.wait_for_timeout(5000)
+                content = page.content()
+
             browser.close()
 
             if content and len(content) > 500:
                 text = html_to_text(content[:MAX_CONTENT_CHARS])
-                if text and len(text) > 100:
+                if text and len(text) > 200:
                     return text, "headless"
             return "", "headless:no_content"
     except Exception as e:
