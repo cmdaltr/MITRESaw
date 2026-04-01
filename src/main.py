@@ -1226,6 +1226,51 @@ def mainsaw(
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
 
+    # Inject citation-extracted indicators as additional entries
+    if collect_citations and _all_citation_refs:
+        _injected = 0
+        for _ref in _all_citation_refs:
+            _ext_ind = _ref.get("extracted_indicators", {})
+            if not _ext_ind:
+                continue
+            _g = _ref.get("group", "")
+            _tid = _ref.get("technique_id", "")
+            _tname = _ref.get("technique_name", "")
+            _cn = _ref.get("citation_name", "")
+            _url = _ref.get("url", "")
+            # Build a consolidated_techniques entry in the same ||-delimited format
+            # [0]group_id [1]group_name [2]technique_id [3]technique_name
+            # [4]usage [5]- [6]group_desc [7]tech_desc [8]tech_detection
+            # [9]tech_platforms [10]tech_datasources [11]tech_tactics [12]framework [13]evidence_json
+            _evidence_json = json.dumps(_ext_ind)
+            _usage = f"Indicators extracted from citation: {_cn}"
+            if _url:
+                _usage += f" ({_url})"
+            # Find an existing entry to copy metadata from
+            _template = None
+            for _ct in consolidated_techniques:
+                _ct_parts = _ct.split("||")
+                if len(_ct_parts) > 3 and _ct_parts[1] == _g and _ct_parts[2] == _tid:
+                    _template = _ct_parts
+                    break
+            if _template and len(_template) > 12:
+                _new_entry = (
+                    f"{_template[0]}||{_g}||{_tid}||{_tname}||"
+                    f"{_usage}||-||{_template[6]}||{_template[7]}||{_template[8]}||"
+                    f"{_template[9]}||{_template[10]}||{_template[11]}||{_template[12]}||"
+                    f"{_evidence_json}"
+                )
+            else:
+                _new_entry = (
+                    f"||{_g}||{_tid}||{_tname}||"
+                    f"{_usage}||-||||||||||"
+                    f"{_evidence_json}"
+                )
+            consolidated_techniques.append(_new_entry)
+            _injected += 1
+        if _injected:
+            print(f"\n     {_injected} citation-sourced evidence entries added")
+
     # Report CVEs with no actionable intelligence
     from src.tools.map_bespoke_logs import report_cve_summary
     report_cve_summary()
