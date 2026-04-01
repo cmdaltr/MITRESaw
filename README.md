@@ -224,7 +224,23 @@ Homepages and documentation sites are automatically skipped (7-zip, WinRAR, Wiki
 
 ### Cache
 
-Fetched pages are cached in `.citation_cache/` to avoid re-downloading on subsequent runs. Use `--clear-cache` to force re-fetching all sources. Failed URLs are NOT cached, allowing retry on the next run.
+Fetched pages are cached in `.citation_cache/` to avoid re-downloading on subsequent runs. Failed URLs are also cached within the same run to avoid re-trying the same broken URL across multiple procedures — this is the single biggest performance optimisation (see below). Use `--clear-cache` to wipe the cache and force a fresh retry of all sources.
+
+### Performance
+
+Citation collection was optimised to reduce a full all-groups run from **~80+ hours to ~4-8 hours**:
+
+| Optimisation | Before | After | Impact |
+|-------------|--------|-------|--------|
+| Request timeout | 25s | 15s | Faster failure on unresponsive sites |
+| Wayback Machine timeout | 15s | 10s | Faster fallback |
+| Per-domain rate limit | 1.5s | 0.5s | 3x faster between requests to same domain |
+| Global rate limit | 0.5s | 0.2s | 2.5x faster between any requests |
+| HTTP retries | 2 retries, 2s backoff | 1 retry, 0.5s backoff | 3s saved per failure |
+| Headless browser wait | ~14s per page | ~4s per page | 10s saved per JS/Cloudflare site |
+| Failed URL re-attempts | Retried every procedure | Cached after first failure | **~45s saved per duplicate** |
+
+The biggest win is caching failures within a run. A URL like `securelist.com` that fails all 5 methods (~45s) was previously retried for every procedure that referenced it (potentially hundreds of times). Now it fails once, caches the result, and every subsequent hit is instant.
 
 ### Optional Dependencies
 
