@@ -23,7 +23,7 @@ class _ProgressBar:
     Row th:   Separator + ETA
     """
 
-    _ROWS = 3  # rows reserved at bottom
+    _ROWS = 5  # rows reserved at bottom (blank + procedures + citations + sep + eta)
 
     def __init__(self):
         self._start = None
@@ -65,7 +65,8 @@ class _ProgressBar:
         except OSError:
             tw, th = 120, 40
 
-        bw = min(60, tw - 30)
+        bw = min(60, tw - 35)
+        _lbl_w = 14  # "   Procedures: " width
 
         # ETA
         now = time.time()
@@ -83,21 +84,23 @@ class _ProgressBar:
         else:
             eta_str = "..."
 
-        # Build lines
         p_bar, p_pct = self._bar(proc_current, proc_total, bw)
         c_bar, c_pct = self._bar(cit_current, cit_total, bw)
+        sep = "\033[90m" + "─" * bw + "\033[0m"
 
-        line1 = f" {p_bar} {proc_current}/{proc_total}  ({p_pct})  {group_name}"
-        line2 = f" {c_bar} {cit_current}/{cit_total}  ({c_pct})  citations"
-        sep = "\033[90m" + "─" * tw + "\033[0m"
-        line3 = f" ETA: {eta_str}"
+        line1 = f"   Procedures: {p_bar} {proc_current}/{proc_total}  ({p_pct})"
+        line2 = f"   Citations:  {c_bar} {cit_current}/{cit_total}  ({c_pct})"
+        line3 = f"               {sep}"
+        line4 = f"   ETA:        {eta_str}"
 
-        r1 = th - 2
+        r0 = th - 4  # blank line
         sys.stdout.write(
             f"\033[s"
-            f"\033[{r1};1H\033[K{line1[:tw]}"
-            f"\033[{r1+1};1H\033[K{line2[:tw]}"
-            f"\033[{r1+2};1H\033[K{sep}\033[{r1+2};1H{line3[:tw]}"
+            f"\033[{r0};1H\033[K"
+            f"\033[{r0+1};1H\033[K{line1[:tw]}"
+            f"\033[{r0+2};1H\033[K{line2[:tw]}"
+            f"\033[{r0+3};1H\033[K{line3[:tw]}"
+            f"\033[{r0+4};1H\033[K{line4[:tw]}"
             f"\033[u"
         )
         sys.stdout.flush()
@@ -109,31 +112,36 @@ class _ProgressBar:
         except OSError:
             tw, th = 120, 40
 
-        bw = min(60, tw - 30)
+        bw = min(60, tw - 35)
         p_bar = self._bar_done(proc_total, bw)
         c_bar = self._bar_done(cit_total, bw)
+        sep = "\033[90m" + "─" * bw + "\033[0m"
 
-        r1 = th - 2
+        r0 = th - 4
         sys.stdout.write(
             f"\033[s"
-            f"\033[{r1};1H\033[K {p_bar} {proc_total}/{proc_total}  (100%)"
-            f"\033[{r1+1};1H\033[K {c_bar} {cit_total}/{cit_total}  (100%)  citations"
-            f"\033[{r1+2};1H\033[K {detail}"
+            f"\033[{r0};1H\033[K"
+            f"\033[{r0+1};1H\033[K   Procedures: {p_bar} {proc_total}/{proc_total}  (100%)"
+            f"\033[{r0+2};1H\033[K   Citations:  {c_bar} {cit_total}/{cit_total}  (100%)"
+            f"\033[{r0+3};1H\033[K               {sep}"
+            f"\033[{r0+4};1H\033[K   {detail}"
             f"\033[u"
         )
         sys.stdout.flush()
         time.sleep(0.5)
 
         # Clear reserved rows and reset scroll region
-        sys.stdout.write(f"\033[s\033[{r1};1H\033[K\033[{r1+1};1H\033[K\033[{r1+2};1H\033[K\033[u")
-        sys.stdout.write(f"\033[1;{th}r")
+        for _r in range(r0, r0 + 5):
+            sys.stdout.write(f"\033[{_r};1H\033[K")
+        sys.stdout.write(f"\033[u\033[1;{th}r")
         sys.stdout.flush()
         self._active = False
 
         # Permanent summary
-        print(f"\n     {p_bar} {proc_total}/{proc_total} procedures (100%)")
-        print(f"     {c_bar} {cit_total}/{cit_total} citations (100%)")
-        print(f"     {detail}")
+        print(f"\n   Procedures: {p_bar} {proc_total}/{proc_total}  (100%)")
+        print(f"   Citations:  {c_bar} {cit_total}/{cit_total}  (100%)")
+        print(f"               {sep}")
+        print(f"   {detail}")
 from stix2 import TAXIICollectionSource, Filter
 from taxii2client.v20 import Server, Collection
 
