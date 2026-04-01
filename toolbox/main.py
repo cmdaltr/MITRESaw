@@ -86,12 +86,20 @@ class _ProgressBar:
 
         p_bar, p_pct = self._bar(proc_current, proc_total, bw)
         c_bar, c_pct = self._bar(cit_current, cit_total, bw)
-        sep = "\033[90m" + "─" * bw + "\033[0m"
+        sep_w = max(40, bw - 10)
+        sep = "\033[90m" + "─" * sep_w + "\033[0m"
 
-        line1 = f"   Procedures: {p_bar} {proc_current}/{proc_total}  ({p_pct})"
-        line2 = f"   Citations:  {c_bar} {cit_current}/{cit_total}  ({c_pct})"
+        # Fixed-width count fields so percentages align
+        _p_digits = len(str(proc_total))
+        _c_digits = len(str(cit_total))
+        _max_digits = max(_p_digits, _c_digits)
+        _p_count = f"{proc_current:>{_max_digits}}/{proc_total}"
+        _c_count = f"{cit_current:>{_max_digits}}/{cit_total}"
+
+        line1 = f"   Procedures: {p_bar} {_p_count}  ({p_pct:>4})"
+        line2 = f"   Citations:  {c_bar} {_c_count}  ({c_pct:>4})"
         line3 = f"               {sep}"
-        line4 = f"   ETA:        {eta_str}"
+        line4 = f"   \033[1mETA:        {eta_str}\033[0m"
 
         r0 = th - 4  # blank line
         sys.stdout.write(
@@ -115,14 +123,19 @@ class _ProgressBar:
         bw = min(60, tw - 35)
         p_bar = self._bar_done(proc_total, bw)
         c_bar = self._bar_done(cit_total, bw)
-        sep = "\033[90m" + "─" * bw + "\033[0m"
+        sep_w = max(40, bw - 10)
+        sep = "\033[90m" + "─" * sep_w + "\033[0m"
+
+        _digits = max(len(str(proc_total)), len(str(cit_total)))
+        _p_count = f"{proc_total:>{_digits}}/{proc_total}"
+        _c_count = f"{cit_total:>{_digits}}/{cit_total}"
 
         r0 = th - 4
         sys.stdout.write(
             f"\033[s"
             f"\033[{r0};1H\033[K"
-            f"\033[{r0+1};1H\033[K   Procedures: {p_bar} {proc_total}/{proc_total}  (100%)"
-            f"\033[{r0+2};1H\033[K   Citations:  {c_bar} {cit_total}/{cit_total}  (100%)"
+            f"\033[{r0+1};1H\033[K   Procedures: {p_bar} {_p_count}  (100%)"
+            f"\033[{r0+2};1H\033[K   Citations:  {c_bar} {_c_count}  (100%)"
             f"\033[{r0+3};1H\033[K               {sep}"
             f"\033[{r0+4};1H\033[K   {detail}"
             f"\033[u"
@@ -138,8 +151,8 @@ class _ProgressBar:
         self._active = False
 
         # Permanent summary
-        print(f"\n   Procedures: {p_bar} {proc_total}/{proc_total}  (100%)")
-        print(f"   Citations:  {c_bar} {cit_total}/{cit_total}  (100%)")
+        print(f"\n   Procedures: {p_bar} {_p_count}  (100%)")
+        print(f"   Citations:  {c_bar} {_c_count}  (100%)")
         print(f"               {sep}")
         print(f"   {detail}")
 from stix2 import TAXIICollectionSource, Filter
