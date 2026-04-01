@@ -890,9 +890,8 @@ def mainsaw(
         if last_group_name and current_group_name.strip().lower() != last_group_name.strip().lower():
             _cit_num = 0
         last_group_name = current_group_name
-        if quiet:
-            _cit_label = f"{current_group_name} ({len(_all_citation_refs)} refs)" if collect_citations else current_group_name
-            _pb_extract.update(_proc_idx, _total_procedures, _cit_label)
+        _cit_label = f"{current_group_name} ({len(_all_citation_refs)} refs)" if collect_citations else current_group_name
+        _pb_extract.update(_proc_idx, _total_procedures, _cit_label)
         (
             technique_findings,
             previous_findings,
@@ -985,7 +984,7 @@ def mainsaw(
                     _num_str = f"[{_cit_num}]"
                     _method = _ref.get("method", "unknown")
                     if _ref.get("extracted_content") and _method not in ("stix_metadata", "no_content"):
-                        _icon = "\033[32m\u2705\033[0m "  # real content fetched
+                        _icon = "\033[32m\u2705\033[0m"  # real content fetched
                     elif _method == "stix_metadata":
                         _icon = "\033[33m\u26a0\ufe0f\033[0m"   # metadata only
                     else:
@@ -1011,15 +1010,11 @@ def mainsaw(
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
     )
-    if quiet:
-        _done_label = "Extraction complete"
-        if collect_citations:
-            _with_content = sum(1 for r in _all_citation_refs if r.get("extracted_content"))
-            _done_label = f"Complete — {len(_all_citation_refs)} citations, {_with_content} with content"
-        _pb_extract.done(_total_procedures, _done_label)
-    elif collect_citations and _all_citation_refs:
+    _done_label = "Extraction complete"
+    if collect_citations and _all_citation_refs:
         _with_content = sum(1 for r in _all_citation_refs if r.get("extracted_content"))
-        print(f"\n     {len(_all_citation_refs)} citations collected, {_with_content} with content")
+        _done_label = f"Complete — {len(_all_citation_refs)} citations, {_with_content} with content"
+    _pb_extract.done(_total_procedures, _done_label)
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
 
