@@ -1022,9 +1022,11 @@ def mainsaw(
         _failed = [r for r in _all_citation_refs
                    if r.get("method") in ("stix_metadata", "no_content", "")]
         if _failed:
-            _failed_path = os.path.join(mitresaw_root_date, "citations_failed.csv")
             import csv
-            with open(_failed_path, "w", newline="") as _f:
+            import yaml
+
+            _failed_csv = os.path.join(mitresaw_root_date, "citations_failed.csv")
+            with open(_failed_csv, "w", newline="") as _f:
                 _w = csv.writer(_f)
                 _w.writerow(["citation_name", "url", "method", "attempts", "group", "technique_id"])
                 for _r in _failed:
@@ -1037,7 +1039,24 @@ def mainsaw(
                         _r.get("group", ""),
                         _r.get("technique_id", ""),
                     ])
-            print(f"     {len(_failed)} failed citations written to: {_failed_path}")
+
+            _failed_yaml = os.path.join(mitresaw_root_date, "citations_failed.yaml")
+            _yaml_data = []
+            for _r in _failed:
+                _yaml_data.append({
+                    "citation_name": _r.get("citation_name", ""),
+                    "url": _r.get("url", ""),
+                    "method": _r.get("method", ""),
+                    "attempts": _r.get("attempts", []),
+                    "group": _r.get("group", ""),
+                    "technique_id": _r.get("technique_id", ""),
+                })
+            with open(_failed_yaml, "w") as _f:
+                yaml.dump(_yaml_data, _f, default_flow_style=False, sort_keys=False)
+
+            print(f"     {len(_failed)} failed citations written to:")
+            print(f"       {_failed_csv}")
+            print(f"       {_failed_yaml}")
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
 
