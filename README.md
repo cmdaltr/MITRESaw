@@ -197,7 +197,7 @@ When 2+ groups are provided (e.g. `-g APT29,APT33,OilRig`), a **Technique Matrix
 
 ## Citation Collection (-C)
 
-The `-C` / `--citations` flag collects ALL citation source material for each technique — blog posts, vendor reports, government advisories, PDFs, and more. Citations are collected inline during extraction and displayed per technique.
+The `-C` / `--citations` flag collects ALL citation source material for each technique — blog posts, vendor reports, government advisories, PDFs, and more. Citations are collected inline during extraction and displayed per technique, with indicators extracted from the fetched content.
 
 ### Multi-Method Fallback Chain
 
@@ -223,9 +223,58 @@ Known migrated URLs are automatically rewritten:
 
 Homepages and documentation sites are automatically skipped (7-zip, WinRAR, Wikipedia, Microsoft docs, Cisco product docs, etc.) — these have no threat intelligence value.
 
+### Indicator Extraction from Citations
+
+When a citation page is successfully fetched, MITRESaw runs its extraction patterns against the content to find additional indicators not present in the MITRE procedure text. The same patterns used for native extraction are applied:
+
+| Emoji | Type | What's extracted |
+|-------|------|-----------------|
+| 💻 | `cmd` | Commands, CLI invocations, backtick-quoted strings |
+| 🔑 | `reg` | Windows registry paths |
+| 🔒 | `cve` | CVE identifiers |
+| 📁 | `paths` | Windows and Unix file/directory paths |
+| 📦 | `software` | Executables, DLLs, tools |
+| 🌐 | `ports` | Network port numbers |
+
+**Only new indicators are shown** — anything already extracted by MITRESaw's native pipeline is deduplicated. This means techniques that had no native indicators (e.g. T1621 MFA Request Generation) can still gain indicators from their citation sources.
+
+Citation-extracted indicators are:
+- **Displayed in the terminal** under each citation with emojis
+- **Injected as native evidence rows** into `mitre_procedures.csv` and `mitre_procedures.xlsx`
+- **Atomised** in the evidence report (one row per indicator, same as native indicators)
+- **Included in the Technique Matrix** — techniques gain group coverage from citation indicators
+
+The procedure example column for these rows shows `"Indicators extracted from citation: <name> (<url>)"` to distinguish them from MITRE-sourced indicators.
+
+### Manual Import (`-I`)
+
+For sites that block automated access, save the page as PDF or HTML from your browser and import it:
+
+```bash
+# Save blocked pages into data/citations/
+# e.g. securelist.com_apt-report.pdf, unit42_medusa.html
+
+# Import and run
+./MITRESaw.py -I -D -E -C
+
+# Or specify a different directory
+./MITRESaw.py -I /path/to/saved/pages -D -E -C
+```
+
+Supported formats: `.pdf` (requires PyPDF2), `.html`/`.htm`, `.txt`. Imported files are cached and used on all future runs.
+
+### Status Icons
+
+| Icon | Meaning |
+|------|---------|
+| ✅ | Content freshly fetched from source |
+| 💾 | Content loaded from local cache |
+| ⚠️ | STIX metadata only (author/title/date — fetch failed) |
+| ❌ | No content at all |
+
 ### Cache
 
-Fetched pages are cached in `.citation_cache/` to avoid re-downloading on subsequent runs. Failed URLs are also cached within the same run to avoid re-trying the same broken URL across multiple procedures — this is the single biggest performance optimisation (see below). Use `--clear-cache` to wipe the cache and force a fresh retry of all sources.
+Fetched pages are cached locally to avoid re-downloading on subsequent runs. Failed URLs are also cached within the same run to avoid re-trying the same broken URL across multiple procedures — this is the single biggest performance optimisation (see below). Use `--clear-cache` to wipe the cache and force a fresh retry of all sources.
 
 ### Performance
 
