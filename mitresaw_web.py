@@ -243,5 +243,5 @@ async def update_exclusions(request: Request):
 
 if __name__ == "__main__":
     import uvicorn
-    print("\n  MITRESaw Web — http://localhost:8080\n")
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    print("\n  MITRESaw Web — http://localhost:6729\n")
+    uvicorn.run(app, host="0.0.0.0", port=6729)
