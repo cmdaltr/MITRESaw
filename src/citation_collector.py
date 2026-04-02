@@ -357,7 +357,10 @@ def _fetch_pdf(url: str, session=None) -> tuple:
             if text:
                 pages.append(text)
         if pages:
-            return "\n\n".join(pages)[:MAX_CONTENT_CHARS], "pdf:PyPDF2"
+            raw = "\n\n".join(pages)[:MAX_CONTENT_CHARS]
+            clean = re.sub(r"[^\x20-\x7E\n\r\t]", "", raw)
+            if len(clean) > 100:
+                return clean, "pdf:PyPDF2"
     except ImportError:
         pass
     except Exception:
@@ -373,7 +376,10 @@ def _fetch_pdf(url: str, session=None) -> tuple:
                 if text:
                     pages.append(text)
             if pages:
-                return "\n\n".join(pages)[:MAX_CONTENT_CHARS], "pdf:pdfplumber"
+                raw = "\n\n".join(pages)[:MAX_CONTENT_CHARS]
+                clean = re.sub(r"[^\x20-\x7E\n\r\t]", "", raw)
+                if len(clean) > 100:
+                    return clean, "pdf:pdfplumber"
     except ImportError:
         pass
     except Exception:
@@ -808,6 +814,11 @@ def extract_indicators_from_text(text: str) -> dict:
     Types: cmd, reg, cve, paths, software, ports
     """
     if not text or len(text) < 50:
+        return {}
+
+    # Strip non-printable/binary characters (bad PDF extraction)
+    text = re.sub(r"[^\x20-\x7E\n\r\t]", "", text)
+    if len(text) < 50:
         return {}
 
     indicators = {}
