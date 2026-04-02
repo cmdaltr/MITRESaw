@@ -861,10 +861,38 @@ def extract_indicators_from_text(text: str) -> dict:
     if paths:
         indicators.setdefault("paths", []).extend(paths)
 
-    # Port numbers (e.g. "port 445", "TCP/3389") — only 3+ digits, skip noise
-    port_re = re.compile(r"(?:port\s+|TCP/|UDP/)(\d{3,5})\b", re.IGNORECASE)
-    _noise_ports = {"80", "443", "8080", "8443"}
-    ports = [p for p in set(port_re.findall(text)) if p not in _noise_ports and 20 < int(p) < 65536]
+    # Port numbers — context-aware extraction
+    # High-confidence: explicit protocol prefix or "port" keyword
+    _hi_port_re = re.compile(
+        r"(?:TCP/|UDP/|port\s+)(\d{1,5})\b", re.IGNORECASE
+    )
+    # Medium-confidence: IP:port format (e.g. 192.168.1.1:4444)
+    _ip_port_re = re.compile(
+        r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:(\d{1,5})\b"
+    )
+    # Context-dependent: bare numbers near network keywords (not IP octets)
+    _ctx_port_re = re.compile(
+        r"(?:(?:inbound|outbound|ingress|egress)\s+(?:on\s+|over\s+|via\s+|port\s+|connections?\s+(?:on\s+|to\s+)?)?"
+        r"|listen(?:ing|s)?\s+(?:on\s+|port\s+)?"
+        r"|connect(?:s|ing)?\s+(?:on|to|via)\s+(?:port\s+)?"
+        r"|beacon(?:ing)?\s+(?:on|to|over)\s+(?:port\s+)?"
+        r"|communicat\w+\s+(?:on|over|via)\s+(?:port\s+)?"
+        r"|traffic\s+(?:on|over)\s+(?:port\s+)?"
+        r"|tunnel(?:ing)?\s+(?:on|over|via)\s+(?:port\s+)?"
+        r"|c2\s+(?:on|over|port)\s+(?:port\s+)?"
+        r"|c&c\s+(?:on|over|port)\s+(?:port\s+)?)"
+        r"(\d{1,5})\b", re.IGNORECASE
+    )
+    # Collect all IP addresses to exclude their octets
+    _ip_octets = set()
+    for _ip_match in re.findall(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", text):
+        _ip_octets.update(_ip_match.split("."))
+
+    _all_ports = set()
+    _all_ports.update(_hi_port_re.findall(text))
+    _all_ports.update(_ip_port_re.findall(text))
+    _all_ports.update(_ctx_port_re.findall(text))
+    ports = [p for p in _all_ports if 1 <= int(p) <= 65535 and p not in _ip_octets]
     if ports:
         indicators["ports"] = ports[:10]
 
