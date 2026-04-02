@@ -133,9 +133,17 @@ parser.add_argument(
     default=False,
 )
 parser.add_argument(
-    "--retry-failed",
-    help="Re-attempt only previously failed citations.\n"
-         "Keeps successfully cached pages, removes failed entries.\n",
+    "-rS", "--retry-stix",
+    help="Retry citations that fell back to STIX metadata.\n"
+         "Removes stix_metadata cache entries and re-attempts fetch.\n",
+    action="store_const",
+    const=True,
+    default=False,
+)
+parser.add_argument(
+    "-rN", "--retry-nocontent",
+    help="Retry citations that had no content at all.\n"
+         "Removes empty cache entries and re-attempts fetch.\n",
     action="store_const",
     const=True,
     default=False,
@@ -191,10 +199,15 @@ if args.clear_cache:
     else:
         print(f"    -> No citation cache to clear")
 
-if args.retry_failed:
-    from src.citation_collector import clear_failed_cache
-    _removed = clear_failed_cache()
-    print(f"    -> Removed {_removed} failed cache entries (will retry on this run)")
+if args.retry_stix:
+    from src.citation_collector import clear_cache_stix_metadata
+    _removed = clear_cache_stix_metadata()
+    print(f"    -> Removed {_removed} stix_metadata cache entries (will retry on this run)")
+
+if args.retry_nocontent:
+    from src.citation_collector import clear_cache_no_content
+    _removed = clear_cache_no_content()
+    print(f"    -> Removed {_removed} no-content cache entries (will retry on this run)")
 
 if args.import_citations:
     from src.citation_collector import import_citation_files

@@ -881,21 +881,36 @@ _INDICATOR_EMOJI = {
 }
 
 
-def clear_failed_cache() -> int:
-    """Remove cache entries that have empty text (failed fetches).
-    Preserves successfully cached pages.
-
-    Returns number of entries removed.
+def clear_cache_stix_metadata() -> int:
+    """Remove cache entries where method is stix_metadata or failed.
+    These had a URL but all fetch methods failed, falling back to STIX description only.
     """
+    return _clear_cache_by(lambda d: d.get("method") in ("stix_metadata", "failed", ""))
+
+
+def clear_cache_no_content() -> int:
+    """Remove cache entries with empty text (no content at all).
+    These are URLs where every method failed and even STIX had nothing.
+    """
+    return _clear_cache_by(lambda d: not d.get("text", ""))
+
+
+def clear_cache_all_failed() -> int:
+    """Remove all failed cache entries (stix_metadata + no_content + failed).
+    Preserves only successfully fetched pages with real content.
+    """
+    return _clear_cache_by(lambda d: not d.get("text", "") or d.get("method") in ("stix_metadata", "failed", ""))
+
+
+def _clear_cache_by(predicate) -> int:
+    """Remove cache entries matching a predicate function."""
     if not CACHE_DIR.exists():
         return 0
     removed = 0
     for f in CACHE_DIR.glob("*.json"):
         try:
             data = json.loads(f.read_text())
-            text = data.get("text", "")
-            method = data.get("method", "")
-            if not text or method == "failed":
+            if predicate(data):
                 f.unlink()
                 removed += 1
         except Exception:
