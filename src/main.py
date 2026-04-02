@@ -1143,6 +1143,7 @@ def mainsaw(
             # Print citations for ALL techniques (even when no native indicators)
             if _new_cits:
                 from src.citation_collector import extract_indicators_from_text, _INDICATOR_EMOJI
+                from src.exclusions import filter_indicators as _filter_exclusions
 
                 # Build set of existing indicators for dedup
                 _existing_indicators = set()
@@ -1190,13 +1191,15 @@ def mainsaw(
                     if _content and _method not in ("stix_metadata", "no_content", ""):
                         _extracted = extract_indicators_from_text(_content)
                         if _extracted:
+                            # Apply exclusion list
+                            _extracted, _excluded = _filter_exclusions(_extracted)
+
                             # Filter out indicators already in MITRESaw's native extraction
                             _new_indicators = {}
                             for _etype, _evals in _extracted.items():
                                 _novel = [v for v in _evals if v.lower() not in _existing_indicators]
                                 if _novel:
                                     _new_indicators[_etype] = _novel
-                                    # Add to existing set so subsequent citations don't repeat
                                     _existing_indicators.update(v.lower() for v in _novel)
 
                             # Print new indicators with emojis
