@@ -179,11 +179,14 @@ class _ProgressBar:
         # Clear reserved rows and reset scroll region
         for _r in range(r0, r0 + 6):
             sys.stdout.write(f"\033[{_r};1H\033[K")
-        sys.stdout.write(f"\033[u\033[1;{th}r")
+        # Reset scroll region to full terminal
+        sys.stdout.write(f"\033[1;{th}r")
+        # Move cursor to just above where the reserved rows were
+        sys.stdout.write(f"\033[{r0};1H")
         sys.stdout.flush()
         self._active = False
 
-        # Permanent summary
+        # Permanent summary (prints from cursor position, no overlap)
         print(f"\n   Procedures: {p_bar} {_p_count}  (100.0%)")
         print(f"   {_cit_line.strip()}")
         print(f"               {sep}")
@@ -1223,7 +1226,6 @@ def mainsaw(
                    if r.get("method") in ("stix_metadata", "no_content", "")]
         if _failed:
             import csv
-            import yaml
 
             _failed_csv = os.path.join(mitresaw_root_date, "citations_failed.csv")
             with open(_failed_csv, "w", newline="") as _f:
@@ -1240,23 +1242,28 @@ def mainsaw(
                         _r.get("technique_id", ""),
                     ])
 
-            _failed_yaml = os.path.join(mitresaw_root_date, "citations_failed.yaml")
-            _yaml_data = []
-            for _r in _failed:
-                _yaml_data.append({
-                    "citation_name": _r.get("citation_name", ""),
-                    "url": _r.get("url", ""),
-                    "method": _r.get("method", ""),
-                    "attempts": _r.get("attempts", []),
-                    "group": _r.get("group", ""),
-                    "technique_id": _r.get("technique_id", ""),
-                })
-            with open(_failed_yaml, "w") as _f:
-                yaml.dump(_yaml_data, _f, default_flow_style=False, sort_keys=False)
-
-            print(f"     {len(_failed)} failed citations written to:")
-            print(f"       {_failed_csv}")
-            print(f"       {_failed_yaml}")
+            try:
+                import yaml
+                _failed_yaml = os.path.join(mitresaw_root_date, "citations_failed.yaml")
+                _yaml_data = []
+                for _r in _failed:
+                    _yaml_data.append({
+                        "citation_name": _r.get("citation_name", ""),
+                        "url": _r.get("url", ""),
+                        "method": _r.get("method", ""),
+                        "attempts": _r.get("attempts", []),
+                        "group": _r.get("group", ""),
+                        "technique_id": _r.get("technique_id", ""),
+                    })
+                with open(_failed_yaml, "w") as _f:
+                    yaml.dump(_yaml_data, _f, default_flow_style=False, sort_keys=False)
+                print(f"     {len(_failed)} failed citations written to:")
+                print(f"       {_failed_csv}")
+                print(f"       {_failed_yaml}")
+            except ImportError:
+                print(f"     {len(_failed)} failed citations written to:")
+                print(f"       {_failed_csv}")
+                print(f"       (yaml output skipped — pip install pyyaml)")
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
 
