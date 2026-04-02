@@ -87,7 +87,9 @@ options:
   -x, --export {csv,json,xml} Export format for output files (default: csv)
   -E, --evidence-report       Generate styled XLSX evidence report (one row per indicator)
   -C, --citations             Collect citation sources with multi-method fallback (requires -E)
-  --clear-cache               Clear the citation cache before running
+  -rS, --retry-stix           Retry citations that fell back to STIX metadata
+  -rN, --retry-nocontent      Retry citations that had no content at all
+  --clear-cache               Clear the entire citation cache before running
   -F, --fetch                 Force fresh download of ATT&CK STIX data
 ```
 
@@ -128,8 +130,17 @@ This gives you everything you need to get started: `mitre_procedures.csv` for lo
 # Evidence report with citation collection
 ./MITRESaw.py -g APT29 -p Windows -E -C
 
-# Full run: all groups, evidence report, citations, clear stale cache
-./MITRESaw.py -D -E -C --clear-cache
+# Retry only stix_metadata failures (keeps successful cache)
+./MITRESaw.py -rS -D -E -C
+
+# Retry only no-content failures
+./MITRESaw.py -rN -D -E -C
+
+# Retry both stix_metadata and no-content failures
+./MITRESaw.py -rS -rN -D -E -C
+
+# Nuclear option: clear entire cache and re-fetch everything
+./MITRESaw.py --clear-cache -D -E -C
 
 # Force refresh STIX data and clear citation cache
 ./MITRESaw.py -D -E -C --clear-cache -F
@@ -274,7 +285,20 @@ Supported formats: `.pdf` (requires PyPDF2), `.html`/`.htm`, `.txt`. Imported fi
 
 ### Cache
 
-Fetched pages are cached locally to avoid re-downloading on subsequent runs. Failed URLs are also cached within the same run to avoid re-trying the same broken URL across multiple procedures — this is the single biggest performance optimisation (see below). Use `--clear-cache` to wipe the cache and force a fresh retry of all sources.
+Fetched pages are cached locally to avoid re-downloading on subsequent runs. Failed URLs are also cached within the same run to avoid re-trying the same broken URL across multiple procedures — this is the single biggest performance optimisation (see below).
+
+### Retry Options
+
+| Flag | What it removes | When to use |
+|------|----------------|-------------|
+| `-rS` / `--retry-stix` | Cache entries where fetch failed, only STIX metadata captured (⚠️) | After fixing SSL/network issues — sites that were unreachable may now work |
+| `-rN` / `--retry-nocontent` | Cache entries with completely empty text (❌) | After installing Playwright or PyPDF2 — previously unfetchable pages may now parse |
+| `--clear-cache` | Everything | Start completely fresh — re-fetches all ~5,000+ URLs |
+
+Use `-rS` and `-rN` together to retry all failures while keeping successful cache:
+```bash
+./MITRESaw.py -rS -rN -D -E -C
+```
 
 ### Performance
 
