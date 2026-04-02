@@ -861,9 +861,10 @@ def extract_indicators_from_text(text: str) -> dict:
     if paths:
         indicators.setdefault("paths", []).extend(paths)
 
-    # Port numbers (e.g. "port 445", "TCP/3389")
-    port_re = re.compile(r"(?:port\s+|TCP/|UDP/|:\s*)(\d{2,5})\b", re.IGNORECASE)
-    ports = list(set(port_re.findall(text)))
+    # Port numbers (e.g. "port 445", "TCP/3389") — only 3+ digits, skip noise
+    port_re = re.compile(r"(?:port\s+|TCP/|UDP/)(\d{3,5})\b", re.IGNORECASE)
+    _noise_ports = {"80", "443", "8080", "8443"}
+    ports = [p for p in set(port_re.findall(text)) if p not in _noise_ports and 20 < int(p) < 65536]
     if ports:
         indicators["ports"] = ports[:10]
 
