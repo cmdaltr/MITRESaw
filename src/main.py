@@ -200,12 +200,21 @@ import pandas
 from src.extract import extract_indicators
 
 
+_ssl_verify_failed = False  # Set True if SSL verification fails during STIX loading
+
+
 def _fetch(url: str, **kwargs) -> requests.Response:
     """GET with automatic SSL-verify fallback for corporate VPN/proxy environments."""
+    global _ssl_verify_failed
+    if _ssl_verify_failed:
+        kwargs.setdefault("verify", False)
+        return requests.get(url, **kwargs)
     try:
         return requests.get(url, **kwargs)
     except requests.exceptions.SSLError:
+        _ssl_verify_failed = True
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        print("    -> SSL verification failed, switching to unverified mode for all requests")
         return requests.get(url, verify=False, **kwargs)
 from src.tools.write_csv import write_csv_summary
 from src.tools.write_csv import write_csv_techniques_mapped_to_logsources
@@ -996,6 +1005,10 @@ def mainsaw(
                 continue
         if _citation_url_lookup:
             print(f"    -> {len(_citation_url_lookup)} unique citation sources indexed for collection\n")
+            # Propagate SSL verification state to citation collector
+            if _ssl_verify_failed:
+                import src.citation_collector as _cc
+                _cc.SSL_VERIFY = False
 
     # Sort by (group, technique_name) so procedures for the same group+technique are contiguous
     consolidated_procedures = sorted(consolidated_procedures, key=lambda p: (

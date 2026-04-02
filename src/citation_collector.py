@@ -36,6 +36,7 @@ REQUEST_TIMEOUT = 15
 WAYBACK_TIMEOUT = 10
 RATE_LIMIT_DELAY = 0.5   # seconds between requests to same domain
 RATE_LIMIT_GLOBAL = 0.2  # seconds between any requests
+SSL_VERIFY = True        # Set to False by main.py if STIX loading hit SSL errors
 MAX_CONTENT_CHARS = 80000
 MAX_RELEVANT_CHARS = 4000
 
@@ -237,7 +238,8 @@ def _fetch_direct(url: str, session=None) -> tuple:
     if session is None:
         session = _make_session()
 
-    for verify_ssl in (True, False):
+    _verify_options = (SSL_VERIFY,) if not SSL_VERIFY else (True, False)
+    for verify_ssl in _verify_options:
         try:
             resp = session.get(url, timeout=REQUEST_TIMEOUT, allow_redirects=True, verify=verify_ssl)
             if resp.status_code == 200:
@@ -275,7 +277,7 @@ def _fetch_wayback(url: str, session=None) -> tuple:
 
     wb_api = f"https://archive.org/wayback/available?url={quote(url, safe='')}"
     try:
-        api_resp = session.get(wb_api, timeout=WAYBACK_TIMEOUT, verify=True)
+        api_resp = session.get(wb_api, timeout=WAYBACK_TIMEOUT, verify=SSL_VERIFY)
         if api_resp.status_code != 200:
             return "", "wayback:api_failed"
         data = api_resp.json()
@@ -284,7 +286,7 @@ def _fetch_wayback(url: str, session=None) -> tuple:
             return "", "wayback:no_snapshot"
 
         snap_url = snapshot["url"]
-        resp = session.get(snap_url, timeout=REQUEST_TIMEOUT, allow_redirects=True, verify=True)
+        resp = session.get(snap_url, timeout=REQUEST_TIMEOUT, allow_redirects=True, verify=SSL_VERIFY)
         if resp.status_code == 200:
             ct = resp.headers.get("Content-Type", "").lower()
             if "html" in ct or "text" in ct:
@@ -311,7 +313,7 @@ def _fetch_google_cache(url: str, session=None) -> tuple:
 
     cache_url = f"https://webcache.googleusercontent.com/search?q=cache:{quote(url, safe='')}"
     try:
-        resp = session.get(cache_url, timeout=REQUEST_TIMEOUT, allow_redirects=True, verify=True)
+        resp = session.get(cache_url, timeout=REQUEST_TIMEOUT, allow_redirects=True, verify=SSL_VERIFY)
         if resp.status_code == 200:
             text = html_to_text(resp.text[:MAX_CONTENT_CHARS])
             if text and len(text) > 100:
