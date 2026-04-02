@@ -99,9 +99,12 @@ class _ProgressBar:
         c_bar, c_pct = self._bar(cit_current, cit_total, bw) if cit_total > 0 else ("\033[90m" + "░" * bw + "\033[0m", "—")
         sep = "\033[90m" + "─" * bw + "\033[0m"
 
-        _max_digits = max(len(str(proc_total)), len(str(cit_total))) if cit_total > 0 else len(str(proc_total))
-        _p_count = f"{proc_current:>{_max_digits}}/{proc_total}"
-        _c_count = f"{cit_current:>{_max_digits}}/{cit_total}" if cit_total > 0 else f"{cit_current}"
+        # Fixed-width count: right-align the whole "current/total" string
+        _p_raw = f"{proc_current}/{proc_total}"
+        _c_raw = f"{cit_current}/{cit_total}" if cit_total > 0 else f"{cit_current}"
+        _count_w = max(len(_p_raw), len(_c_raw))
+        _p_count = f"{_p_raw:>{_count_w}}"
+        _c_count = f"{_c_raw:>{_count_w}}"
 
         # Elapsed time
         if secs >= 3600:
@@ -142,9 +145,11 @@ class _ProgressBar:
         c_bar = self._bar_done(cit_total, bw) if cit_total > 0 else None
         sep = "\033[90m" + "─" * bw + "\033[0m"
 
-        _max_digits = max(len(str(proc_total)), len(str(cit_total))) if cit_total > 0 else len(str(proc_total))
-        _p_count = f"{proc_total:>{_max_digits}}/{proc_total}"
-        _c_count = f"{cit_total:>{_max_digits}}/{cit_total}" if cit_total > 0 else f"{cit_total}"
+        _p_raw = f"{proc_total}/{proc_total}"
+        _c_raw = f"{cit_total}/{cit_total}" if cit_total > 0 else f"{cit_total}"
+        _count_w = max(len(_p_raw), len(_c_raw))
+        _p_count = f"{_p_raw:>{_count_w}}"
+        _c_count = f"{_c_raw:>{_count_w}}"
 
         # Total elapsed
         secs = time.time() - self._start if self._start else 0
