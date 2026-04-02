@@ -96,9 +96,12 @@ class _ProgressBar:
             eta_str = "..."
 
         p_bar, p_pct = self._bar(proc_current, proc_total, bw)
+        c_bar, c_pct = self._bar(cit_current, cit_total, bw) if cit_total > 0 else ("\033[90m" + "░" * bw + "\033[0m", "—")
         sep = "\033[90m" + "─" * bw + "\033[0m"
 
-        _p_count = f"{proc_current:>{len(str(proc_total))}}/{proc_total}"
+        _max_digits = max(len(str(proc_total)), len(str(cit_total))) if cit_total > 0 else len(str(proc_total))
+        _p_count = f"{proc_current:>{_max_digits}}/{proc_total}"
+        _c_count = f"{cit_current:>{_max_digits}}/{cit_total}" if cit_total > 0 else f"{cit_current}"
 
         # Elapsed time
         if secs >= 3600:
@@ -109,7 +112,7 @@ class _ProgressBar:
             elapsed_str = f"{int(secs)}s"
 
         line1 = f"   Procedures: {p_bar} {_p_count}  ({p_pct:>5})"
-        line2 = f"   Citations:  {cit_current} collected"
+        line2 = f"   Citations:  {c_bar} {_c_count}  ({c_pct:>5})" if cit_total > 0 else f"   Citations:  {cit_current} collected"
         line3 = f"               {sep}"
         line4 = f"   \033[1mETA:        {eta_str}\033[0m"
         line5 = f"   \033[90mElapsed:    {elapsed_str}\033[0m"
@@ -136,9 +139,12 @@ class _ProgressBar:
 
         bw = min(60, tw - 35)
         p_bar = self._bar_done(proc_total, bw)
+        c_bar = self._bar_done(cit_total, bw) if cit_total > 0 else None
         sep = "\033[90m" + "─" * bw + "\033[0m"
 
-        _p_count = f"{proc_total}/{proc_total}"
+        _max_digits = max(len(str(proc_total)), len(str(cit_total))) if cit_total > 0 else len(str(proc_total))
+        _p_count = f"{proc_total:>{_max_digits}}/{proc_total}"
+        _c_count = f"{cit_total:>{_max_digits}}/{cit_total}" if cit_total > 0 else f"{cit_total}"
 
         # Total elapsed
         secs = time.time() - self._start if self._start else 0
@@ -149,12 +155,14 @@ class _ProgressBar:
         else:
             elapsed_str = f"{int(secs)}s"
 
+        _cit_line = f"   Citations:  {c_bar} {_c_count}  (100.0%)" if c_bar else f"   Citations:  {cit_total} collected"
+
         r0 = th - 5
         sys.stdout.write(
             f"\033[s"
             f"\033[{r0};1H\033[K"
             f"\033[{r0+1};1H\033[K   Procedures: {p_bar} {_p_count}  (100.0%)"
-            f"\033[{r0+2};1H\033[K   Citations:  {cit_total} collected"
+            f"\033[{r0+2};1H\033[K{_cit_line}"
             f"\033[{r0+3};1H\033[K               {sep}"
             f"\033[{r0+4};1H\033[K   \033[1mCompleted in {elapsed_str}\033[0m"
             f"\033[{r0+5};1H\033[K   {detail}"
@@ -172,7 +180,7 @@ class _ProgressBar:
 
         # Permanent summary
         print(f"\n   Procedures: {p_bar} {_p_count}  (100.0%)")
-        print(f"   Citations:  {cit_total} collected")
+        print(f"   {_cit_line.strip()}")
         print(f"               {sep}")
         print(f"   \033[1mCompleted in {elapsed_str}\033[0m")
         print(f"   {detail}")
@@ -990,10 +998,27 @@ def mainsaw(
         p.split("||")[3].strip().lower() if len(p.split("||")) > 3 else "",
     ))
 
+    # Pre-count unique (group, citation) pairs for progress bar
+    _total_cit_pairs = 0
+    if collect_citations and _citation_url_lookup:
+        _pre_seen = set()
+        for _p in consolidated_procedures:
+            _pp = _p.split("||")
+            _pg = _pp[1].strip().lower() if len(_pp) > 1 else ""
+            _all_text = _pp[4] if len(_pp) > 4 else ""
+            if len(_pp) > 7:
+                _all_text += " " + _pp[7]
+            if len(_pp) > 8:
+                _all_text += " " + _pp[8]
+            for _cn in re.findall(r"\(Citation:\s*([^)]+)\)", _all_text):
+                _key = (_pg, _cn.strip())
+                if _key not in _pre_seen:
+                    _pre_seen.add(_key)
+                    _total_cit_pairs += 1
+
     last_group_name = None
     _total_procedures = len(consolidated_procedures)
     _pb_extract = _ProgressBar()
-    _total_cit_sources = len(_citation_url_lookup) if collect_citations else 0
     _cit_num = 0  # running citation counter, resets per group
 
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
@@ -1004,7 +1029,7 @@ def mainsaw(
         last_group_name = current_group_name
         _pb_extract.update(
             _proc_idx, _total_procedures,
-            len(_all_citation_refs), _total_cit_sources,
+            len(_all_citation_refs), _total_cit_pairs,
             current_group_name,
         )
         (
