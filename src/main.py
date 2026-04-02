@@ -42,16 +42,16 @@ class _ProgressBar:
         sys.stdout.flush()
         self._active = True
 
-    def _bar(self, current, total, bar_width=60):
+    def _bar(self, current, total, bar_width=60, color="\033[36m"):
         if total == 0:
             return "\033[90m" + "░" * bar_width + "\033[0m", "0.0%"
         pct = current / total
         filled = int(bar_width * pct)
-        bar = "\033[36m" + "█" * filled + "\033[90m" + "░" * (bar_width - filled) + "\033[0m"
+        bar = color + "█" * filled + "\033[90m" + "░" * (bar_width - filled) + "\033[0m"
         return bar, f"{pct:.1%}"
 
-    def _bar_done(self, total, bar_width=60):
-        bar = "\033[32m" + "█" * bar_width + "\033[0m"
+    def _bar_done(self, total, bar_width=60, color="\033[32m"):
+        bar = color + "█" * bar_width + "\033[0m"
         return bar
 
     def update(self, proc_current, proc_total, cit_current, cit_total, group_name=""):
@@ -95,8 +95,8 @@ class _ProgressBar:
         else:
             eta_str = "..."
 
-        p_bar, p_pct = self._bar(proc_current, proc_total, bw)
-        c_bar, c_pct = self._bar(cit_current, cit_total, bw) if cit_total > 0 else ("\033[90m" + "░" * bw + "\033[0m", "—")
+        p_bar, p_pct = self._bar(proc_current, proc_total, bw, "\033[36m")   # cyan
+        c_bar, c_pct = self._bar(cit_current, cit_total, bw, "\033[35m") if cit_total > 0 else ("\033[90m" + "░" * bw + "\033[0m", "—")  # magenta
         sep = "\033[90m" + "─" * bw + "\033[0m"
 
         # Fixed-width count: right-align the whole "current/total" string
@@ -141,8 +141,8 @@ class _ProgressBar:
             tw, th = 120, 40
 
         bw = min(60, tw - 35)
-        p_bar = self._bar_done(proc_total, bw)
-        c_bar = self._bar_done(cit_total, bw) if cit_total > 0 else None
+        p_bar = self._bar_done(proc_total, bw, "\033[32m")    # green
+        c_bar = self._bar_done(cit_total, bw, "\033[32m") if cit_total > 0 else None  # green
         sep = "\033[90m" + "─" * bw + "\033[0m"
 
         _p_raw = f"{proc_total}/{proc_total}"
