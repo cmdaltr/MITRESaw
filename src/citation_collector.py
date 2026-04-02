@@ -881,6 +881,29 @@ _INDICATOR_EMOJI = {
 }
 
 
+def clear_failed_cache() -> int:
+    """Remove cache entries that have empty text (failed fetches).
+    Preserves successfully cached pages.
+
+    Returns number of entries removed.
+    """
+    if not CACHE_DIR.exists():
+        return 0
+    removed = 0
+    for f in CACHE_DIR.glob("*.json"):
+        try:
+            data = json.loads(f.read_text())
+            text = data.get("text", "")
+            method = data.get("method", "")
+            if not text or method == "failed":
+                f.unlink()
+                removed += 1
+        except Exception:
+            f.unlink()
+            removed += 1
+    return removed
+
+
 def import_citation_files(import_dir: str) -> int:
     """Import manually saved PDF/HTML files into the citation cache.
 

@@ -126,8 +126,16 @@ parser.add_argument(
 )
 parser.add_argument(
     "--clear-cache",
-    help="Clear the citation cache (data/.citation_cache/) before running.\n"
+    help="Clear the entire citation cache before running.\n"
          "Forces re-download of all citation sources.\n",
+    action="store_const",
+    const=True,
+    default=False,
+)
+parser.add_argument(
+    "--retry-failed",
+    help="Re-attempt only previously failed citations.\n"
+         "Keeps successfully cached pages, removes failed entries.\n",
     action="store_const",
     const=True,
     default=False,
@@ -182,6 +190,11 @@ if args.clear_cache:
         print(f"    -> Cleared citation cache ({cache_dir}/)")
     else:
         print(f"    -> No citation cache to clear")
+
+if args.retry_failed:
+    from src.citation_collector import clear_failed_cache
+    _removed = clear_failed_cache()
+    print(f"    -> Removed {_removed} failed cache entries (will retry on this run)")
 
 if args.import_citations:
     from src.citation_collector import import_citation_files
