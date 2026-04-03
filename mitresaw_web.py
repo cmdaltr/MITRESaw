@@ -70,7 +70,10 @@ async def start_run(request: Request):
 
     def _run():
         try:
-            cmd = [sys.executable, "MITRESaw.py"] + flags.split()
+            parts = flags.split()
+            if "-A" not in parts and "--auto" not in parts:
+                parts.append("-A")
+            cmd = [sys.executable, "MITRESaw.py"] + parts
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,

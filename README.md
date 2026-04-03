@@ -66,19 +66,20 @@ MITRESaw has evolved to also produce search queries based on extracted indicator
 All arguments are optional named flags with sensible defaults. To display usage, simply run: `./MITRESaw.py -h`
 ```
 usage: MITRESaw.py [-h] [-f FRAMEWORK] [-p PLATFORMS] [-s STRINGS]
-                   [-g THREATGROUPS] [-a] [-n] [-Q] [-q] [-t]
+                   [-g THREATGROUPS] [-a] [-n] [-o] [-Q] [-q] [-t]
                    [-c COLUMNS] [-D] [-x {csv,json,xml}] [-E] [-C]
                    [-w MAX_WORKERS] [-A] [-I [DIR]]
                    [-rS] [-rN] [--clear-cache] [-F]
 
 options:
   -h, --help                  show this help message and exit
-  -f, --framework FRAMEWORK   Specify which framework - Enterprise, ICS or Mobile (default: Enterprise)
+  -f, --framework FRAMEWORK   Specify which framework - Enterprise, ICS or Mobile (default: all three)
   -p, --platforms PLATFORMS   Filter by platform e.g. Windows,Linux,IaaS (default: . for all)
   -s, --strings TERMS         Filter by industry e.g. mining,technology,defense (default: . for all)
   -g, --threatgroups GROUPS   Filter by group e.g. APT29,HAFNIUM,Turla (default: . for all)
   -a, --asciiart              Show ASCII Art of the saw
   -n, --navlayers             Obtain ATT&CK Navigator layers for identified Groups
+  -o, --showotherlogsources   Show log sources with less than 1% coverage
   -Q, --queries               Build search queries for Splunk, Azure Sentinel, Elastic/Kibana
   -q, --quiet                 Suppress per-identifier output; print only group completion
   -t, --truncate              Truncate indicator output (still written to file)
@@ -158,15 +159,16 @@ procedure_example, evidence, detectable_via, keywords
 
 ## Output Files
 
-When `-E` is used, MITRESaw produces two files:
+When `-E` is used, MITRESaw produces:
 
 ```
-Outputs written to: ./2026-03-28/Windows__APT29/
-                         mitre_procedures.csv
-                         mitre_procedures.xlsx
+Outputs written to: data/2026-03-28/Windows__APT29/
+  🏛️ mitre_procedures.csv
+  📎 mitre_procedures.xlsx
+  🍠 citations_failed.yaml
 ```
 
-When no group/platform/term filters are provided, both files are placed in the date root directory (e.g. `./2026-03-28/`) alongside each other.
+When no group/platform/term filters are provided, files are placed in the date root directory (e.g. `data/2026-03-28/`).
 
 **`mitre_procedures.csv`** — One row per group+technique pair. Suitable for direct ingestion as a lookup table into Splunk (`| inputlookup`), Microsoft Defender for Endpoint, Elastic, or any SIEM. Fields are properly quoted per RFC 4180. Columns: `group_sw_id`, `group_sw_name`, `group_sw_description`, `technique_id`, `technique_name`, `technique_description`, `tactic`, `platforms`, `framework`, `procedure_example`, `evidence`, `detectable_via`.
 
@@ -180,7 +182,7 @@ When no group/platform/term filters are provided, both files are placed in the d
 | Technique Matrix | Intersection matrix (only when 2+ groups): techniques as rows, groups as columns, `1` where a group uses that technique, sorted by group coverage descending for prioritising hunting |
 | Reference Detail | Citation sources with extracted content, collection method, and URL (only with `-C`) |
 
-**`citations_failed.csv`** / **`citations_failed.yaml`** — List of citations that fell back to STIX metadata (URL fetch failed across all methods). Includes the full attempt chain for diagnostics. Only generated with `-C`.
+**`citations_failed.yaml`** — List of citations that fell back to STIX metadata (URL fetch failed across all methods). Includes the full attempt chain for diagnostics. Only generated with `-C`.
 
 ## Evidence Report (-E)
 
@@ -275,7 +277,7 @@ For sites that block automated access, save the page as PDF or HTML from your br
 ./MITRESaw.py -I /path/to/saved/pages -D -E -C
 ```
 
-Supported formats: `.pdf` (requires PyPDF2), `.html`/`.htm`, `.txt`. Imported files are cached and used on all future runs.
+Supported formats: `.pdf`, `.html`/`.htm`, `.txt`. Imported files are cached and used on all future runs.
 
 ### Status Icons
 
@@ -295,7 +297,7 @@ Fetched pages are cached locally to avoid re-downloading on subsequent runs. Fai
 | Flag | What it removes | When to use |
 |------|----------------|-------------|
 | `-rS` / `--retry-stix` | Cache entries where fetch failed, only STIX metadata captured (⚠️) | After fixing SSL/network issues — sites that were unreachable may now work |
-| `-rN` / `--retry-nocontent` | Cache entries with completely empty text (❌) | After installing Playwright or PyPDF2 — previously unfetchable pages may now parse |
+| `-rN` / `--retry-nocontent` | Cache entries with completely empty text (❌) | After installing Playwright — previously unfetchable pages may now parse |
 | `--clear-cache` | Everything | Start completely fresh — re-fetches all ~5,000+ URLs |
 
 Use `-rS` and `-rN` together to retry all failures while keeping successful cache:
@@ -366,14 +368,13 @@ Workers start at the configured maximum (default 50) and automatically adjust du
 
 | Package | Purpose | Install |
 |---------|---------|---------|
-| `PyPDF2` | PDF text extraction | `pip install PyPDF2` |
 | `playwright` | Headless browser for JS/Cloudflare sites | `pip install playwright && playwright install chromium` |
 
-Both are optional — the collector works without them but will skip PDF extraction and headless browsing.
+Playwright is optional — the collector works without it but will skip headless browsing for Cloudflare/JS-protected sites.
 
 ### Failed Citations Report
 
-Citations that fell back to `stix_metadata` are written to `citations_failed.csv` and `citations_failed.yaml` in the output directory, with the full attempt chain for each URL.
+Citations that fell back to `stix_metadata` are written to `citations_failed.yaml` in the output directory, with the full attempt chain for each URL.
 
 ## Running in the Background
 
