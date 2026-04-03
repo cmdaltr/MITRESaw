@@ -54,7 +54,7 @@ class _ProgressBar:
         bar = color + "█" * bar_width + "\033[0m"
         return bar
 
-    def update(self, proc_current, proc_total, cit_current, cit_total, group_name=""):
+    def update(self, proc_current, proc_total, cit_current, cit_total, group_name="", rate_limited=0):
         if not self._active:
             self._total_procs = proc_total
             self._total_cits = cit_total
@@ -117,7 +117,8 @@ class _ProgressBar:
         line1 = f"   Procedures: {p_bar} {_p_count}  ({p_pct:>5})"
         line2 = f"   Citations:  {c_bar} {_c_count}  ({c_pct:>5})" if cit_total > 0 else f"   Citations:  {cit_current} collected"
         line3 = f"               {sep}"
-        line4 = f"   \033[1mETA:        {eta_str}\033[0m"
+        _rl_str = f"  \033[31m({rate_limited} rate-limited)\033[0m" if rate_limited else ""
+        line4 = f"   \033[1mETA:        {eta_str}\033[0m{_rl_str}"
         line5 = f"   \033[90mElapsed:    {elapsed_str}\033[0m"
 
         r0 = th - 5  # blank line
@@ -1042,6 +1043,7 @@ def mainsaw(
     _total_procedures = len(consolidated_procedures)
     _pb_extract = _ProgressBar()
     _cit_num = 0  # running citation counter, resets per group
+    _rate_limited_count = 0  # 429 counter
 
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         _proc_parts = each_procedure.split("||")
@@ -1052,7 +1054,7 @@ def mainsaw(
         _pb_extract.update(
             _proc_idx, _total_procedures,
             len(_all_citation_refs), _total_cit_pairs,
-            current_group_name,
+            current_group_name, _rate_limited_count,
         )
         (
             technique_findings,
@@ -1140,6 +1142,10 @@ def mainsaw(
                         _ref["technique_name"] = _tname
                         _all_citation_refs.append(_ref)
                         _new_cits.append(_ref)
+                        # Count 429 rate-limit errors
+                        for _att in _ref.get("attempts", []):
+                            if "429" in str(_att):
+                                _rate_limited_count += 1
 
             # Print citations for ALL techniques (even when no native indicators)
             if _new_cits:
