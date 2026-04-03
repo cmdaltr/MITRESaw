@@ -16,31 +16,26 @@ from mitreattack.stix20 import MitreAttackData
 
 
 class _ProgressBar:
-    """Dual progress bar pinned to the bottom 3 rows of the terminal.
+    """Dual progress bar that redraws in-place using cursor-up movement.
 
-    Row th-2: Procedures bar
-    Row th-1: Citations bar
-    Row th:   Separator + ETA
+    Prints 5 lines, then on next update moves cursor up 5 to overwrite.
+    If other output was printed between updates, the bar simply reprints
+    below the new output (no scroll region tricks).
     """
 
-    _ROWS = 6  # rows reserved at bottom (blank + procedures + citations + sep + eta + elapsed)
+    _LINES = 5  # procedures + citations + sep + eta + elapsed
 
     def __init__(self):
         self._start = None
-        self._active = False
+        self._drawn = False  # whether we have lines to overwrite
+        self._had_output = False  # set True when other output is printed between updates
         self._total_procs = 0
         self._total_cits = 0
-        self._recent_times = []  # timestamps of recent completions for rolling ETA
+        self._recent_times = []
 
-    def _setup(self):
-        try:
-            th = os.get_terminal_size().lines
-        except OSError:
-            th = 40
-        # Save cursor, set scroll region, restore cursor
-        sys.stdout.write(f"\033[s\033[1;{th - self._ROWS}r\033[u")
-        sys.stdout.flush()
-        self._active = True
+    def mark_output(self):
+        """Call this when other print() output happens between updates."""
+        self._had_output = True
 
     def _bar(self, current, total, bar_width=60, color="\033[36m"):
         if total == 0:
@@ -51,23 +46,25 @@ class _ProgressBar:
         return bar, f"{pct:.1%}"
 
     def _bar_done(self, total, bar_width=60, color="\033[32m"):
-        bar = color + "█" * bar_width + "\033[0m"
-        return bar
+        return color + "█" * bar_width + "\033[0m"
+
+    def _format_time(self, secs):
+        if secs >= 3600:
+            return f"{int(secs // 3600)}h {int((secs % 3600) // 60)}m {int(secs % 60)}s"
+        elif secs >= 60:
+            return f"{int(secs // 60)}m {int(secs % 60):02d}s"
+        return f"{int(secs)}s"
 
     def update(self, proc_current, proc_total, cit_current, cit_total, group_name="", rate_limited=0, workers=0):
-        if not self._active:
-            self._total_procs = proc_total
-            self._total_cits = cit_total
-            self._setup()
+        self._total_procs = proc_total
+        self._total_cits = cit_total
 
         try:
             tw = os.get_terminal_size().columns
-            th = os.get_terminal_size().lines
         except OSError:
-            tw, th = 120, 40
+            tw = 120
 
         bw = min(60, tw - 35)
-        _lbl_w = 14  # "   Procedures: " width
 
         # ETA using rolling average of last 50 procedures
         now = time.time()
@@ -86,66 +83,49 @@ class _ProgressBar:
             window_count = len(self._recent_times) - 1
             avg_per_proc = window / window_count if window_count > 0 else 0
             eta = avg_per_proc * remaining
-            if eta >= 3600:
-                eta_str = f"{int(eta // 3600)}h {int((eta % 3600) // 60)}m {int(eta % 60)}s"
-            elif eta >= 60:
-                eta_str = f"{int(eta // 60)}m {int(eta % 60):02d}s"
-            else:
-                eta_str = f"{int(eta)}s"
+            eta_str = self._format_time(eta)
         else:
             eta_str = "..."
 
-        p_bar, p_pct = self._bar(proc_current, proc_total, bw, "\033[36m")   # cyan
-        c_bar, c_pct = self._bar(cit_current, cit_total, bw, "\033[35m") if cit_total > 0 else ("\033[90m" + "░" * bw + "\033[0m", "—")  # magenta
-        sep = "\033[90m" + "─" * bw + "\033[0m"
+        p_bar, p_pct = self._bar(proc_current, proc_total, bw, "\033[36m")
+        c_bar, c_pct = self._bar(cit_current, cit_total, bw, "\033[35m") if cit_total > 0 else ("\033[90m" + "░" * bw + "\033[0m", "—")
 
-        # Fixed-width count: right-align the whole "current/total" string
         _p_raw = f"{proc_current}/{proc_total}"
         _c_raw = f"{cit_current}/{cit_total}" if cit_total > 0 else f"{cit_current}"
         _count_w = max(len(_p_raw), len(_c_raw))
         _p_count = f"{_p_raw:>{_count_w}}"
         _c_count = f"{_c_raw:>{_count_w}}"
 
-        # Elapsed time
-        if secs >= 3600:
-            elapsed_str = f"{int(secs // 3600)}h {int((secs % 3600) // 60)}m {int(secs % 60)}s"
-        elif secs >= 60:
-            elapsed_str = f"{int(secs // 60)}m {int(secs % 60):02d}s"
-        else:
-            elapsed_str = f"{int(secs)}s"
-
-        line1 = f"   Procedures: {p_bar} {_p_count}  ({p_pct:>5})"
-        line2 = f"   Citations:  {c_bar} {_c_count}  ({c_pct:>5})" if cit_total > 0 else f"   Citations:  {cit_current} collected"
-        line3 = f"               {sep}"
         _rl_str = f"  \033[31m({rate_limited} rate-limited)\033[0m" if rate_limited else ""
         _w_str = f"  \033[90m[{workers}w]\033[0m" if workers else ""
-        line4 = f"   \033[1mETA:        {eta_str}\033[0m{_w_str}{_rl_str}"
-        line5 = f"   \033[90mElapsed:    {elapsed_str}\033[0m"
 
-        r0 = th - 5  # blank line
-        sys.stdout.write(
-            f"\033[s"
-            f"\033[{r0};1H\033[K"
-            f"\033[{r0+1};1H\033[K{line1[:tw]}"
-            f"\033[{r0+2};1H\033[K{line2[:tw]}"
-            f"\033[{r0+3};1H\033[K{line3[:tw]}"
-            f"\033[{r0+4};1H\033[K{line4[:tw]}"
-            f"\033[{r0+5};1H\033[K{line5[:tw]}"
-            f"\033[u"
-        )
+        lines = [
+            f"   Procedures: {p_bar} {_p_count}  ({p_pct:>5})",
+            f"   Citations:  {c_bar} {_c_count}  ({c_pct:>5})" if cit_total > 0 else f"   Citations:  {cit_current} collected",
+            f"   \033[1mETA:        {eta_str}\033[0m{_w_str}{_rl_str}",
+            f"   \033[90mElapsed:    {self._format_time(secs)}\033[0m",
+        ]
+
+        # Move cursor up to overwrite previous bar (only if no other output happened)
+        if self._drawn and not self._had_output:
+            sys.stdout.write(f"\033[{len(lines)}A")
+
+        for line in lines:
+            sys.stdout.write(f"\033[2K{line[:tw]}\n")
         sys.stdout.flush()
+
+        self._drawn = True
+        self._had_output = False
 
     def done(self, proc_total, cit_total, detail="Complete"):
         try:
             tw = os.get_terminal_size().columns
-            th = os.get_terminal_size().lines
         except OSError:
-            tw, th = 120, 40
+            tw = 120
 
         bw = min(60, tw - 35)
-        p_bar = self._bar_done(proc_total, bw, "\033[32m")    # green
-        c_bar = self._bar_done(cit_total, bw, "\033[32m") if cit_total > 0 else None  # green
-        sep = "\033[90m" + "─" * bw + "\033[0m"
+        p_bar = self._bar_done(proc_total, bw, "\033[32m")
+        c_bar = self._bar_done(cit_total, bw, "\033[32m") if cit_total > 0 else None
 
         _p_raw = f"{proc_total}/{proc_total}"
         _c_raw = f"{cit_total}/{cit_total}" if cit_total > 0 else f"{cit_total}"
@@ -153,40 +133,24 @@ class _ProgressBar:
         _p_count = f"{_p_raw:>{_count_w}}"
         _c_count = f"{_c_raw:>{_count_w}}"
 
-        # Total elapsed
         secs = time.time() - self._start if self._start else 0
-        if secs >= 3600:
-            elapsed_str = f"{int(secs // 3600)}h {int((secs % 3600) // 60)}m {int(secs % 60)}s"
-        elif secs >= 60:
-            elapsed_str = f"{int(secs // 60)}m {int(secs % 60):02d}s"
-        else:
-            elapsed_str = f"{int(secs)}s"
-
         _cit_line = f"   Citations:  {c_bar} {_c_count}  (100.0%)" if c_bar else f"   Citations:  {cit_total} collected"
 
-        r0 = th - 5
-        sys.stdout.write(
-            f"\033[s"
-            f"\033[{r0};1H\033[K"
-            f"\033[{r0+1};1H\033[K   Procedures: {p_bar} {_p_count}  (100.0%)"
-            f"\033[{r0+2};1H\033[K{_cit_line}"
-            f"\033[{r0+3};1H\033[K               {sep}"
-            f"\033[{r0+4};1H\033[K   \033[1mCompleted in {elapsed_str}\033[0m"
-            f"\033[{r0+5};1H\033[K   {detail}"
-            f"\033[u"
-        )
-        sys.stdout.flush()
-        time.sleep(0.5)
+        lines = [
+            f"   Procedures: {p_bar} {_p_count}  (100.0%)",
+            _cit_line,
+            f"   \033[1mCompleted in {self._format_time(secs)}\033[0m",
+            f"   {detail}",
+        ]
 
-        # Clear reserved rows and reset scroll region
-        for _r in range(r0, r0 + 6):
-            sys.stdout.write(f"\033[{_r};1H\033[K")
-        # Reset scroll region to full terminal
-        sys.stdout.write(f"\033[1;{th}r")
-        # Move cursor to just above where the reserved rows were
-        sys.stdout.write(f"\033[{r0};1H")
+        # Overwrite previous bar
+        if self._drawn and not self._had_output:
+            sys.stdout.write(f"\033[{len(lines)}A")
+
+        for line in lines:
+            sys.stdout.write(f"\033[2K{line[:tw]}\n")
         sys.stdout.flush()
-        self._active = False
+        self._drawn = False
 
         # Permanent summary (prints from cursor position, no overlap)
         print(f"\n   Procedures: {p_bar} {_p_count}  (100.0%)")
@@ -1055,11 +1019,8 @@ def mainsaw(
         if last_group_name and current_group_name.strip().lower() != last_group_name.strip().lower():
             _cit_num = 0
         last_group_name = current_group_name
-        _pb_extract.update(
-            _proc_idx, _total_procedures,
-            len(_all_citation_refs), _total_cit_pairs,
-            current_group_name, _rate_limited_count, _active_workers,
-        )
+        # Mark output before extract_indicators — it prints group/technique rows
+        _pb_extract.mark_output()
         (
             technique_findings,
             previous_findings,
@@ -1206,6 +1167,7 @@ def mainsaw(
                     _used = 6 + 5 + 1 + 28 + 4 + 14 + 3 + 5
                     _url_max = max(30, _tw - _used)
                     _url_part = f" [{_url[:_url_max]}]" if _url else ""
+                    _pb_extract.mark_output()
                     print(f"{_indent}\033[90m{_num_str:>5}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
 
                     # Extract indicators from fetched content
@@ -1234,6 +1196,12 @@ def mainsaw(
                                 # Store extracted indicators on the ref for XLSX enrichment
                                 _ref["extracted_indicators"] = _new_indicators
 
+        # Update progress bar AFTER all output for this procedure
+        _pb_extract.update(
+            _proc_idx, _total_procedures,
+            len(_all_citation_refs), _total_cit_pairs,
+            current_group_name, _rate_limited_count, _active_workers,
+        )
 
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)

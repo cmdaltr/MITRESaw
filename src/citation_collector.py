@@ -917,8 +917,12 @@ def extract_indicators_from_text(text: str) -> dict:
                 continue
             # Reject individual values that look like encoded/garbled text
             if k != "cve":  # CVEs have a strict format, always clean
-                _val_alnum = sum(1 for c in v if c.isalnum() or c in ' \\/:.-_')
-                if len(v) > 5 and _val_alnum / len(v) < 0.7:
+                _val_clean = sum(1 for c in v if c.isalnum() or c in ' \\/:.-_')
+                if len(v) > 5 and _val_clean / len(v) < 0.75:
+                    continue
+                # Reject if too many "junk" special chars typical of encoding
+                _junk = sum(1 for c in v if c in '$@#}{)(+*=;|^~`<>[]!?')
+                if len(v) > 5 and _junk / len(v) > 0.08:
                     continue
             seen.add(vl)
             deduped.append(v)
