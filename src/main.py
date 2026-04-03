@@ -682,6 +682,7 @@ def mainsaw(
     evidence_report=False,
     collect_citations=False,
     citation_workers=10,
+    auto_confirm=False,
 ):
 
     # Load STIX data (only check version if -F is used)
@@ -1076,6 +1077,66 @@ def mainsaw(
 
     last_group_name = None
     _total_procedures = len(consolidated_procedures)
+
+    # Pre-run ETA estimate and confirmation
+    if collect_citations and _total_cit_pairs > 0:
+        from src.citation_collector import _cache_key, CACHE_DIR
+        _cached_count = 0
+        _uncached_count = 0
+        _checked_urls = set()
+        for _p in consolidated_procedures:
+            _pp = _p.split("||")
+            _all_text = _pp[4] if len(_pp) > 4 else ""
+            if len(_pp) > 7:
+                _all_text += " " + _pp[7]
+            if len(_pp) > 8:
+                _all_text += " " + _pp[8]
+            for _cn in re.findall(r"\(Citation:\s*([^)]+)\)", _all_text):
+                _cn = _cn.strip()
+                _ref_data = _citation_url_lookup.get(_cn, {})
+                _url = _ref_data.get("url", "")
+                if not _url or _url in _checked_urls:
+                    continue
+                _checked_urls.add(_url)
+                _cpath = CACHE_DIR / f"{_cache_key(_url)}.json"
+                if _cpath.exists():
+                    _cached_count += 1
+                else:
+                    _uncached_count += 1
+
+        # Estimate: ~0.002s per cached, ~3s per uncached (avg with timeouts/retries)
+        _est_cached_s = _cached_count * 0.002
+        _est_uncached_s = _uncached_count * 3.0 / max(1, citation_workers)
+        _est_proc_s = _total_procedures * 0.005  # extraction overhead
+        _est_total = _est_cached_s + _est_uncached_s + _est_proc_s
+
+        if _est_total >= 3600:
+            _est_str = f"{int(_est_total // 3600)}h {int((_est_total % 3600) // 60)}m"
+        elif _est_total >= 60:
+            _est_str = f"{int(_est_total // 60)}m {int(_est_total % 60):02d}s"
+        else:
+            _est_str = f"{int(_est_total)}s"
+
+        print(f"\n    ┌─────────────────────────────────────────────")
+        print(f"    │  Procedures:       {_total_procedures:>6}")
+        print(f"    │  Citations:        {_total_cit_pairs:>6}")
+        print(f"    │  Cached:           {_cached_count:>6}")
+        print(f"    │  Uncached:         {_uncached_count:>6}")
+        print(f"    │  Workers:          {citation_workers:>6}")
+        print(f"    │  Estimated time:   {_est_str:>6}")
+        print(f"    └─────────────────────────────────────────────")
+
+        if not auto_confirm:
+            try:
+                _resp = input("\n    Continue? [Y/n] ").strip().lower()
+                if _resp in ("n", "no"):
+                    print("\n    Aborted.\n")
+                    return
+            except (EOFError, KeyboardInterrupt):
+                print("\n    Aborted.\n")
+                return
+            print()
+
     _pb_extract = _ProgressBar()
     _cit_num = 0  # running citation counter, resets per group
     _rate_limited_count = 0  # 429 counter

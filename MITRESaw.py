@@ -166,6 +166,13 @@ parser.add_argument(
          "Auto-reduces on rate limiting, recovers when stable.\n",
 )
 parser.add_argument(
+    "-A", "--auto",
+    help="Skip the pre-run ETA confirmation prompt and start immediately.\n",
+    action="store_const",
+    const=True,
+    default=False,
+)
+parser.add_argument(
     "-F",
     "--fetch",
     help="Force a fresh download of ATT&CK STIX data (default: re-download if older than 7 days)\n",
@@ -265,6 +272,7 @@ def main():
         evidence_report=evidence_report,
         collect_citations=collect_citations,
         citation_workers=args.max_workers,
+        auto_confirm=args.auto,
     )
 
 
