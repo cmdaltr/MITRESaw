@@ -105,6 +105,9 @@
       <label>Platforms (optional)</label>
       <input id="platforms" placeholder="Windows,Linux">
 
+      <label>Citation Workers (1-50)</label>
+      <input id="workers" type="number" value="10" min="1" max="50">
+
       <div class="actions">
         <button class="btn" id="runBtn" onclick="startRun()">Run MITRESaw</button>
         <button class="btn btn-red btn-sm" id="stopBtn" onclick="stopRun()" disabled>Stop</button>
@@ -179,6 +182,8 @@ function buildFlags() {
   if (g) flags.push('-g', g);
   const p = document.getElementById('platforms').value.trim();
   if (p) flags.push('-p', p);
+  const w = parseInt(document.getElementById('workers').value) || 10;
+  if (w !== 10) flags.push('-w', Math.max(1, Math.min(50, w)));
   return flags.join(' ');
 }
 

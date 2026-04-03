@@ -645,6 +645,7 @@ def mainsaw(
     fetch=False,
     evidence_report=False,
     collect_citations=False,
+    citation_workers=10,
 ):
 
     # Load STIX data (only check version if -F is used)
@@ -1131,7 +1132,7 @@ def mainsaw(
                 # Fetch all citations for this procedure in parallel
                 if _batch:
                     _fetched = collect_references_parallel(
-                        _batch, _group, _tname, _tid, max_workers=10,
+                        _batch, _group, _tname, _tid, max_workers=citation_workers,
                     )
                     for _ref in _fetched:
                         _ref["group"] = _group

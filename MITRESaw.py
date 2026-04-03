@@ -159,6 +159,12 @@ parser.add_argument(
     default=None,
 )
 parser.add_argument(
+    "-w", "--workers",
+    type=int,
+    default=10,
+    help="Number of parallel threads for citation fetching (default: 10)\n",
+)
+parser.add_argument(
     "-F",
     "--fetch",
     help="Force a fresh download of ATT&CK STIX data (default: re-download if older than 7 days)\n",
@@ -189,6 +195,7 @@ quiet = args.quiet
 fetch = args.fetch
 evidence_report = args.evidence_report
 collect_citations = args.citations
+args.workers = max(1, min(50, args.workers))
 
 if args.clear_cache:
     import shutil
@@ -256,6 +263,7 @@ def main():
         fetch,
         evidence_report=evidence_report,
         collect_citations=collect_citations,
+        citation_workers=args.workers,
     )
 
 
