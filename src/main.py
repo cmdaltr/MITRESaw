@@ -165,10 +165,10 @@ class _ProgressBar:
         _rl_str = f"  \033[31m({rate_limited} rate-limited)\033[0m" if rate_limited else ""
         _w_str = f"  \033[90m[{workers}w]\033[0m" if workers else ""
 
-        _sep = "\033[90m" + "─" * (bw + _count_w + 22) + "\033[0m"
+        _sep = "\033[90m" + "─" * (bw + _count_w + 25) + "\033[0m"
         self._draw_bar([
-            f"   Procedures: {p_bar} {_p_count}  ({p_pct:>5})",
-            f"   Citations:  {c_bar} {_c_count}  ({c_pct:>5})" if cit_total > 0 else f"   Citations:  {cit_current} collected",
+            f"   Procedures: {p_bar}  {_p_count}  ({p_pct:>5})",
+            f"   Citations:  {c_bar}  {_c_count}  ({c_pct:>5})" if cit_total > 0 else f"   Citations:  {cit_current} collected",
             f"   {_sep}",
             f"   \033[1mETA:        {eta_str}\033[0m{_w_str}{_rl_str}",
             f"   \033[90mElapsed:    {self._format_time(secs)}\033[0m",
@@ -194,12 +194,12 @@ class _ProgressBar:
         _c_count = f"{_c_raw:>{_count_w}}"
 
         secs = time.time() - self._start if self._start else 0
-        _cit_line = f"   Citations:  {c_bar} {_c_count}  (100.0%)" if c_bar else f"   Citations:  {cit_total} collected"
+        _cit_line = f"   Citations:  {c_bar}  {_c_count}  (100.0%)" if c_bar else f"   Citations:  {cit_total} collected"
 
         # Show completion in pinned area briefly
-        _sep = "\033[90m" + "─" * (bw + _count_w + 22) + "\033[0m"
+        _sep = "\033[90m" + "─" * (bw + _count_w + 25) + "\033[0m"
         self._draw_bar([
-            f"   Procedures: {p_bar} {_p_count}  (100.0%)",
+            f"   Procedures: {p_bar}  {_p_count}  (100.0%)",
             _cit_line,
             f"   {_sep}",
             f"   \033[1mCompleted in {self._format_time(secs)}\033[0m",
