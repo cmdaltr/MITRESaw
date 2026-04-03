@@ -15,27 +15,51 @@ from typing import Dict, List, Tuple, Set
 from mitreattack.stix20 import MitreAttackData
 
 
-class _ProgressBar:
-    """Dual progress bar that redraws in-place using cursor-up movement.
+class _ScrollWriter:
+    """Stdout wrapper that writes into a scroll region above pinned rows."""
 
-    Prints 5 lines, then on next update moves cursor up 5 to overwrite.
-    If other output was printed between updates, the bar simply reprints
-    below the new output (no scroll region tricks).
+    def __init__(self, real_stdout, reserved_rows):
+        self._real = real_stdout
+        self._rows = reserved_rows
+
+    def write(self, text):
+        if not text:
+            return 0
+        # Save cursor → move into scroll region → restore won't help here,
+        # so just write normally — the scroll region confines it automatically.
+        return self._real.write(text)
+
+    def flush(self):
+        self._real.flush()
+
+    def fileno(self):
+        return self._real.fileno()
+
+    def isatty(self):
+        return self._real.isatty()
+
+    # Forward any other attribute to the real stdout
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+class _ProgressBar:
+    """Dual progress bar pinned at the bottom of the terminal.
+
+    Uses ANSI scroll region to keep the bar fixed while all other
+    output scrolls above it. Replaces sys.stdout so ALL print()
+    calls are automatically confined to the scroll region.
     """
 
-    _LINES = 5  # procedures + citations + sep + eta + elapsed
+    _ROWS = 4  # procedures + citations + eta + elapsed
 
     def __init__(self):
         self._start = None
-        self._drawn = False  # whether we have lines to overwrite
-        self._had_output = False  # set True when other output is printed between updates
+        self._active = False
         self._total_procs = 0
         self._total_cits = 0
         self._recent_times = []
-
-    def mark_output(self):
-        """Call this when other print() output happens between updates."""
-        self._had_output = True
+        self._real_stdout = None
 
     def _bar(self, current, total, bar_width=60, color="\033[36m"):
         if total == 0:
@@ -55,18 +79,53 @@ class _ProgressBar:
             return f"{int(secs // 60)}m {int(secs % 60):02d}s"
         return f"{int(secs)}s"
 
-    def update(self, proc_current, proc_total, cit_current, cit_total, group_name="", rate_limited=0, workers=0):
-        self._total_procs = proc_total
-        self._total_cits = cit_total
+    def _get_out(self):
+        """Get the real stdout (bypass scroll writer)."""
+        return self._real_stdout if self._real_stdout else sys.stdout
 
+    def _setup(self):
         try:
+            th = os.get_terminal_size().lines
+        except OSError:
+            th = 40
+        out = sys.stdout
+        # Set scroll region: lines 1 to (th - reserved rows)
+        scroll_bottom = th - self._ROWS
+        # Move cursor to scroll region, set it, then move cursor back into region
+        out.write(f"\033[{scroll_bottom + 1};1H")  # move below scroll area
+        for i in range(self._ROWS):
+            out.write(f"\033[{scroll_bottom + 1 + i};1H\033[2K")  # clear reserved rows
+        out.write(f"\033[1;{scroll_bottom}r")  # set scroll region
+        out.write(f"\033[{scroll_bottom};1H")  # put cursor at bottom of scroll region
+        out.flush()
+        # Replace sys.stdout so all print() goes through scroll region
+        self._real_stdout = out
+        sys.stdout = _ScrollWriter(out, self._ROWS)
+        self._active = True
+
+    def _draw_bar(self, lines):
+        """Draw lines in the pinned area below the scroll region."""
+        out = self._get_out()
+        try:
+            th = os.get_terminal_size().lines
             tw = os.get_terminal_size().columns
         except OSError:
-            tw = 120
+            th, tw = 40, 120
+        scroll_bottom = th - self._ROWS
+        # Save cursor, write into pinned area, restore cursor
+        out.write("\033[s")  # save cursor
+        for i, line in enumerate(lines):
+            row = scroll_bottom + 1 + i
+            out.write(f"\033[{row};1H\033[2K{line[:tw]}")
+        out.write("\033[u")  # restore cursor
+        out.flush()
 
-        bw = min(60, tw - 35)
+    def update(self, proc_current, proc_total, cit_current, cit_total, group_name="", rate_limited=0, workers=0):
+        if not self._active:
+            self._total_procs = proc_total
+            self._total_cits = cit_total
+            self._setup()
 
-        # ETA using rolling average of last 50 procedures
         now = time.time()
         if self._start is None or proc_current <= 1:
             self._start = now
@@ -76,6 +135,13 @@ class _ProgressBar:
         self._recent_times.append(now)
         if len(self._recent_times) > 51:
             self._recent_times = self._recent_times[-51:]
+
+        try:
+            tw = os.get_terminal_size().columns
+        except OSError:
+            tw = 120
+
+        bw = min(60, tw - 35)
 
         remaining = proc_total - proc_current
         if len(self._recent_times) >= 2:
@@ -99,29 +165,20 @@ class _ProgressBar:
         _rl_str = f"  \033[31m({rate_limited} rate-limited)\033[0m" if rate_limited else ""
         _w_str = f"  \033[90m[{workers}w]\033[0m" if workers else ""
 
-        lines = [
+        self._draw_bar([
             f"   Procedures: {p_bar} {_p_count}  ({p_pct:>5})",
             f"   Citations:  {c_bar} {_c_count}  ({c_pct:>5})" if cit_total > 0 else f"   Citations:  {cit_current} collected",
             f"   \033[1mETA:        {eta_str}\033[0m{_w_str}{_rl_str}",
             f"   \033[90mElapsed:    {self._format_time(secs)}\033[0m",
-        ]
-
-        # Move cursor up to overwrite previous bar (only if no other output happened)
-        if self._drawn and not self._had_output:
-            sys.stdout.write(f"\033[{len(lines)}A")
-
-        for line in lines:
-            sys.stdout.write(f"\033[2K{line[:tw]}\n")
-        sys.stdout.flush()
-
-        self._drawn = True
-        self._had_output = False
+        ])
 
     def done(self, proc_total, cit_total, detail="Complete"):
+        out = self._get_out()
         try:
+            th = os.get_terminal_size().lines
             tw = os.get_terminal_size().columns
         except OSError:
-            tw = 120
+            th, tw = 40, 120
 
         bw = min(60, tw - 35)
         p_bar = self._bar_done(proc_total, bw, "\033[32m")
@@ -136,21 +193,28 @@ class _ProgressBar:
         secs = time.time() - self._start if self._start else 0
         _cit_line = f"   Citations:  {c_bar} {_c_count}  (100.0%)" if c_bar else f"   Citations:  {cit_total} collected"
 
-        lines = [
+        # Show completion in pinned area briefly
+        self._draw_bar([
             f"   Procedures: {p_bar} {_p_count}  (100.0%)",
             _cit_line,
             f"   \033[1mCompleted in {self._format_time(secs)}\033[0m",
             f"   {detail}",
-        ]
+        ])
+        time.sleep(0.5)
 
-        # Overwrite previous bar
-        if self._drawn and not self._had_output:
-            sys.stdout.write(f"\033[{len(lines)}A")
+        # Restore sys.stdout
+        if self._real_stdout:
+            sys.stdout = self._real_stdout
+            self._real_stdout = None
 
-        for line in lines:
-            sys.stdout.write(f"\033[2K{line[:tw]}\n")
-        sys.stdout.flush()
-        self._drawn = False
+        # Reset scroll region to full terminal and clear pinned rows
+        scroll_bottom = th - self._ROWS
+        out.write(f"\033[1;{th}r")  # reset scroll region
+        for i in range(self._ROWS):
+            out.write(f"\033[{scroll_bottom + 1 + i};1H\033[2K")
+        out.write(f"\033[{scroll_bottom + 1};1H")  # cursor after content
+        out.flush()
+        self._active = False
 
         # Permanent summary (prints from cursor position, no overlap)
         print(f"\n   Procedures: {p_bar} {_p_count}  (100.0%)")
@@ -1019,8 +1083,11 @@ def mainsaw(
         if last_group_name and current_group_name.strip().lower() != last_group_name.strip().lower():
             _cit_num = 0
         last_group_name = current_group_name
-        # Mark output before extract_indicators — it prints group/technique rows
-        _pb_extract.mark_output()
+        _pb_extract.update(
+            _proc_idx, _total_procedures,
+            len(_all_citation_refs), _total_cit_pairs,
+            current_group_name, _rate_limited_count, _active_workers,
+        )
         (
             technique_findings,
             previous_findings,
@@ -1167,7 +1234,6 @@ def mainsaw(
                     _used = 6 + 5 + 1 + 28 + 4 + 14 + 3 + 5
                     _url_max = max(30, _tw - _used)
                     _url_part = f" [{_url[:_url_max]}]" if _url else ""
-                    _pb_extract.mark_output()
                     print(f"{_indent}\033[90m{_num_str:>5}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
 
                     # Extract indicators from fetched content
@@ -1196,12 +1262,6 @@ def mainsaw(
                                 # Store extracted indicators on the ref for XLSX enrichment
                                 _ref["extracted_indicators"] = _new_indicators
 
-        # Update progress bar AFTER all output for this procedure
-        _pb_extract.update(
-            _proc_idx, _total_procedures,
-            len(_all_citation_refs), _total_cit_pairs,
-            current_group_name, _rate_limited_count, _active_workers,
-        )
 
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
