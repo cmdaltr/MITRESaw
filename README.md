@@ -68,13 +68,14 @@ All arguments are optional named flags with sensible defaults. To display usage,
 usage: MITRESaw.py [-h] [-f FRAMEWORK] [-p PLATFORMS] [-s STRINGS]
                    [-g THREATGROUPS] [-a] [-n] [-Q] [-q] [-t]
                    [-c COLUMNS] [-D] [-x {csv,json,xml}] [-E] [-C]
-                   [-I [DIR]] [--clear-cache] [-F]
+                   [-w MAX_WORKERS] [-A] [-I [DIR]]
+                   [-rS] [-rN] [--clear-cache] [-F]
 
 options:
   -h, --help                  show this help message and exit
   -f, --framework FRAMEWORK   Specify which framework - Enterprise, ICS or Mobile (default: Enterprise)
   -p, --platforms PLATFORMS   Filter by platform e.g. Windows,Linux,IaaS (default: . for all)
-  -s, --strings TERMS     Filter by industry e.g. mining,technology,defense (default: . for all)
+  -s, --strings TERMS         Filter by industry e.g. mining,technology,defense (default: . for all)
   -g, --threatgroups GROUPS   Filter by group e.g. APT29,HAFNIUM,Turla (default: . for all)
   -a, --asciiart              Show ASCII Art of the saw
   -n, --navlayers             Obtain ATT&CK Navigator layers for identified Groups
@@ -87,6 +88,8 @@ options:
   -x, --export {csv,json,xml} Export format for output files (default: csv)
   -E, --evidence-report       Generate styled XLSX evidence report (one row per indicator)
   -C, --citations             Collect citation sources with multi-method fallback (requires -E)
+  -w, --max-workers N         Max parallel threads for fetching (1-50, default: 50)
+  -A, --auto                  Skip the pre-run ETA confirmation prompt
   -rS, --retry-stix           Retry citations that fell back to STIX metadata
   -rN, --retry-nocontent      Retry citations that had no content at all
   --clear-cache               Clear the entire citation cache before running
@@ -300,21 +303,64 @@ Use `-rS` and `-rN` together to retry all failures while keeping successful cach
 ./MITRESaw.py -rS -rN -D -E -C
 ```
 
+### Pre-Run ETA Estimate
+
+When using `-C`, MITRESaw scans the cache before starting and shows a summary:
+
+```
+    ┌─────────────────────────────────────────────
+    │  Procedures:         4750
+    │  Citations:         17451
+    │  Cached:            4562
+    │  Uncached:          1306
+    │  Workers:              50
+    │  Estimated time:   1m 18s
+    └─────────────────────────────────────────────
+
+    Continue? [Y/n]
+```
+
+Use `-A` / `--auto` to skip the confirmation and start immediately.
+
+### Pre-Fetch Phase
+
+Before processing procedures, all uncached citations are fetched in a single parallel batch using all available workers. This maximises parallelism — instead of fetching 1-3 citations per procedure sequentially, all uncached URLs are fetched at once. A live progress counter shows completion and ETA.
+
+After pre-fetching, the main processing loop reads exclusively from cache and runs in seconds.
+
+### Estimated Run Times
+
+Times are approximate for a full all-groups run (~4,750 procedures, ~17,000 citations, 50 workers). Subsequent runs with a warm cache are significantly faster.
+
+| Command | First Run | Cached Run | What It Does |
+|---------|-----------|------------|-------------|
+| `-D` | ~2 min | ~2 min | Extract procedures to CSV |
+| `-D -E` | ~3 min | ~3 min | + styled XLSX evidence report |
+| `-D -E -C` | ~5-15 min | ~3 min | + citation collection (pre-fetch + extraction) |
+| `-D -E -C -Q` | ~5-15 min | ~4 min | + search queries (Splunk/Sentinel/Elastic) |
+| `-D -E -C -n` | ~8-18 min | ~6 min | + Navigator layer downloads |
+| `-D -E -C -rS` | ~5-15 min | ~5-15 min | + retry STIX-metadata failures |
+
+The citation pre-fetch phase accounts for most of the first-run time. The `-rS` flag clears cached failures and re-fetches them, so it always takes first-run time. A 30-day cooldown warning is shown if `-rS` was used recently, since the same URLs will likely fail again.
+
+### Adaptive Worker Throttling
+
+Workers start at the configured maximum (default 50) and automatically adjust during execution:
+- **On 429 rate-limit**: workers halve (e.g. 50 → 25)
+- **After 50 clean procedures**: workers increase by 2 (e.g. 25 → 27)
+- Current worker count and rate-limit count are shown in the progress bar
+
 ### Performance
 
-Citation collection was optimised to reduce a full all-groups run from **~80+ hours to ~4-8 hours**:
-
-| Optimisation | Before | After | Impact |
-|-------------|--------|-------|--------|
-| Request timeout | 25s | 15s | Faster failure on unresponsive sites |
-| Wayback Machine timeout | 15s | 10s | Faster fallback |
-| Per-domain rate limit | 1.5s | 0.5s | 3x faster between requests to same domain |
-| Global rate limit | 0.5s | 0.2s | 2.5x faster between any requests |
-| HTTP retries | 2 retries, 2s backoff | 1 retry, 0.5s backoff | 3s saved per failure |
-| Headless browser wait | ~14s per page | ~4s per page | 10s saved per JS/Cloudflare site |
-| Failed URL re-attempts | Retried every procedure | Cached after first failure | **~45s saved per duplicate** |
-
-The biggest win is caching failures within a run. A URL like `securelist.com` that fails all 5 methods (~45s) was previously retried for every procedure that referenced it (potentially hundreds of times). Now it fails once, caches the result, and every subsequent hit is instant.
+| Optimisation | Detail |
+|-------------|--------|
+| Request timeout | 8s (direct, wayback fetch, google cache) |
+| Wayback Machine API timeout | 5s |
+| Per-domain rate limit | 0.5s between requests to same domain |
+| Global rate limit | Disabled — per-domain delay is sufficient |
+| Cached failure recognition | Empty cache entries skip the full method chain instantly |
+| Pre-fetch batch | All uncached URLs fetched in one parallel batch before processing |
+| Gibberish filtering | Garbled PDF content (base64, binary) rejected before indicator extraction |
 
 ### Optional Dependencies
 
@@ -366,7 +412,41 @@ A dual progress bar is pinned to the bottom of the terminal showing:
 - **Citations** — collection progress across all citation sources
 - **ETA** — estimated time remaining
 
-The progress bar stays in place while extraction output scrolls above it.
+The progress bar stays in place while extraction output scrolls above it. The current worker count and rate-limit count are shown alongside the ETA.
+
+## Exclusion List
+
+MITRESaw supports an exclusion list to filter out known false-positive indicators. Edit `data/exclusions.csv` with two columns:
+
+```csv
+indicator,reason
+whoami,Common benign command
+ipconfig,Common benign command
+```
+
+Exclusions are case-insensitive and apply to both native and citation-extracted indicators. Excluded indicators are silently removed from terminal output and export files.
+
+The exclusion list can also be managed via the web interface.
+
+## Web Interface
+
+MITRESaw includes a single-page web interface for running and monitoring from a browser:
+
+```bash
+pip install fastapi uvicorn sse-starlette
+python mitresaw_web.py
+# Open http://localhost:6729
+```
+
+Features:
+- **Run configuration** — checkbox flags, group/platform filters, worker count
+- **Live log streaming** — real-time output via Server-Sent Events
+- **Cache statistics** — total cached, success/failed counts, disk usage
+- **Output file browser** — download CSV/XLSX results directly
+- **Exclusion editor** — add/remove exclusions from the browser
+- **Stop button** — cancel a running extraction
+
+No authentication is included — intended for local use only.
 
 ### Notices
 
