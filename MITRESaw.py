@@ -222,7 +222,7 @@ if args.retry_stix:
     if os.path.exists(_rs_marker):
         _rs_age = time.time() - os.path.getmtime(_rs_marker)
         _rs_days = _rs_age / 86400
-        if _rs_days < 7:
+        if _rs_days < 30:
             print(f"    -> -rS was last run {_rs_days:.1f} days ago — retrying the same URLs")
             print(f"       will likely produce the same results. Skip? [Y/n] ", end="")
             try:
