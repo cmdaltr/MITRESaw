@@ -155,7 +155,11 @@ def _read_cache(url: str) -> str | None:
     if path.exists():
         try:
             data = json.loads(path.read_text())
-            return data.get("text", "")
+            text = data.get("text", "")
+            # Sanitize non-printable/binary chars from old cache entries
+            if text:
+                text = re.sub(r"[^\x20-\x7E\n\r\t]", "", text)
+            return text
         except Exception:
             return None
     return None
