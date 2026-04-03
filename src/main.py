@@ -899,12 +899,12 @@ def mainsaw(
     )
 
     # Get group techniques using parallel processing across all frameworks
-    print("    -> Extracting techniques with 10 parallel workers...")
+    print(f"    -> Extracting techniques with {citation_workers} parallel workers...")
     all_group_techniques_data = {}
     all_group_info_data = {}
     for fw, attack_data in all_attack_data.items():
         group_techniques_data, group_info_data, _ = get_group_techniques_parallel(
-            attack_data, groups, platforms, max_workers=10
+            attack_data, groups, platforms, max_workers=citation_workers
         )
         for gid, techs in group_techniques_data.items():
             for tech in techs:
