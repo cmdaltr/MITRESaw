@@ -27,14 +27,14 @@ def report_cve_summary():
     """Print CVE enrichment summary. Call at end of run."""
     unique_no_evidence = sorted(set(_cves_no_evidence))
     unique_failures = sorted(set(_cve_fetch_failures))
-    if unique_failures:
-        print(f"\n   CVE enrichment failed for: {', '.join(unique_failures)}")
-    if unique_no_evidence:
-        print(f"   No evidence/PoC found for: {', '.join(unique_no_evidence)}")
+    if unique_no_evidence or unique_failures:
+        print("   CVEs:")
+        if unique_no_evidence:
+            print(f"     🧾 No evidence/PoC found: {', '.join(unique_no_evidence)}")
+        if unique_failures:
+            print(f"     ❌ Enrichment failed:     {', '.join(unique_failures)}")
     if _ssl_fallback_used:
-        print("   Note: SSL verification was bypassed for some requests (corporate VPN/proxy detected)")
-    if unique_failures or unique_no_evidence or _ssl_fallback_used:
-        print()
+        print("   \033[90mSSL verification was bypassed for some requests (corporate VPN/proxy detected)\033[0m")
 
 
 # Known PoC/exploit hosting domains

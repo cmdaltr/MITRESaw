@@ -175,7 +175,7 @@ class _ProgressBar:
             "",
         ])
 
-    def done(self, proc_total, cit_total, detail="Complete"):
+    def done(self, proc_total, cit_total):
         out = self._get_out()
         try:
             th = os.get_terminal_size().lines
@@ -198,12 +198,13 @@ class _ProgressBar:
 
         # Show completion in pinned area briefly
         _sep = "\033[90m" + "─" * (bw + _count_w + 23) + "\033[0m"
+        elapsed_str = self._format_time(secs)
         self._draw_bar([
             f"   Procedures: {p_bar}  {_p_count}  (100.0%)",
             _cit_line,
             f"   {_sep}",
-            f"   \033[1mCompleted in {self._format_time(secs)}\033[0m",
-            f"   {detail}",
+            f"   \033[1mCompleted in {elapsed_str}\033[0m",
+            "",
             "",
         ])
         time.sleep(0.5)
@@ -223,16 +224,16 @@ class _ProgressBar:
         self._active = False
 
         # Permanent summary (prints from cursor position, no overlap)
-        print(f"\n   Procedures: {p_bar} {_p_count}  (100.0%)")
+        print(f"\n   Procedures: {p_bar}  {_p_count}  (100.0%)")
         print(f"   {_cit_line.strip()}")
-        print(f"               {sep}")
+        print(f"   {_sep}")
         print(f"   \033[1mCompleted in {elapsed_str}\033[0m")
-        print(f"   {detail}")
 from stix2 import TAXIICollectionSource, Filter
 from taxii2client.v20 import Server, Collection
 
 import urllib3
 import warnings
+import yaml
 
 import pandas
 
@@ -1416,62 +1417,36 @@ def mainsaw(
         set(threat_actor_technique_id_name_findings)
     )
     _with_content = 0
+    _failed = []
+    _failed_yaml = None
     if collect_citations and _all_citation_refs:
         _with_content = sum(1 for r in _all_citation_refs
                            if r.get("extracted_content") and r.get("method") not in ("stix_metadata", "no_content", ""))
-    _done_label = f"Complete — {_with_content} citations with content" if collect_citations else "Extraction complete"
-    _pb_extract.done(_total_procedures, len(_all_citation_refs), _done_label)
-
-    # Write failed citations report
-    if collect_citations and _all_citation_refs:
         _failed = [r for r in _all_citation_refs
                    if r.get("method") in ("stix_metadata", "no_content", "")]
-        if _failed:
-            import csv
+    _pb_extract.done(_total_procedures, len(_all_citation_refs))
 
-            _failed_csv = os.path.join(mitresaw_root_date, "citations_failed.csv")
-            with open(_failed_csv, "w", newline="") as _f:
-                _w = csv.writer(_f)
-                _w.writerow(["citation_name", "url", "method", "attempts", "group", "technique_id"])
-                for _r in _failed:
-                    _attempts_str = " → ".join(_r.get("attempts", []))
-                    _w.writerow([
-                        _r.get("citation_name", ""),
-                        _r.get("url", ""),
-                        _r.get("method", ""),
-                        _attempts_str,
-                        _r.get("group", ""),
-                        _r.get("technique_id", ""),
-                    ])
-
-            try:
-                import yaml
-                _failed_yaml = os.path.join(mitresaw_root_date, "citations_failed.yaml")
-                _yaml_data = []
-                for _r in _failed:
-                    _yaml_data.append({
-                        "citation_name": _r.get("citation_name", ""),
-                        "url": _r.get("url", ""),
-                        "method": _r.get("method", ""),
-                        "attempts": _r.get("attempts", []),
-                        "group": _r.get("group", ""),
-                        "technique_id": _r.get("technique_id", ""),
-                    })
-                with open(_failed_yaml, "w") as _f:
-                    yaml.dump(_yaml_data, _f, default_flow_style=False, sort_keys=False)
-                print(f"     {len(_failed)} failed citations written to:")
-                print(f"       {_failed_csv}")
-                print(f"       {_failed_yaml}")
-            except ImportError:
-                print(f"     {len(_failed)} failed citations written to:")
-                print(f"       {_failed_csv}")
-                print(f"       (yaml output skipped — pip install pyyaml)")
+    # Write failed citations report (YAML)
+    if _failed:
+        _failed_yaml = os.path.join(mitresaw_root_date, "citations_failed.yaml")
+        _yaml_data = []
+        for _r in _failed:
+            _yaml_data.append({
+                "citation_name": _r.get("citation_name", ""),
+                "url": _r.get("url", ""),
+                "method": _r.get("method", ""),
+                "attempts": _r.get("attempts", []),
+                "group": _r.get("group", ""),
+                "technique_id": _r.get("technique_id", ""),
+            })
+        with open(_failed_yaml, "w") as _f:
+            yaml.dump(_yaml_data, _f, default_flow_style=False, sort_keys=False)
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
 
     # Inject citation-extracted indicators as additional entries
+    _injected = 0
     if collect_citations and _all_citation_refs:
-        _injected = 0
         for _ref in _all_citation_refs:
             _ext_ind = _ref.get("extracted_indicators", {})
             if not _ext_ind:
@@ -1511,11 +1486,22 @@ def mainsaw(
                 )
             consolidated_techniques.append(_new_entry)
             _injected += 1
+    # Print citation breakdown
+    if collect_citations and _all_citation_refs:
+        _cit_total = len(_all_citation_refs)
+        _n_failed = len(_failed)
+        # Right-align the fraction columns
+        _cw = len(f"{_cit_total:,}")  # width of the total (widest number)
+        print(f"\n   Citations:")
+        print(f"     ✅ With content: {_with_content:>{_cw},}/{_cit_total:,}")
         if _injected:
-            print(f"\n     {_injected} citation-sourced evidence entries added")
+            print(f"     🔍 Newly added:  {_injected:>{_cw},}/{_cit_total:,}")
+        if _n_failed:
+            print(f"     ❌ Failed:       {_n_failed:>{_cw},}/{_cit_total:,}")
 
     # Report CVEs with no actionable intelligence
     from src.tools.map_bespoke_logs import report_cve_summary
+    print()
     report_cve_summary()
 
     if len(consolidated_techniques) > 0:
@@ -1658,10 +1644,12 @@ def mainsaw(
                 import shutil
                 _csv_dest = os.path.join(_er_dir, "mitre_procedures.csv")
                 shutil.move(csv_path, _csv_dest)
-                print(f"\n\n     Outputs written to: {_er_dir}/")
-                print(f"                              mitre_procedures.csv")
-                print(f"                              mitre_procedures.xlsx")
+                print(f"\n   Outputs written to: {_er_dir}/")
+                print(f"     🏛️ mitre_procedures.csv")
+                print(f"     📎 mitre_procedures.xlsx")
+                if _failed_yaml:
+                    print(f"     🍠 citations_failed.yaml")
 
     else:
-        print("\n    -> No evidence could be found which match the provided criteria.")
-    print("\n\n")
+        print("\n   No evidence could be found which match the provided criteria.")
+    print()

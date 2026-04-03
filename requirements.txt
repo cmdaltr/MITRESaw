@@ -47,6 +47,7 @@ pyee==13.0.1
 Pygments==2.19.2
 pyparsing==3.3.2
 PyPDF2==3.0.1
+PyYAML==6.0.2
 python-dateutil==2.9.0.post0
 pytz==2026.1.post1
 requests==2.32.5
