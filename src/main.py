@@ -1104,9 +1104,9 @@ def mainsaw(
                 else:
                     _uncached_count += 1
 
-        # Estimate: ~0.002s per cached, ~3s per uncached (avg with timeouts/retries)
+        # Estimate: ~0.002s per cached, ~2s per uncached (avg with 8s timeouts)
         _est_cached_s = _cached_count * 0.002
-        _est_uncached_s = _uncached_count * 3.0 / max(1, citation_workers)
+        _est_uncached_s = _uncached_count * 2.0 / max(1, citation_workers)
         _est_proc_s = _total_procedures * 0.005  # extraction overhead
         _est_total = _est_cached_s + _est_uncached_s + _est_proc_s
 
@@ -1136,6 +1136,43 @@ def mainsaw(
                 print("\n    Aborted.\n")
                 return
             print()
+
+    # Pre-fetch all uncached citations in one parallel batch
+    if collect_citations and _citation_url_lookup:
+        from src.citation_collector import _cache_key, _read_cache, CACHE_DIR
+        from src.citation_collector import collect_references_parallel
+        _prefetch_batch = []
+        _prefetch_seen_urls = set()
+        for _p in consolidated_procedures:
+            _pp = _p.split("||")
+            _all_text = _pp[4] if len(_pp) > 4 else ""
+            if len(_pp) > 7:
+                _all_text += " " + _pp[7]
+            if len(_pp) > 8:
+                _all_text += " " + _pp[8]
+            for _cn in re.findall(r"\(Citation:\s*([^)]+)\)", _all_text):
+                _cn = _cn.strip()
+                _ref_data = _citation_url_lookup.get(_cn, {})
+                _url = _ref_data.get("url", "")
+                if not _url or _url in _prefetch_seen_urls:
+                    continue
+                _prefetch_seen_urls.add(_url)
+                _cpath = CACHE_DIR / f"{_cache_key(_url)}.json"
+                if not _cpath.exists():
+                    _prefetch_batch.append({
+                        "citation_name": _cn,
+                        "url": _url,
+                        "description": _ref_data.get("description", ""),
+                    })
+
+        if _prefetch_batch:
+            print(f"    -> Pre-fetching {len(_prefetch_batch)} uncached citations with {citation_workers} workers...")
+            _prefetch_results = collect_references_parallel(
+                _prefetch_batch, "", "", "", max_workers=citation_workers,
+            )
+            _pf_ok = sum(1 for r in _prefetch_results
+                        if r.get("method") not in ("stix_metadata", "no_content", "", "failed"))
+            print(f"    -> Pre-fetch complete: {_pf_ok}/{len(_prefetch_batch)} fetched successfully\n")
 
     _pb_extract = _ProgressBar()
     _cit_num = 0  # running citation counter, resets per group

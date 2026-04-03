@@ -32,8 +32,8 @@ from urllib.parse import quote, urlparse
 # ---------------------------------------------------------------------------
 
 CACHE_DIR = Path("data/.citation_cache")
-REQUEST_TIMEOUT = 15
-WAYBACK_TIMEOUT = 10
+REQUEST_TIMEOUT = 8
+WAYBACK_TIMEOUT = 5
 RATE_LIMIT_DELAY = 0.5   # seconds between requests to same domain
 RATE_LIMIT_GLOBAL = 0.0  # disabled — per-domain delay is sufficient for politeness
 SSL_VERIFY = True        # Set to False by main.py if STIX loading hit SSL errors
