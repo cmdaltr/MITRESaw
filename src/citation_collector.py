@@ -727,13 +727,20 @@ def collect_reference_content(
 
         # Check cache first
         cached = _read_cache(url)
-        if cached is not None and cached:
-            relevant = _extract_relevant_passages(
-                cached, group_name, technique_name, technique_id, indicators
-            )
-            entry["extracted_content"] = relevant or cached[:MAX_RELEVANT_CHARS]
-            entry["method"] = "cached"
-            entry["attempts"].append("cache_hit")
+        if cached is not None:
+            if cached:
+                relevant = _extract_relevant_passages(
+                    cached, group_name, technique_name, technique_id, indicators
+                )
+                entry["extracted_content"] = relevant or cached[:MAX_RELEVANT_CHARS]
+                entry["method"] = "cached"
+                entry["attempts"].append("cache_hit")
+            else:
+                # Cached failure — don't re-attempt the full method chain
+                fb_text, fb_method = _stix_description_fallback(stix_desc)
+                entry["extracted_content"] = fb_text
+                entry["method"] = "no_content"
+                entry["attempts"].append("cache_hit_empty")
             results.append(entry)
             continue
 
