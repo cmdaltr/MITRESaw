@@ -159,10 +159,11 @@ parser.add_argument(
     default=None,
 )
 parser.add_argument(
-    "-w", "--workers",
+    "-w", "--max-workers",
     type=int,
     default=10,
-    help="Number of parallel threads for citation fetching (default: 10)\n",
+    help="Max parallel threads for citation fetching (default: 10).\n"
+         "Auto-reduces on rate limiting, recovers when stable.\n",
 )
 parser.add_argument(
     "-F",
@@ -195,7 +196,7 @@ quiet = args.quiet
 fetch = args.fetch
 evidence_report = args.evidence_report
 collect_citations = args.citations
-args.workers = max(1, min(50, args.workers))
+args.max_workers = max(1, min(50, args.max_workers))
 
 if args.clear_cache:
     import shutil
@@ -263,7 +264,7 @@ def main():
         fetch,
         evidence_report=evidence_report,
         collect_citations=collect_citations,
-        citation_workers=args.workers,
+        citation_workers=args.max_workers,
     )
 
 
