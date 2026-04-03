@@ -35,7 +35,7 @@ CACHE_DIR = Path("data/.citation_cache")
 REQUEST_TIMEOUT = 15
 WAYBACK_TIMEOUT = 10
 RATE_LIMIT_DELAY = 0.5   # seconds between requests to same domain
-RATE_LIMIT_GLOBAL = 0.2  # seconds between any requests
+RATE_LIMIT_GLOBAL = 0.0  # disabled — per-domain delay is sufficient for politeness
 SSL_VERIFY = True        # Set to False by main.py if STIX loading hit SSL errors
 MAX_CONTENT_CHARS = 80000
 MAX_RELEVANT_CHARS = 4000
@@ -825,6 +825,13 @@ def extract_indicators_from_text(text: str) -> dict:
     if len(text) < 50:
         return {}
 
+    # Reject garbled/encoded text (base64, mangled PDF extraction)
+    # Real prose has mostly alphanumeric + spaces; gibberish has high special-char density
+    _sample = text[:2000]
+    _alnum_spaces = sum(1 for c in _sample if c.isalnum() or c == ' ')
+    if len(_sample) > 0 and _alnum_spaces / len(_sample) < 0.65:
+        return {}
+
     indicators = {}
 
     # Backtick-quoted strings (highest confidence)
@@ -900,15 +907,21 @@ def extract_indicators_from_text(text: str) -> dict:
     if ports:
         indicators["ports"] = ports[:10]
 
-    # Deduplicate within each type
+    # Deduplicate and filter gibberish from each type
     for k in indicators:
         seen = set()
         deduped = []
         for v in indicators[k]:
             vl = v.lower()
-            if vl not in seen:
-                seen.add(vl)
-                deduped.append(v)
+            if vl in seen:
+                continue
+            # Reject individual values that look like encoded/garbled text
+            if k != "cve":  # CVEs have a strict format, always clean
+                _val_alnum = sum(1 for c in v if c.isalnum() or c in ' \\/:.-_')
+                if len(v) > 5 and _val_alnum / len(v) < 0.7:
+                    continue
+            seen.add(vl)
+            deduped.append(v)
         indicators[k] = deduped[:15]  # cap at 15 per type
 
     return indicators
