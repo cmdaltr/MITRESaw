@@ -161,8 +161,8 @@ parser.add_argument(
 parser.add_argument(
     "-w", "--max-workers",
     type=int,
-    default=10,
-    help="Max parallel threads for citation fetching (default: 10).\n"
+    default=50,
+    help="Max parallel threads for citation fetching (default: 50).\n"
          "Auto-reduces on rate limiting, recovers when stable.\n",
 )
 parser.add_argument(

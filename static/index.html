@@ -106,7 +106,7 @@
       <input id="platforms" placeholder="Windows,Linux">
 
       <label>Max Workers (1-50)</label>
-      <input id="workers" type="number" value="10" min="1" max="50">
+      <input id="workers" type="number" value="50" min="1" max="50">
 
       <div class="actions">
         <button class="btn" id="runBtn" onclick="startRun()">Run MITRESaw</button>
@@ -182,8 +182,8 @@ function buildFlags() {
   if (g) flags.push('-g', g);
   const p = document.getElementById('platforms').value.trim();
   if (p) flags.push('-p', p);
-  const w = parseInt(document.getElementById('workers').value) || 10;
-  if (w !== 10) flags.push('-w', Math.max(1, Math.min(50, w)));
+  const w = parseInt(document.getElementById('workers').value) || 50;
+  if (w !== 50) flags.push('-w', Math.max(1, Math.min(50, w)));
   return flags.join(' ');
 }
 
