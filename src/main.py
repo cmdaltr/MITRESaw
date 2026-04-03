@@ -54,7 +54,7 @@ class _ProgressBar:
         bar = color + "█" * bar_width + "\033[0m"
         return bar
 
-    def update(self, proc_current, proc_total, cit_current, cit_total, group_name="", rate_limited=0):
+    def update(self, proc_current, proc_total, cit_current, cit_total, group_name="", rate_limited=0, workers=0):
         if not self._active:
             self._total_procs = proc_total
             self._total_cits = cit_total
@@ -118,7 +118,8 @@ class _ProgressBar:
         line2 = f"   Citations:  {c_bar} {_c_count}  ({c_pct:>5})" if cit_total > 0 else f"   Citations:  {cit_current} collected"
         line3 = f"               {sep}"
         _rl_str = f"  \033[31m({rate_limited} rate-limited)\033[0m" if rate_limited else ""
-        line4 = f"   \033[1mETA:        {eta_str}\033[0m{_rl_str}"
+        _w_str = f"  \033[90m[{workers}w]\033[0m" if workers else ""
+        line4 = f"   \033[1mETA:        {eta_str}\033[0m{_w_str}{_rl_str}"
         line5 = f"   \033[90mElapsed:    {elapsed_str}\033[0m"
 
         r0 = th - 5  # blank line
@@ -1044,6 +1045,9 @@ def mainsaw(
     _pb_extract = _ProgressBar()
     _cit_num = 0  # running citation counter, resets per group
     _rate_limited_count = 0  # 429 counter
+    _active_workers = citation_workers  # adaptive worker count
+    _max_workers = citation_workers
+    _procs_since_last_429 = 0  # procedures since last rate limit
 
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         _proc_parts = each_procedure.split("||")
@@ -1054,7 +1058,7 @@ def mainsaw(
         _pb_extract.update(
             _proc_idx, _total_procedures,
             len(_all_citation_refs), _total_cit_pairs,
-            current_group_name, _rate_limited_count,
+            current_group_name, _rate_limited_count, _active_workers,
         )
         (
             technique_findings,
@@ -1134,18 +1138,29 @@ def mainsaw(
                 # Fetch all citations for this procedure in parallel
                 if _batch:
                     _fetched = collect_references_parallel(
-                        _batch, _group, _tname, _tid, max_workers=citation_workers,
+                        _batch, _group, _tname, _tid, max_workers=_active_workers,
                     )
+                    _batch_429 = 0
                     for _ref in _fetched:
                         _ref["group"] = _group
                         _ref["technique_id"] = _tid
                         _ref["technique_name"] = _tname
                         _all_citation_refs.append(_ref)
                         _new_cits.append(_ref)
-                        # Count 429 rate-limit errors
                         for _att in _ref.get("attempts", []):
                             if "429" in str(_att):
                                 _rate_limited_count += 1
+                                _batch_429 += 1
+
+                    # Adaptive throttling: reduce workers on 429, recover when stable
+                    if _batch_429 > 0:
+                        _active_workers = max(1, _active_workers // 2)
+                        _procs_since_last_429 = 0
+                    else:
+                        _procs_since_last_429 += 1
+                        if _procs_since_last_429 >= 50 and _active_workers < _max_workers:
+                            _active_workers = min(_max_workers, _active_workers + 2)
+                            _procs_since_last_429 = 0
 
             # Print citations for ALL techniques (even when no native indicators)
             if _new_cits:
