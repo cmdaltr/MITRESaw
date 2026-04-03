@@ -1,6 +1,7 @@
 #!/usr/bin/env python3 -tt
 import argparse
 import os
+import time
 from argparse import RawTextHelpFormatter
 from src.main import mainsaw
 
@@ -215,9 +216,29 @@ if args.clear_cache:
         print(f"    -> No citation cache to clear")
 
 if args.retry_stix:
-    from src.citation_collector import clear_cache_stix_metadata
-    _removed = clear_cache_stix_metadata()
-    print(f"    -> Removed {_removed} stix_metadata cache entries (will retry on this run)")
+    from src.citation_collector import CACHE_DIR
+    _rs_marker = os.path.join(CACHE_DIR, ".last_retry_stix")
+    _rs_skip = False
+    if os.path.exists(_rs_marker):
+        _rs_age = time.time() - os.path.getmtime(_rs_marker)
+        _rs_days = _rs_age / 86400
+        if _rs_days < 7:
+            print(f"    -> -rS was last run {_rs_days:.1f} days ago — retrying the same URLs")
+            print(f"       will likely produce the same results. Skip? [Y/n] ", end="")
+            try:
+                _rs_resp = input().strip().lower()
+                if _rs_resp not in ("n", "no"):
+                    _rs_skip = True
+                    print(f"    -> Skipped -rS (use --clear-cache for a full reset)")
+            except (EOFError, KeyboardInterrupt):
+                _rs_skip = True
+    if not _rs_skip:
+        from src.citation_collector import clear_cache_stix_metadata
+        _removed = clear_cache_stix_metadata()
+        print(f"    -> Removed {_removed} stix_metadata cache entries (will retry on this run)")
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        with open(_rs_marker, "w") as _f:
+            _f.write(time.strftime("%Y-%m-%d %H:%M:%S"))
 
 if args.retry_nocontent:
     from src.citation_collector import clear_cache_no_content
