@@ -167,12 +167,12 @@ class _ProgressBar:
 
         _sep = "\033[90m" + "─" * (bw + 30) + "\033[0m"
         self._draw_bar([
-            "",
             f"   Procedures: {p_bar} {_p_count}  ({p_pct:>5})",
             f"   Citations:  {c_bar} {_c_count}  ({c_pct:>5})" if cit_total > 0 else f"   Citations:  {cit_current} collected",
             f"   {_sep}",
             f"   \033[1mETA:        {eta_str}\033[0m{_w_str}{_rl_str}",
             f"   \033[90mElapsed:    {self._format_time(secs)}\033[0m",
+            "",
         ])
 
     def done(self, proc_total, cit_total, detail="Complete"):
@@ -199,12 +199,12 @@ class _ProgressBar:
         # Show completion in pinned area briefly
         _sep = "\033[90m" + "─" * (bw + 30) + "\033[0m"
         self._draw_bar([
-            "",
             f"   Procedures: {p_bar} {_p_count}  (100.0%)",
             _cit_line,
             f"   {_sep}",
             f"   \033[1mCompleted in {self._format_time(secs)}\033[0m",
             f"   {detail}",
+            "",
         ])
         time.sleep(0.5)
 
