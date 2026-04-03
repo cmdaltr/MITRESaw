@@ -1166,13 +1166,58 @@ def mainsaw(
                     })
 
         if _prefetch_batch:
-            print(f"    -> Pre-fetching {len(_prefetch_batch)} uncached citations with {citation_workers} workers...")
-            _prefetch_results = collect_references_parallel(
-                _prefetch_batch, "", "", "", max_workers=citation_workers,
-            )
-            _pf_ok = sum(1 for r in _prefetch_results
-                        if r.get("method") not in ("stix_metadata", "no_content", "", "failed"))
-            print(f"    -> Pre-fetch complete: {_pf_ok}/{len(_prefetch_batch)} fetched successfully\n")
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            from src.citation_collector import collect_reference_content
+
+            _pf_total = len(_prefetch_batch)
+            _pf_done = 0
+            _pf_ok = 0
+            _pf_start = time.time()
+            _pf_results = []
+
+            print(f"    -> Pre-fetching {_pf_total} uncached citations with {citation_workers} workers...\n")
+
+            def _pf_fetch(cit):
+                return collect_reference_content([cit], "", "", "")
+
+            with ThreadPoolExecutor(max_workers=citation_workers) as _pf_pool:
+                _pf_futures = {_pf_pool.submit(_pf_fetch, c): c for c in _prefetch_batch}
+                for _pf_future in as_completed(_pf_futures):
+                    _pf_done += 1
+                    try:
+                        _pf_result = _pf_future.result()
+                        _pf_results.extend(_pf_result)
+                        for _r in _pf_result:
+                            if _r.get("method") not in ("stix_metadata", "no_content", "", "failed"):
+                                _pf_ok += 1
+                    except Exception:
+                        pass
+
+                    # Live progress line
+                    _pf_elapsed = time.time() - _pf_start
+                    _pf_remaining = _pf_total - _pf_done
+                    if _pf_done > 1:
+                        _pf_avg = _pf_elapsed / _pf_done
+                        _pf_eta = _pf_avg * _pf_remaining
+                        if _pf_eta >= 60:
+                            _pf_eta_str = f"{int(_pf_eta // 60)}m {int(_pf_eta % 60):02d}s"
+                        else:
+                            _pf_eta_str = f"{int(_pf_eta)}s"
+                    else:
+                        _pf_eta_str = "..."
+                    _pf_pct = _pf_done / _pf_total * 100
+                    sys.stdout.write(f"\r    -> Pre-fetch: {_pf_done}/{_pf_total} ({_pf_pct:.1f}%)  "
+                                     f"ETA: {_pf_eta_str}  "
+                                     f"({_pf_ok} fetched)   ")
+                    sys.stdout.flush()
+
+            _pf_elapsed = time.time() - _pf_start
+            if _pf_elapsed >= 60:
+                _pf_elapsed_str = f"{int(_pf_elapsed // 60)}m {int(_pf_elapsed % 60):02d}s"
+            else:
+                _pf_elapsed_str = f"{int(_pf_elapsed)}s"
+            sys.stdout.write(f"\r\033[2K    -> Pre-fetch complete: {_pf_ok}/{_pf_total} fetched in {_pf_elapsed_str}\n\n")
+            sys.stdout.flush()
 
     _pb_extract = _ProgressBar()
     _cit_num = 0  # running citation counter, resets per group
