@@ -120,7 +120,16 @@ class _ProgressBar:
         out.write("\033[u")  # restore cursor
         out.flush()
 
-    def update(self, proc_current, proc_total, cit_current, cit_total, group_name="", rate_limited=0, workers=0):
+    def update(
+        self,
+        proc_current,
+        proc_total,
+        cit_current,
+        cit_total,
+        group_name="",
+        rate_limited=0,
+        workers=0,
+    ):
         if not self._active:
             self._total_procs = proc_total
             self._total_cits = cit_total
@@ -154,7 +163,11 @@ class _ProgressBar:
             eta_str = "..."
 
         p_bar, p_pct = self._bar(proc_current, proc_total, bw, "\033[36m")
-        c_bar, c_pct = self._bar(cit_current, cit_total, bw, "\033[35m") if cit_total > 0 else ("\033[90m" + "░" * bw + "\033[0m", "—")
+        c_bar, c_pct = (
+            self._bar(cit_current, cit_total, bw, "\033[35m")
+            if cit_total > 0
+            else ("\033[90m" + "░" * bw + "\033[0m", "—")
+        )
 
         _p_raw = f"{proc_current}/{proc_total}"
         _c_raw = f"{cit_current}/{cit_total}" if cit_total > 0 else f"{cit_current}"
@@ -162,18 +175,26 @@ class _ProgressBar:
         _p_count = f"{_p_raw:>{_count_w}}"
         _c_count = f"{_c_raw:>{_count_w}}"
 
-        _rl_str = f"  \033[31m({rate_limited} rate-limited)\033[0m" if rate_limited else ""
+        _rl_str = (
+            f"  \033[31m({rate_limited} rate-limited)\033[0m" if rate_limited else ""
+        )
         _w_str = f"  \033[90m[{workers}w]\033[0m" if workers else ""
 
         _sep = "\033[90m" + "─" * (bw + _count_w + 23) + "\033[0m"
-        self._draw_bar([
-            f"   Procedures: {p_bar}  {_p_count}  ({p_pct:>5})",
-            f"   Citations:  {c_bar}  {_c_count}  ({c_pct:>5})" if cit_total > 0 else f"   Citations:  {cit_current} collected",
-            f"   {_sep}",
-            f"   \033[1mETA:        {eta_str}\033[0m{_w_str}{_rl_str}",
-            f"   \033[90mElapsed:    {self._format_time(secs)}\033[0m",
-            "",
-        ])
+        self._draw_bar(
+            [
+                f"   Procedures: {p_bar}  {_p_count}  ({p_pct:>5})",
+                (
+                    f"   Citations:  {c_bar}  {_c_count}  ({c_pct:>5})"
+                    if cit_total > 0
+                    else f"   Citations:  {cit_current} collected"
+                ),
+                f"   {_sep}",
+                f"   \033[1mETA:        {eta_str}\033[0m{_w_str}{_rl_str}",
+                f"   \033[90mElapsed:    {self._format_time(secs)}\033[0m",
+                "",
+            ]
+        )
 
     def done(self, proc_total, cit_total):
         out = self._get_out()
@@ -194,19 +215,25 @@ class _ProgressBar:
         _c_count = f"{_c_raw:>{_count_w}}"
 
         secs = time.time() - self._start if self._start else 0
-        _cit_line = f"   Citations:  {c_bar}  {_c_count}  (100.0%)" if c_bar else f"   Citations:  {cit_total} collected"
+        _cit_line = (
+            f"   Citations:  {c_bar}  {_c_count}  (100.0%)"
+            if c_bar
+            else f"   Citations:  {cit_total} collected"
+        )
 
         # Show completion in pinned area briefly
         _sep = "\033[90m" + "─" * (bw + _count_w + 23) + "\033[0m"
         elapsed_str = self._format_time(secs)
-        self._draw_bar([
-            f"   Procedures: {p_bar}  {_p_count}  (100.0%)",
-            _cit_line,
-            f"   {_sep}",
-            f"   \033[1mCompleted in {elapsed_str}\033[0m",
-            "",
-            "",
-        ])
+        self._draw_bar(
+            [
+                f"   Procedures: {p_bar}  {_p_count}  (100.0%)",
+                _cit_line,
+                f"   {_sep}",
+                f"   \033[1mCompleted in {elapsed_str}\033[0m",
+                "",
+                "",
+            ]
+        )
         time.sleep(0.5)
 
         # Restore sys.stdout
@@ -228,6 +255,8 @@ class _ProgressBar:
         print(f"   {_cit_line.strip()}")
         print(f"   {_sep}")
         print(f"   \033[1mCompleted in {elapsed_str}\033[0m")
+
+
 from stix2 import TAXIICollectionSource, Filter
 from taxii2client.v20 import Server, Collection
 
@@ -254,8 +283,12 @@ def _fetch(url: str, **kwargs) -> requests.Response:
     except requests.exceptions.SSLError:
         _ssl_verify_failed = True
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        print("    -> SSL verification failed, switching to unverified mode for all requests")
+        print(
+            "    -> SSL verification failed, switching to unverified mode for all requests"
+        )
         return requests.get(url, verify=False, **kwargs)
+
+
 from src.tools.write_csv import write_csv_summary
 from src.tools.write_csv import write_csv_techniques_mapped_to_logsources
 from src.output.matrix import build_matrix
@@ -291,7 +324,9 @@ def get_latest_attack_version() -> str:
                     return version
 
         # Fallback to web scraping if STIX method fails
-        version_history = _fetch("https://attack.mitre.org/resources/versions/", timeout=10)
+        version_history = _fetch(
+            "https://attack.mitre.org/resources/versions/", timeout=10
+        )
         latest_version = re.findall(
             r"<span><strong>([^<]+)",
             str(version_history.content)
@@ -315,21 +350,34 @@ def build_technique_datasource_map(stix_filepath: str) -> Dict[str, str]:
     id_to_obj = {o["id"]: o for o in data["objects"]}
 
     # Build data component id -> name
-    dc_names = {o["id"]: o.get("name", "") for o in data["objects"] if o.get("type") == "x-mitre-data-component"}
+    dc_names = {
+        o["id"]: o.get("name", "")
+        for o in data["objects"]
+        if o.get("type") == "x-mitre-data-component"
+    }
 
     # Build full "DataSource: DataComponent" names by matching DC names to DS names
     ds_names = sorted(
-        [o.get("name", "") for o in data["objects"] if o.get("type") == "x-mitre-data-source"],
-        key=len, reverse=True,
+        [
+            o.get("name", "")
+            for o in data["objects"]
+            if o.get("type") == "x-mitre-data-source"
+        ],
+        key=len,
+        reverse=True,
     )
     # Manual fallback for DCs whose names don't start with their parent DS name
     dc_parent_override = {
-        "Response Content": "Internet Scan", "Response Metadata": "Internet Scan",
-        "Malware Content": "Malware Repository", "Malware Metadata": "Malware Repository",
+        "Response Content": "Internet Scan",
+        "Response Metadata": "Internet Scan",
+        "Malware Content": "Malware Repository",
+        "Malware Metadata": "Malware Repository",
         "Network Connection Creation": "Network Traffic",
-        "Active DNS": "Domain Name", "Passive DNS": "Domain Name",
+        "Active DNS": "Domain Name",
+        "Passive DNS": "Domain Name",
         "Domain Registration": "Domain Name",
-        "Host Status": "Sensor Health", "Social Media": "Persona",
+        "Host Status": "Sensor Health",
+        "Social Media": "Persona",
         "OS API Execution": "Process",
     }
     dc_full_names = {}
@@ -346,7 +394,9 @@ def build_technique_datasource_map(stix_filepath: str) -> Dict[str, str]:
 
     # Build detection_strategy -> data component full names (via analytics)
     ds_to_dcs: Dict[str, Set] = {}
-    for ds_obj in [o for o in data["objects"] if o.get("type") == "x-mitre-detection-strategy"]:
+    for ds_obj in [
+        o for o in data["objects"] if o.get("type") == "x-mitre-detection-strategy"
+    ]:
         dcs: Set[str] = set()
         for aref in ds_obj.get("x_mitre_analytic_refs", []):
             analytic = id_to_obj.get(aref)
@@ -366,7 +416,10 @@ def build_technique_datasource_map(stix_filepath: str) -> Dict[str, str]:
 
     tech_to_ds: Dict[str, Set] = {}
     for rel in data["objects"]:
-        if rel.get("type") == "relationship" and rel.get("relationship_type") == "detects":
+        if (
+            rel.get("type") == "relationship"
+            and rel.get("relationship_type") == "detects"
+        ):
             src = rel["source_ref"]
             tgt = rel["target_ref"]
             if src in ds_to_dcs and tgt in tech_ext_ids:
@@ -378,7 +431,9 @@ def build_technique_datasource_map(stix_filepath: str) -> Dict[str, str]:
     return {tid: ", ".join(sorted(dcs)) for tid, dcs in tech_to_ds.items()}
 
 
-def load_attack_data(framework: str = "enterprise", force_fetch: bool = False) -> MitreAttackData:
+def load_attack_data(
+    framework: str = "enterprise", force_fetch: bool = False
+) -> MitreAttackData:
     """Load MITRE ATT&CK data using STIX via the mitreattack-python library.
 
     Re-downloads if the cached file is older than 7 days or if force_fetch is True (--fetch).
@@ -388,11 +443,15 @@ def load_attack_data(framework: str = "enterprise", force_fetch: bool = False) -
     framework_map = {
         "enterprise": "enterprise-attack",
         "mobile": "mobile-attack",
-        "ics": "ics-attack"
+        "ics": "ics-attack",
     }
 
     stix_source = framework_map.get(framework.lower(), "enterprise-attack")
-    stix_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "stix")
+    stix_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "data",
+        "stix",
+    )
     os.makedirs(stix_dir, exist_ok=True)
     stix_filepath = os.path.join(stix_dir, f"{stix_source}.json")
 
@@ -405,7 +464,9 @@ def load_attack_data(framework: str = "enterprise", force_fetch: bool = False) -
     else:
         file_age_days = (time.time() - os.path.getmtime(stix_filepath)) / 86400
         if file_age_days > 7:
-            print(f"    -> STIX data is {int(file_age_days)} days old, re-downloading...")
+            print(
+                f"    -> STIX data is {int(file_age_days)} days old, re-downloading..."
+            )
             need_download = True
         else:
             print(f"    -> Using cached STIX data ({int(file_age_days)} day(s) old)")
@@ -433,7 +494,9 @@ def process_technique_parallel(args: Tuple) -> List[Dict]:
         technique = technique_entry.get("object", technique_entry)
         relationships = technique_entry.get("relationships", [])
 
-        technique_id = technique.get("external_references", [{}])[0].get("external_id", "")
+        technique_id = technique.get("external_references", [{}])[0].get(
+            "external_id", ""
+        )
         technique_name = technique.get("name", "")
         technique_description = technique.get("description", "")
 
@@ -451,7 +514,10 @@ def process_technique_parallel(args: Tuple) -> List[Dict]:
 
         # Get tactics
         kill_chain_phases = technique.get("kill_chain_phases", [])
-        tactics = [phase.get("phase_name", "").replace("-", " ").title() for phase in kill_chain_phases]
+        tactics = [
+            phase.get("phase_name", "").replace("-", " ").title()
+            for phase in kill_chain_phases
+        ]
 
         # Get data sources
         data_sources = []
@@ -471,7 +537,7 @@ def process_technique_parallel(args: Tuple) -> List[Dict]:
             "tactics": tactics,
             "data_sources": data_sources,
             "detection": detection,
-            "stix_id": technique.get("id", "")
+            "stix_id": technique.get("id", ""),
         }
         results.append(result)
 
@@ -481,8 +547,12 @@ def process_technique_parallel(args: Tuple) -> List[Dict]:
     return results
 
 
-def get_group_techniques_parallel(attack_data: MitreAttackData, groups: List[str],
-                                   platforms: List[str], max_workers: int = 10) -> Tuple[Dict, Dict, List]:
+def get_group_techniques_parallel(
+    attack_data: MitreAttackData,
+    groups: List[str],
+    platforms: List[str],
+    max_workers: int = 10,
+) -> Tuple[Dict, Dict, List]:
     """Get techniques used by groups using parallel processing."""
 
     group_techniques = {}
@@ -499,8 +569,11 @@ def get_group_techniques_parallel(attack_data: MitreAttackData, groups: List[str
             group_name = group.get("name", "")
             group_aliases = group.get("aliases", [])
             # Check if group matches any provided group names
-            if any(g.replace("_", " ").lower() in [group_name.lower()] + [a.lower() for a in group_aliases]
-                   for g in groups):
+            if any(
+                g.replace("_", " ").lower()
+                in [group_name.lower()] + [a.lower() for a in group_aliases]
+                for g in groups
+            ):
                 filtered_groups.append(group)
         all_groups = filtered_groups
 
@@ -514,7 +587,7 @@ def get_group_techniques_parallel(attack_data: MitreAttackData, groups: List[str
             group_info[group_id] = {
                 "name": group_name,
                 "description": group_description,
-                "aliases": group.get("aliases", [])
+                "aliases": group.get("aliases", []),
             }
 
             # Get techniques used by this group
@@ -523,29 +596,39 @@ def get_group_techniques_parallel(attack_data: MitreAttackData, groups: List[str
             # Also get techniques from campaigns attributed to this group
             campaign_techniques = []
             try:
-                campaigns = attack_data.get_campaigns_attributed_to_group(group.get("id"))
+                campaigns = attack_data.get_campaigns_attributed_to_group(
+                    group.get("id")
+                )
                 if campaigns:
                     seen_technique_ids = set()
                     for t in techniques:
                         tobj = t.get("object", t)
-                        tid = tobj.get("external_references", [{}])[0].get("external_id", "")
+                        tid = tobj.get("external_references", [{}])[0].get(
+                            "external_id", ""
+                        )
                         seen_technique_ids.add(tid)
                     for campaign_entry in campaigns:
                         campaign_obj = campaign_entry.get("object", campaign_entry)
                         campaign_name = campaign_obj.get("name", "")
                         campaign_id = campaign_obj.get("id", "")
                         try:
-                            camp_techs = attack_data.get_techniques_used_by_campaign(campaign_id)
+                            camp_techs = attack_data.get_techniques_used_by_campaign(
+                                campaign_id
+                            )
                             for ct in camp_techs:
                                 ct_obj = ct.get("object", ct)
-                                ct_id = ct_obj.get("external_references", [{}])[0].get("external_id", "")
+                                ct_id = ct_obj.get("external_references", [{}])[0].get(
+                                    "external_id", ""
+                                )
                                 if ct_id not in seen_technique_ids:
                                     seen_technique_ids.add(ct_id)
                                     # Prepend campaign name to usage for context
                                     ct_rels = ct.get("relationships", [])
                                     if ct_rels:
                                         orig_desc = ct_rels[0].get("description", "")
-                                        ct_rels[0]["description"] = f"[Campaign: {campaign_name}] {orig_desc}"
+                                        ct_rels[0][
+                                            "description"
+                                        ] = f"[Campaign: {campaign_name}] {orig_desc}"
                                     campaign_techniques.append(ct)
                         except Exception:
                             pass
@@ -559,8 +642,12 @@ def get_group_techniques_parallel(attack_data: MitreAttackData, groups: List[str
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = []
                 for technique in all_group_techniques:
-                    futures.append(executor.submit(process_technique_parallel,
-                                                  (technique, groups, platforms, attack_data)))
+                    futures.append(
+                        executor.submit(
+                            process_technique_parallel,
+                            (technique, groups, platforms, attack_data),
+                        )
+                    )
 
                 for future in as_completed(futures):
                     try:
@@ -572,7 +659,9 @@ def get_group_techniques_parallel(attack_data: MitreAttackData, groups: List[str
                         print(f"    Warning: Thread error: {e}")
 
         except Exception as e:
-            print(f"    Warning: Error processing group {group.get('name', 'Unknown')}: {e}")
+            print(
+                f"    Warning: Error processing group {group.get('name', 'Unknown')}: {e}"
+            )
             continue
 
     return group_techniques, group_info, all_techniques
@@ -609,8 +698,14 @@ def _write_reference_sheet(xlsx_path, all_refs):
     align_wrap = Alignment(wrap_text=True, vertical="center", horizontal="left")
     align_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    headers = ["Citation Name", "Source URL", "Source Description",
-               "Extracted Content", "Collection Method", "Attempts"]
+    headers = [
+        "Citation Name",
+        "Source URL",
+        "Source Description",
+        "Extracted Content",
+        "Collection Method",
+        "Attempts",
+    ]
     widths = [30, 55, 45, 80, 18, 40]
 
     font_method = Font(name="Courier New", size=9, color="4ADE80")
@@ -630,7 +725,9 @@ def _write_reference_sheet(xlsx_path, all_refs):
         bg = "0F1C2E" if ri % 2 == 0 else "0A1220"
         row_fill = PatternFill(start_color=bg, end_color=bg, fill_type="solid")
         attempts_list = ref.get("attempts", [])
-        attempts_str = " → ".join(attempts_list) if attempts_list else ref.get("status", "")
+        attempts_str = (
+            " → ".join(attempts_list) if attempts_list else ref.get("status", "")
+        )
         values = [
             ref.get("citation_name", ""),
             ref.get("url", ""),
@@ -701,7 +798,9 @@ def mainsaw(
         for fw in attack_frameworks:
             attack_data, stix_filepath = load_attack_data(fw, force_fetch=fetch)
             all_attack_data[fw] = attack_data
-            technique_datasource_map.update(build_technique_datasource_map(stix_filepath))
+            technique_datasource_map.update(
+                build_technique_datasource_map(stix_filepath)
+            )
 
     except requests.exceptions.ConnectionError:
         print("\n\n\tUnable to connect to the Internet. Please try again.\n\n\n")
@@ -900,7 +999,6 @@ def mainsaw(
     )
 
     # Get group techniques using parallel processing across all frameworks
-    print(f"    -> Extracting techniques with {citation_workers} parallel workers...")
     all_group_techniques_data = {}
     all_group_info_data = {}
     for fw, attack_data in all_attack_data.items():
@@ -958,13 +1056,15 @@ def mainsaw(
                         try:
                             group_navlayer = _fetch(
                                 f"https://attack.mitre.org/groups/{group_id}/{group_id}-{domain}-layer.json",
-                                timeout=10
+                                timeout=10,
                             )
                             if group_navlayer.status_code == 200:
                                 with open(navlayer_json, "wb") as navlayer_file:
                                     navlayer_file.write(group_navlayer.content)
                         except Exception as e:
-                            print(f"    Warning: Could not download nav layer for {group_name} ({fw}): {e}")
+                            print(
+                                f"    Warning: Could not download nav layer for {group_name} ({fw}): {e}"
+                            )
 
             # Build valid procedure
             # Format expected by extract.py:
@@ -985,9 +1085,10 @@ def mainsaw(
 
             # Track techniques
             techniques_in_scope.append(f"{technique_id}||{technique_name}")
-            groups_techniques_in_scope.append(f"{group_name}||{technique_id}||{technique_name}||{technique_tactics}")
+            groups_techniques_in_scope.append(
+                f"{group_name}||{technique_id}||{technique_name}||{technique_tactics}"
+            )
             groups_in_scope.append(group_name)
-    print()
     consolidated_procedures = sorted(list(set(valid_procedures)))
     counted_techniques = Counter(techniques_in_scope)
     sorted_techniques = sorted(
@@ -1009,16 +1110,17 @@ def mainsaw(
     # Build citation lookup: collect ALL external_references from STIX relationships
     # Keyed by citation source_name → {url, description} for direct lookup
     _citation_url_lookup = {}  # source_name → {"url": ..., "description": ...}
-    _mitre_ref_numbers = {}   # (group_name_lower, source_name) → MITRE [N] number
+    _mitre_ref_numbers = {}  # (group_name_lower, source_name) → MITRE [N] number
     _all_citation_refs = []
     _seen_citations = set()
     if collect_citations:
         for _fw, _ad in all_attack_data.items():
-            _sp = getattr(_ad, 'stix_filepath', None) or getattr(_ad, 'src', None)
+            _sp = getattr(_ad, "stix_filepath", None) or getattr(_ad, "src", None)
             if not _sp:
                 continue
             try:
                 import json as _json
+
                 with open(_sp) as _f:
                     _bundle = _json.load(_f)
                 # Build citation URL lookup from ALL STIX objects
@@ -1026,7 +1128,11 @@ def mainsaw(
                 for _obj in _bundle.get("objects", []):
                     for _ref in _obj.get("external_references", []):
                         _sn = _ref.get("source_name", "")
-                        if _sn and _sn != "mitre-attack" and _sn not in _citation_url_lookup:
+                        if (
+                            _sn
+                            and _sn != "mitre-attack"
+                            and _sn not in _citation_url_lookup
+                        ):
                             _citation_url_lookup[_sn] = {
                                 "url": _ref.get("url", ""),
                                 "description": _ref.get("description", ""),
@@ -1046,17 +1152,23 @@ def mainsaw(
             except Exception:
                 continue
         if _citation_url_lookup:
-            print(f"    -> {len(_citation_url_lookup)} unique citation sources indexed for collection\n")
+            print(
+                f"    -> {len(_citation_url_lookup)} unique citation sources indexed for collection\n"
+            )
             # Propagate SSL verification state to citation collector
             if _ssl_verify_failed:
                 import src.citation_collector as _cc
+
                 _cc.SSL_VERIFY = False
 
     # Sort by (group, technique_name) so procedures for the same group+technique are contiguous
-    consolidated_procedures = sorted(consolidated_procedures, key=lambda p: (
-        p.split("||")[1].strip().lower(),
-        p.split("||")[3].strip().lower() if len(p.split("||")) > 3 else "",
-    ))
+    consolidated_procedures = sorted(
+        consolidated_procedures,
+        key=lambda p: (
+            p.split("||")[1].strip().lower(),
+            p.split("||")[3].strip().lower() if len(p.split("||")) > 3 else "",
+        ),
+    )
 
     # Pre-count unique (group, citation) pairs for progress bar
     _total_cit_pairs = 0
@@ -1082,6 +1194,7 @@ def mainsaw(
     # Pre-run ETA estimate and confirmation
     if collect_citations and _total_cit_pairs > 0:
         from src.citation_collector import _cache_key, CACHE_DIR
+
         _cached_count = 0
         _uncached_count = 0
         _checked_urls = set()
@@ -1118,18 +1231,20 @@ def mainsaw(
         else:
             _est_str = f"{int(_est_total)}s"
 
-        print(f"\n    ┌─────────────────────────────────────────────")
-        print(f"    │  Procedures:       {_total_procedures:>6}")
-        print(f"    │  Citations:        {_total_cit_pairs:>6}")
-        print(f"    │  Cached:           {_cached_count:>6}")
-        print(f"    │  Uncached:         {_uncached_count:>6}")
-        print(f"    │  Workers:          {citation_workers:>6}")
-        print(f"    │  Estimated time:   {_est_str:>6}")
-        print(f"    └─────────────────────────────────────────────")
+        _sep_pf = "\033[90m" + "─" * 45 + "\033[0m"
+        print(f"    \033[1mPre-fetch plan\033[0m")
+        print(f"    {_sep_pf}")
+        print(f"    🩻  Procedures: {_total_procedures:>6,}")
+        print(f"    ✍️  Citations:  {_cached_count + _uncached_count:>6,}")
+        print(f"           🔍 {_uncached_count:,} to fetch")
+        print(f"           💾 {_cached_count:,} cached")
+        print(f"    👷 Workers:    {citation_workers:>6,}")
+        print(f"    🕰️  Est. time:   {_est_str:>6}")
+        print(f"    {_sep_pf}")
 
         if not auto_confirm:
             try:
-                _resp = input("\n    Continue? [Y/n] ").strip().lower()
+                _resp = input("    Continue? [Y/n] ").strip().lower()
                 if _resp in ("n", "no"):
                     print("\n    Aborted.\n")
                     return
@@ -1142,6 +1257,7 @@ def mainsaw(
     if collect_citations and _citation_url_lookup:
         from src.citation_collector import _cache_key, _read_cache, CACHE_DIR
         from src.citation_collector import collect_references_parallel
+
         _prefetch_batch = []
         _prefetch_seen_urls = set()
         for _p in consolidated_procedures:
@@ -1160,11 +1276,13 @@ def mainsaw(
                 _prefetch_seen_urls.add(_url)
                 _cpath = CACHE_DIR / f"{_cache_key(_url)}.json"
                 if not _cpath.exists():
-                    _prefetch_batch.append({
-                        "citation_name": _cn,
-                        "url": _url,
-                        "description": _ref_data.get("description", ""),
-                    })
+                    _prefetch_batch.append(
+                        {
+                            "citation_name": _cn,
+                            "url": _url,
+                            "description": _ref_data.get("description", ""),
+                        }
+                    )
 
         if _prefetch_batch:
             from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -1176,20 +1294,29 @@ def mainsaw(
             _pf_start = time.time()
             _pf_results = []
 
-            print(f"    -> Pre-fetching {_pf_total} uncached citations with {citation_workers} workers...\n")
+            print(
+                f"   -> Pre-fetching {_pf_total:,} uncached citations with {citation_workers} workers..."
+            )
 
             def _pf_fetch(cit):
                 return collect_reference_content([cit], "", "", "")
 
             with ThreadPoolExecutor(max_workers=citation_workers) as _pf_pool:
-                _pf_futures = {_pf_pool.submit(_pf_fetch, c): c for c in _prefetch_batch}
+                _pf_futures = {
+                    _pf_pool.submit(_pf_fetch, c): c for c in _prefetch_batch
+                }
                 for _pf_future in as_completed(_pf_futures):
                     _pf_done += 1
                     try:
                         _pf_result = _pf_future.result()
                         _pf_results.extend(_pf_result)
                         for _r in _pf_result:
-                            if _r.get("method") not in ("stix_metadata", "no_content", "", "failed"):
+                            if _r.get("method") not in (
+                                "stix_metadata",
+                                "no_content",
+                                "",
+                                "failed",
+                            ):
                                 _pf_ok += 1
                     except Exception:
                         pass
@@ -1201,23 +1328,31 @@ def mainsaw(
                         _pf_avg = _pf_elapsed / _pf_done
                         _pf_eta = _pf_avg * _pf_remaining
                         if _pf_eta >= 60:
-                            _pf_eta_str = f"{int(_pf_eta // 60)}m {int(_pf_eta % 60):02d}s"
+                            _pf_eta_str = (
+                                f"{int(_pf_eta // 60)}m {int(_pf_eta % 60):02d}s"
+                            )
                         else:
                             _pf_eta_str = f"{int(_pf_eta)}s"
                     else:
                         _pf_eta_str = "..."
                     _pf_pct = _pf_done / _pf_total * 100
-                    sys.stdout.write(f"\r    -> Pre-fetch: {_pf_done}/{_pf_total} ({_pf_pct:.1f}%)  "
-                                     f"ETA: {_pf_eta_str}  "
-                                     f"({_pf_ok} fetched)   ")
+                    sys.stdout.write(
+                        f"\r   -> Pre-fetch: {_pf_done:,}/{_pf_total:,} ({_pf_pct:.1f}%)  "
+                        f"ETA: {_pf_eta_str}  "
+                        f"({_pf_ok:,} fetched)   "
+                    )
                     sys.stdout.flush()
 
             _pf_elapsed = time.time() - _pf_start
             if _pf_elapsed >= 60:
-                _pf_elapsed_str = f"{int(_pf_elapsed // 60)}m {int(_pf_elapsed % 60):02d}s"
+                _pf_elapsed_str = (
+                    f"{int(_pf_elapsed // 60)}m {int(_pf_elapsed % 60):02d}s"
+                )
             else:
                 _pf_elapsed_str = f"{int(_pf_elapsed)}s"
-            sys.stdout.write(f"\r\033[2K    -> Pre-fetch complete: {_pf_ok}/{_pf_total} fetched in {_pf_elapsed_str}\n\n")
+            sys.stdout.write(
+                f"\r\033[2K   ✅ \033[1mPre-fetch complete:\033[0m {_pf_ok:,}/{_pf_total:,} fetched in {_pf_elapsed_str}\n\n"
+            )
             sys.stdout.flush()
 
     _pb_extract = _ProgressBar()
@@ -1230,13 +1365,20 @@ def mainsaw(
     for _proc_idx, each_procedure in enumerate(consolidated_procedures, 1):
         _proc_parts = each_procedure.split("||")
         current_group_name = _proc_parts[1]
-        if last_group_name and current_group_name.strip().lower() != last_group_name.strip().lower():
+        if (
+            last_group_name
+            and current_group_name.strip().lower() != last_group_name.strip().lower()
+        ):
             _cit_num = 0
         last_group_name = current_group_name
         _pb_extract.update(
-            _proc_idx, _total_procedures,
-            len(_all_citation_refs), _total_cit_pairs,
-            current_group_name, _rate_limited_count, _active_workers,
+            _proc_idx,
+            _total_procedures,
+            len(_all_citation_refs),
+            _total_cit_pairs,
+            current_group_name,
+            _rate_limited_count,
+            _active_workers,
         )
         (
             technique_findings,
@@ -1292,7 +1434,9 @@ def mainsaw(
                 _all_text += " " + _parts[7]  # technique_description
             if len(_parts) > 8:
                 _all_text += " " + _parts[8]  # technique_detection
-            _cit_names = list(dict.fromkeys(re.findall(r"\(Citation:\s*([^)]+)\)", _all_text)))
+            _cit_names = list(
+                dict.fromkeys(re.findall(r"\(Citation:\s*([^)]+)\)", _all_text))
+            )
             _new_cits = []
             if _cit_names:
                 from src.citation_collector import collect_references_parallel
@@ -1307,16 +1451,22 @@ def mainsaw(
                     _seen_citations.add(_display_key)
 
                     _ref_data = _citation_url_lookup.get(_cn, {})
-                    _batch.append({
-                        "citation_name": _cn,
-                        "url": _ref_data.get("url", ""),
-                        "description": _ref_data.get("description", ""),
-                    })
+                    _batch.append(
+                        {
+                            "citation_name": _cn,
+                            "url": _ref_data.get("url", ""),
+                            "description": _ref_data.get("description", ""),
+                        }
+                    )
 
                 # Fetch all citations for this procedure in parallel
                 if _batch:
                     _fetched = collect_references_parallel(
-                        _batch, _group, _tname, _tid, max_workers=_active_workers,
+                        _batch,
+                        _group,
+                        _tname,
+                        _tid,
+                        max_workers=_active_workers,
                     )
                     _batch_429 = 0
                     for _ref in _fetched:
@@ -1336,13 +1486,19 @@ def mainsaw(
                         _procs_since_last_429 = 0
                     else:
                         _procs_since_last_429 += 1
-                        if _procs_since_last_429 >= 50 and _active_workers < _max_workers:
+                        if (
+                            _procs_since_last_429 >= 50
+                            and _active_workers < _max_workers
+                        ):
                             _active_workers = min(_max_workers, _active_workers + 2)
                             _procs_since_last_429 = 0
 
             # Print citations for ALL techniques (even when no native indicators)
             if _new_cits:
-                from src.citation_collector import extract_indicators_from_text, _INDICATOR_EMOJI
+                from src.citation_collector import (
+                    extract_indicators_from_text,
+                    _INDICATOR_EMOJI,
+                )
                 from src.exclusions import filter_indicators as _filter_exclusions
 
                 # Build set of existing indicators for dedup
@@ -1354,7 +1510,9 @@ def mainsaw(
                         if isinstance(_vals, list):
                             for _v in _vals:
                                 if isinstance(_v, dict):
-                                    _existing_indicators.update(str(k).lower() for k in _v.keys())
+                                    _existing_indicators.update(
+                                        str(k).lower() for k in _v.keys()
+                                    )
                                 else:
                                     _existing_indicators.add(str(_v).lower())
                 except (json.JSONDecodeError, TypeError):
@@ -1368,10 +1526,13 @@ def mainsaw(
                     _method = _ref.get("method", "unknown")
                     if _method == "cached":
                         _icon = "\033[36m\U0001f4be\033[0m"  # cached locally
-                    elif _ref.get("extracted_content") and _method not in ("stix_metadata", "no_content"):
+                    elif _ref.get("extracted_content") and _method not in (
+                        "stix_metadata",
+                        "no_content",
+                    ):
                         _icon = "\033[32m\u2705\033[0m"  # real content fetched
                     elif _method == "stix_metadata":
-                        _icon = "\033[33m\u26a0\ufe0f\033[0m "   # metadata only
+                        _icon = "\033[33m\u26a0\ufe0f\033[0m "  # metadata only
                     else:
                         _icon = "\033[31m\u274c\033[0m"  # no content
                     _name = _cn[:28].ljust(28)
@@ -1384,7 +1545,9 @@ def mainsaw(
                     _used = 6 + 5 + 1 + 28 + 4 + 14 + 3 + 5
                     _url_max = max(30, _tw - _used)
                     _url_part = f" [{_url[:_url_max]}]" if _url else ""
-                    print(f"{_indent}\033[90m{_num_str:>5}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}")
+                    print(
+                        f"{_indent}\033[90m{_num_str:>5}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}"
+                    )
 
                     # Extract indicators from fetched content
                     _content = _ref.get("extracted_content", "")
@@ -1397,21 +1560,28 @@ def mainsaw(
                             # Filter out indicators already in MITRESaw's native extraction
                             _new_indicators = {}
                             for _etype, _evals in _extracted.items():
-                                _novel = [v for v in _evals if v.lower() not in _existing_indicators]
+                                _novel = [
+                                    v
+                                    for v in _evals
+                                    if v.lower() not in _existing_indicators
+                                ]
                                 if _novel:
                                     _new_indicators[_etype] = _novel
-                                    _existing_indicators.update(v.lower() for v in _novel)
+                                    _existing_indicators.update(
+                                        v.lower() for v in _novel
+                                    )
 
                             # Print new indicators with emojis
                             if _new_indicators:
                                 for _etype, _evals in _new_indicators.items():
                                     _emoji = _INDICATOR_EMOJI.get(_etype, "")
                                     _vals_str = ", ".join(f"`{v}`" for v in _evals[:8])
-                                    print(f"{_indent}       {_emoji} \033[33m{_vals_str}\033[0m")
+                                    print(
+                                        f"{_indent}       {_emoji} \033[33m{_vals_str}\033[0m"
+                                    )
 
                                 # Store extracted indicators on the ref for XLSX enrichment
                                 _ref["extracted_indicators"] = _new_indicators
-
 
     threat_actor_technique_id_name_findings = list(
         set(threat_actor_technique_id_name_findings)
@@ -1420,10 +1590,17 @@ def mainsaw(
     _failed = []
     _failed_yaml = None
     if collect_citations and _all_citation_refs:
-        _with_content = sum(1 for r in _all_citation_refs
-                           if r.get("extracted_content") and r.get("method") not in ("stix_metadata", "no_content", ""))
-        _failed = [r for r in _all_citation_refs
-                   if r.get("method") in ("stix_metadata", "no_content", "")]
+        _with_content = sum(
+            1
+            for r in _all_citation_refs
+            if r.get("extracted_content")
+            and r.get("method") not in ("stix_metadata", "no_content", "")
+        )
+        _failed = [
+            r
+            for r in _all_citation_refs
+            if r.get("method") in ("stix_metadata", "no_content", "")
+        ]
     _pb_extract.done(_total_procedures, len(_all_citation_refs))
 
     # Write failed citations report (YAML)
@@ -1431,14 +1608,16 @@ def mainsaw(
         _failed_yaml = os.path.join(mitresaw_root_date, "citations_failed.yaml")
         _yaml_data = []
         for _r in _failed:
-            _yaml_data.append({
-                "citation_name": _r.get("citation_name", ""),
-                "url": _r.get("url", ""),
-                "method": _r.get("method", ""),
-                "attempts": _r.get("attempts", []),
-                "group": _r.get("group", ""),
-                "technique_id": _r.get("technique_id", ""),
-            })
+            _yaml_data.append(
+                {
+                    "citation_name": _r.get("citation_name", ""),
+                    "url": _r.get("url", ""),
+                    "method": _r.get("method", ""),
+                    "attempts": _r.get("attempts", []),
+                    "group": _r.get("group", ""),
+                    "technique_id": _r.get("technique_id", ""),
+                }
+            )
         with open(_failed_yaml, "w") as _f:
             yaml.dump(_yaml_data, _f, default_flow_style=False, sort_keys=False)
     all_evidence.append(technique_findings)
@@ -1493,14 +1672,21 @@ def mainsaw(
         # Right-align the fraction columns
         _cw = len(f"{_cit_total:,}")  # width of the total (widest number)
         print(f"\n   Citations:")
-        print(f"     ✅ With content: {_with_content:>{_cw},}/{_cit_total:,}")
+        print(
+            f"     ✅ With content: {_with_content:>{_cw},}/{_cit_total:,}  ({_with_content / _cit_total * 100:.1f}%)"
+        )
         if _injected:
-            print(f"     🔍 Newly added:  {_injected:>{_cw},}/{_cit_total:,}")
+            print(
+                f"     🔍 Newly added:  {_injected:>{_cw},}/{_cit_total:,}  ({_injected / _cit_total * 100:.1f}%)"
+            )
         if _n_failed:
-            print(f"     ❌ Failed:       {_n_failed:>{_cw},}/{_cit_total:,}")
+            print(
+                f"     ❌ Failed:       {_n_failed:>{_cw},}/{_cit_total:,}  ({_n_failed / _cit_total * 100:.1f}%)"
+            )
 
     # Report CVEs with no actionable intelligence
     from src.tools.map_bespoke_logs import report_cve_summary
+
     print()
     report_cve_summary()
 
@@ -1536,19 +1722,31 @@ def mainsaw(
                 if os.path.exists(csv_path):
                     df = pandas.read_csv(csv_path, on_bad_lines="warn")
                     if export_format == "json":
-                        out_path = os.path.join(mitresaw_output_directory, f"{csv_name}.json")
+                        out_path = os.path.join(
+                            mitresaw_output_directory, f"{csv_name}.json"
+                        )
                         df.to_json(out_path, orient="records", indent=2)
                     elif export_format == "xml":
-                        out_path = os.path.join(mitresaw_output_directory, f"{csv_name}.xml")
+                        out_path = os.path.join(
+                            mitresaw_output_directory, f"{csv_name}.xml"
+                        )
                         df.to_xml(out_path)
                     print(f"      {export_format.upper()} written to {out_path}")
         # Generate filtered export if --columns is specified
         if columns:
             valid_columns = [
-                "group_sw_id", "group_sw_name", "group_sw_description",
-                "technique_id", "technique_name", "technique_description",
-                "tactic", "platforms", "framework",
-                "procedure_example", "evidence", "detectable_via",
+                "group_sw_id",
+                "group_sw_name",
+                "group_sw_description",
+                "technique_id",
+                "technique_name",
+                "technique_description",
+                "tactic",
+                "platforms",
+                "framework",
+                "procedure_example",
+                "evidence",
+                "detectable_via",
                 "keywords",
             ]
             requested_columns = [c.strip() for c in columns.split(",")]
@@ -1557,7 +1755,9 @@ def mainsaw(
                 print(f"\n    Error: Invalid column(s): {', '.join(invalid)}")
                 print(f"    Valid columns: {', '.join(valid_columns)}")
             else:
-                csv_path = os.path.join(mitresaw_output_directory, "ThreatActors_Techniques.csv")
+                csv_path = os.path.join(
+                    mitresaw_output_directory, "ThreatActors_Techniques.csv"
+                )
                 df = pandas.read_csv(csv_path, on_bad_lines="warn")
 
                 if "keywords" in requested_columns:
@@ -1574,13 +1774,19 @@ def mainsaw(
                     filtered_base_name = "mitre_procedures"
                     filtered_dir = mitresaw_output_directory
                 if export_format == "json":
-                    filtered_path = os.path.join(filtered_dir, f"{filtered_base_name}.json")
+                    filtered_path = os.path.join(
+                        filtered_dir, f"{filtered_base_name}.json"
+                    )
                     df.to_json(filtered_path, orient="records", indent=2)
                 elif export_format == "xml":
-                    filtered_path = os.path.join(filtered_dir, f"{filtered_base_name}.xml")
+                    filtered_path = os.path.join(
+                        filtered_dir, f"{filtered_base_name}.xml"
+                    )
                     df.to_xml(filtered_path)
                 else:
-                    filtered_path = os.path.join(filtered_dir, f"{filtered_base_name}.csv")
+                    filtered_path = os.path.join(
+                        filtered_dir, f"{filtered_base_name}.csv"
+                    )
                     df.to_csv(filtered_path, index=False)
                 if not evidence_report:
                     print(f"      Filtered export written to {filtered_path}")
@@ -1598,7 +1804,10 @@ def mainsaw(
         for fw in attack_frameworks:
             domain = f"{fw.lower()}-attack"
             mitresaw_navlayer = '{{"description": "{} techniques used by various Threat Actors, produced by MITRESaw", "name": "{}", "domain": "{}", "versions": {{"layer": "4.4", "attack": "15", "navigator": "4.8.1"}}, "techniques": [{{"techniqueID": "{}", "comment": "", "score": 1, "color": "#66b1ff", "showSubtechniques": false}}], "gradient": {{"colors": ["#ffffff", "#66b1ff"], "minValue": 0, "maxValue": 1}}, "legendItems": [{{"label": "identified from MITRESaw analysis", "color": "#66b1ff"}}]}}\n'.format(
-                fw, mitresaw_output_directory.split("/")[2][11:], domain, mitresaw_techniques_insert
+                fw,
+                mitresaw_output_directory.split("/")[2][11:],
+                domain,
+                mitresaw_techniques_insert,
             )
             with open(
                 os.path.join(mitresaw_output_directory, f"{domain}-layer.json"), "w"
@@ -1610,19 +1819,24 @@ def mainsaw(
 
         # Generate evidence report if requested
         if evidence_report:
-            csv_path = os.path.join(mitresaw_output_directory, "ThreatActors_Techniques.csv")
+            csv_path = os.path.join(
+                mitresaw_output_directory, "ThreatActors_Techniques.csv"
+            )
             if os.path.exists(csv_path):
                 df = pandas.read_csv(csv_path, on_bad_lines="warn")
                 result_rows = df.to_dict(orient="records")
                 from src.evidence_report import generate_evidence_report
                 from datetime import datetime as _dt
+
                 # If no filters provided, put alongside mitre_procedures.csv
                 no_filters = (
                     str(operating_platforms) == "['.']"
                     and str(search_terms) == "['.']"
                     and str(provided_groups) == "['.']"
                 )
-                _er_dir = mitresaw_root_date if no_filters else mitresaw_output_directory
+                _er_dir = (
+                    mitresaw_root_date if no_filters else mitresaw_output_directory
+                )
                 _er_path = os.path.join(
                     _er_dir,
                     "mitre_procedures.xlsx",
@@ -1642,10 +1856,11 @@ def mainsaw(
 
                 # Move CSV alongside evidence report with matching name
                 import shutil
+
                 _csv_dest = os.path.join(_er_dir, "mitre_procedures.csv")
                 shutil.move(csv_path, _csv_dest)
                 print(f"\n   Outputs written to: {_er_dir}/")
-                print(f"     🏛️ mitre_procedures.csv")
+                print(f"     🏛️  mitre_procedures.csv")
                 print(f"     📎 mitre_procedures.xlsx")
                 if _failed_yaml:
                     print(f"     🍠 citations_failed.yaml")
