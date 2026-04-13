@@ -18,6 +18,7 @@ import re
 import sys
 import time
 import warnings
+import yaml
 
 # Suppress urllib3 InsecureRequestWarning from verify=False fallbacks
 warnings.filterwarnings("ignore", message="Unverified HTTPS request")
@@ -50,10 +51,10 @@ _USER_AGENTS = [
 # Track last request time per domain to enforce per-domain rate limiting
 _domain_last_request = {}
 
-_SKIP_DOMAINS = frozenset([
+_SKIP_DOMAINS = {
     "twitter.com", "x.com", "linkedin.com", "facebook.com",
     "youtube.com", "vimeo.com",
-])
+}
 
 # Citation names that are tool homepages, vendor sites, or generic docs — no threat intel value
 _SKIP_CITATION_PATTERNS = [
@@ -65,7 +66,7 @@ _SKIP_CITATION_PATTERNS = [
     r"(?i)^apple developer",
 ]
 
-_SKIP_CITATION_URLS = frozenset([
+_SKIP_CITATION_URLS = {
     "www.7-zip.org", "www.rarlab.com", "www.winzip.com",
     "www.gnu.org", "www.perl.org", "www.python.org", "www.ruby-lang.org",
     "docs.microsoft.com", "learn.microsoft.com", "support.microsoft.com",
@@ -77,7 +78,7 @@ _SKIP_CITATION_URLS = frozenset([
     "docs.docker.com", "kubernetes.io",
     "www.openssl.org", "curl.se", "nmap.org", "www.wireshark.org",
     "github.com/PowerShellMafia", "github.com/gentilkiwi",
-])
+}
 
 # URL path patterns that indicate documentation, not threat intel
 _SKIP_URL_PATHS = [
@@ -87,6 +88,90 @@ _SKIP_URL_PATHS = [
 ]
 
 _PDF_EXTENSIONS = frozenset([".pdf"])
+
+
+# ---------------------------------------------------------------------------
+# Known single-word commands / tools — loaded from data/known_commands.yaml
+# ---------------------------------------------------------------------------
+
+_KNOWN_CMD_NAMES: frozenset = frozenset()
+_KNOWN_SOFTWARE_NAMES: frozenset = frozenset()
+_known_commands_loaded = False
+
+
+def _load_known_commands():
+    """Lazily load data/known_commands.yaml and build lookup sets."""
+    global _KNOWN_CMD_NAMES, _KNOWN_SOFTWARE_NAMES, _known_commands_loaded
+    if _known_commands_loaded:
+        return
+    _known_commands_loaded = True
+    _yaml_path = Path("data/known_commands.yaml")
+    if not _yaml_path.exists():
+        return
+    try:
+        with open(_yaml_path) as f:
+            data = yaml.safe_load(f)
+        cmd_set: set = set()
+        sw_set: set = set()
+        for _platform, _types in (data or {}).items():
+            if not isinstance(_types, dict):
+                continue
+            for _token in (_types.get("cmd") or []):
+                cmd_set.add(str(_token).lower())
+            for _token in (_types.get("software") or []):
+                sw_set.add(str(_token).lower())
+        _KNOWN_CMD_NAMES = frozenset(cmd_set)
+        _KNOWN_SOFTWARE_NAMES = frozenset(sw_set)
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# User-configurable blocked domain list
+# ---------------------------------------------------------------------------
+
+def _load_blocked_domains_file():
+    """Load data/blocked_domains.yaml and return (domains, prefixes, paths).
+
+    Returns three collections that extend the hardcoded skip lists above.
+    Fails silently so a missing or malformed file never breaks a run.
+    """
+    _file = Path(__file__).parent.parent / "data" / "blocked_domains.yaml"
+    if not _file.exists():
+        return frozenset(), frozenset(), []
+    try:
+        with open(_file, encoding="utf-8") as _f:
+            _data = yaml.safe_load(_f) or {}
+
+        def _norm(entry):
+            if isinstance(entry, dict):
+                return str(entry.get("domain") or entry.get("prefix") or entry.get("path") or "")
+            return str(entry)
+
+        _domains = frozenset(
+            _norm(e).lower().lstrip("www.")
+            for e in _data.get("blocked_domains", [])
+            if _norm(e)
+        )
+        _prefixes = frozenset(
+            _norm(e).lower()
+            for e in _data.get("blocked_url_prefixes", [])
+            if _norm(e)
+        )
+        _paths = [
+            _norm(e)
+            for e in _data.get("blocked_url_paths", [])
+            if _norm(e)
+        ]
+        return _domains, _prefixes, _paths
+    except Exception:
+        return frozenset(), frozenset(), []
+
+
+_file_domains, _file_prefixes, _file_paths = _load_blocked_domains_file()
+_SKIP_DOMAINS = _SKIP_DOMAINS | _file_domains
+_SKIP_CITATION_URLS = _SKIP_CITATION_URLS | _file_prefixes
+_SKIP_URL_PATHS = _SKIP_URL_PATHS + [p for p in _file_paths if p not in _SKIP_URL_PATHS]
 
 _BINARY_EXTENSIONS = frozenset([
     ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
@@ -389,7 +474,44 @@ def _fetch_pdf(url: str, session=None) -> tuple:
     except Exception:
         pass
 
-    return "", "pdf:no_parser_available"
+    # OCR fallback for image-only / scanned PDFs
+    return _fetch_pdf_ocr(pdf_bytes)
+
+
+def _fetch_pdf_ocr(pdf_bytes: bytes) -> tuple:
+    """OCR fallback for image-only or scanned PDFs.
+
+    Requires: pdf2image (wraps poppler) + pytesseract (wraps Tesseract).
+    Both are optional — if absent the function returns empty string.
+    Caps at 10 pages to avoid excessive processing time.
+    """
+    try:
+        from pdf2image import convert_from_bytes
+        import pytesseract
+    except ImportError:
+        return "", "pdf:ocr_unavailable"
+
+    try:
+        images = convert_from_bytes(pdf_bytes, dpi=200, first_page=1, last_page=10)
+    except Exception as e:
+        return "", f"pdf:ocr_convert_{type(e).__name__}"
+
+    pages = []
+    for img in images:
+        try:
+            text = pytesseract.image_to_string(img)
+            if text and text.strip():
+                pages.append(text)
+        except Exception:
+            continue
+
+    if pages:
+        raw = "\n\n".join(pages)[:MAX_CONTENT_CHARS]
+        clean = re.sub(r"[^\x20-\x7E\n\r\t]", "", raw)
+        if len(clean) > 100:
+            return clean, "pdf:ocr"
+
+    return "", "pdf:ocr_no_text"
 
 
 # ---------------------------------------------------------------------------
@@ -530,33 +652,61 @@ def _extract_relevant_passages(
     technique_name: str,
     technique_id: str,
     indicators: list | None = None,
+    aliases: list | None = None,
 ) -> str:
+    """Return the most relevant paragraphs from full_text for this group/technique.
+
+    Scoring (higher = more relevant, returned first):
+      3 pts — paragraph mentions both a group term AND a technique term
+      2 pts — paragraph mentions a group term only
+      1 pt  — paragraph mentions a technique term only
+
+    Paragraphs with no match at all are excluded.  If nothing scores ≥ 1
+    the full head of the text is returned (ensures STIX-only fallback still
+    produces output).
+    """
     if not full_text:
         return ""
 
-    search_terms = set()
-    if group_name:
-        search_terms.add(group_name.lower())
-        for p in group_name.split():
-            if len(p) >= 4:
-                search_terms.add(p.lower())
+    # Build two disjoint term sets so we can score each axis independently.
+    group_terms: set = set()
+    technique_terms: set = set()
+
+    # Group name + every alias (each alias may be multi-word, split them)
+    _all_names = [group_name] + list(aliases or [])
+    for name in _all_names:
+        if not name:
+            continue
+        nl = name.lower()
+        group_terms.add(nl)
+        for part in nl.split():
+            if len(part) >= 4:
+                group_terms.add(part)
+
+    # Technique name (kept as full phrase to avoid false positives on common words)
     if technique_name and len(technique_name) >= 4:
-        search_terms.add(technique_name.lower())
+        technique_terms.add(technique_name.lower())
+
+    # Technique ID — also add parent ID for sub-techniques
     if technique_id:
-        search_terms.add(technique_id.lower())
+        technique_terms.add(technique_id.lower())
         if "." in technique_id:
-            search_terms.add(technique_id.split(".")[0].lower())
+            technique_terms.add(technique_id.split(".")[0].lower())
+
+    # Up to 5 extracted indicators as supplementary technique signals
     if indicators:
         for ind in indicators[:5]:
             if isinstance(ind, str) and len(ind) >= 4:
-                search_terms.add(ind.lower())
+                technique_terms.add(ind.lower())
 
-    search_terms = {t for t in search_terms if len(t) >= 3}
-    if not search_terms:
-        return full_text[:MAX_RELEVANT_CHARS]  # Return head if no search terms
+    group_terms = {t for t in group_terms if len(t) >= 3}
+    technique_terms = {t for t in technique_terms if len(t) >= 3}
+
+    if not group_terms and not technique_terms:
+        return full_text[:MAX_RELEVANT_CHARS]
 
     paragraphs = re.split(r"\n\s*\n", full_text)
-    relevant = []
+    scored = []
     total_len = 0
 
     for para in paragraphs:
@@ -564,20 +714,32 @@ def _extract_relevant_passages(
         if len(para) < 30:
             continue
         para_lower = para.lower()
-        hits = sum(1 for t in search_terms if t in para_lower)
-        if hits >= 1:
-            relevant.append((hits, para))
-            total_len += len(para)
-            if total_len >= MAX_RELEVANT_CHARS:
-                break
 
-    if not relevant:
+        group_hit = any(t in para_lower for t in group_terms) if group_terms else False
+        tech_hit = any(t in para_lower for t in technique_terms) if technique_terms else False
+
+        if group_hit and tech_hit:
+            score = 3
+        elif group_hit:
+            score = 2
+        elif tech_hit:
+            score = 1
+        else:
+            continue
+
+        scored.append((score, para))
+        total_len += len(para)
+        if total_len >= MAX_RELEVANT_CHARS * 3:  # collect generously before trimming
+            break
+
+    if not scored:
         return ""
 
-    relevant.sort(key=lambda x: -x[0])
+    # Sort by descending score, then emit until we hit the char budget
+    scored.sort(key=lambda x: -x[0])
     passages = []
     chars = 0
-    for _, para in relevant:
+    for _, para in scored:
         passages.append(para)
         chars += len(para)
         if chars >= MAX_RELEVANT_CHARS:
@@ -664,6 +826,7 @@ def collect_reference_content(
     technique_name: str,
     technique_id: str,
     indicators: list | None = None,
+    aliases: list | None = None,
     verbose: bool = False,
 ) -> list:
     """Fetch content from citation URLs using a multi-method fallback chain.
@@ -730,7 +893,7 @@ def collect_reference_content(
         if cached is not None:
             if cached:
                 relevant = _extract_relevant_passages(
-                    cached, group_name, technique_name, technique_id, indicators
+                    cached, group_name, technique_name, technique_id, indicators, aliases
                 )
                 entry["extracted_content"] = relevant or cached[:MAX_RELEVANT_CHARS]
                 entry["method"] = "cached"
@@ -800,7 +963,7 @@ def collect_reference_content(
         # Extract relevant passages if we got content
         if text:
             relevant = _extract_relevant_passages(
-                text, group_name, technique_name, technique_id, indicators
+                text, group_name, technique_name, technique_id, indicators, aliases
             )
             entry["extracted_content"] = relevant or text[:MAX_RELEVANT_CHARS]
         else:
@@ -839,6 +1002,9 @@ def extract_indicators_from_text(text: str) -> dict:
     if len(_sample) > 0 and _alnum_spaces / len(_sample) < 0.65:
         return {}
 
+    # Ensure known-commands YAML is loaded
+    _load_known_commands()
+
     indicators = {}
 
     # Backtick-quoted strings (highest confidence)
@@ -857,7 +1023,14 @@ def extract_indicators_from_text(text: str) -> dict:
                 indicators.setdefault("paths", []).append(bt)
             elif re.search(r"\.(?:exe|dll|ps1|bat|vbs|sh|py|cmd)\b", bt_lower):
                 indicators.setdefault("software", []).append(bt)
+            elif bt_lower in _KNOWN_SOFTWARE_NAMES:
+                # Known offensive tool / malware name — no extension but still software
+                indicators.setdefault("software", []).append(bt)
             elif len(bt.split()) >= 2 or re.search(r"[-/]", bt):
+                # Multi-word or has flags/path separators — definitely a command
+                indicators.setdefault("cmd", []).append(bt)
+            elif bt_lower in _KNOWN_CMD_NAMES:
+                # Single-word known command (e.g. date, hwclock, timedatectl, net, sc)
                 indicators.setdefault("cmd", []).append(bt)
 
     # CVE IDs
@@ -1086,6 +1259,7 @@ def collect_references_parallel(
     technique_name: str,
     technique_id: str,
     indicators: list | None = None,
+    aliases: list | None = None,
     max_workers: int = 10,
 ) -> list:
     """Fetch multiple citations concurrently using a thread pool.
@@ -1101,14 +1275,14 @@ def collect_references_parallel(
     # Single citation — no need for threading overhead
     if len(citations) == 1:
         return collect_reference_content(
-            citations, group_name, technique_name, technique_id, indicators
+            citations, group_name, technique_name, technique_id, indicators, aliases
         )
 
     results = []
 
     def _fetch_one(cit):
         return collect_reference_content(
-            [cit], group_name, technique_name, technique_id, indicators
+            [cit], group_name, technique_name, technique_id, indicators, aliases
         )
 
     with ThreadPoolExecutor(max_workers=min(max_workers, len(citations))) as pool:

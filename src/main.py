@@ -1424,9 +1424,12 @@ def mainsaw(
         if collect_citations and _citation_url_lookup:
             _parts = each_procedure.split("||")
             _raw_proc = _parts[4] if len(_parts) > 4 else ""
+            _gid = _parts[0] if _parts else ""
             _group = _parts[1] if len(_parts) > 1 else ""
             _tid = _parts[2] if len(_parts) > 2 else ""
             _tname = _parts[3] if len(_parts) > 3 else ""
+            # Resolve aliases for this group from STIX metadata
+            _group_aliases = group_info_data.get(_gid, {}).get("aliases", [])
 
             # Collect citations from procedure text, technique description, and detection guidance
             _all_text = _raw_proc
@@ -1466,6 +1469,7 @@ def mainsaw(
                         _group,
                         _tname,
                         _tid,
+                        aliases=_group_aliases,
                         max_workers=_active_workers,
                     )
                     _batch_429 = 0

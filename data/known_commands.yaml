@@ -1,0 +1,722 @@
+# MITRESaw — Known single-word command/tool allowlist
+#
+# Purpose: classify backtick-quoted single tokens in citation text that would
+# otherwise be missed by the multi-word / flag heuristics in
+# extract_indicators_from_text().
+#
+# Structure:  platform → indicator_type → list of lowercase tokens
+# Platforms:  windows | linux | macos | cross_platform
+# Types:      cmd  (executables, built-ins, LOLBins, interpreters)
+#             software  (known offensive tools, implants, C2 frameworks)
+#
+# The loader in citation_collector.py flattens all cmd entries into
+# _KNOWN_CMD_NAMES and all software entries into _KNOWN_SOFTWARE_NAMES.
+# Matching is case-insensitive.
+#
+# Adding entries: keep alphabetical within each section for readability.
+# Do NOT add multi-word entries here — those are already caught by the
+# "len(bt.split()) >= 2" rule in extract_indicators_from_text().
+
+# ---------------------------------------------------------------------------
+# Windows
+# ---------------------------------------------------------------------------
+windows:
+  cmd:
+    # Time & clock
+    - at          # legacy scheduler / also "at" time command
+    - w32tm       # Windows Time service CLI
+    - tzutil      # timezone utility
+
+    # System discovery / enumeration
+    - arp
+    - hostname
+    - ipconfig
+    - nbtstat
+    - net         # net time / net user / net view / etc.
+    - netstat
+    - nslookup
+    - nltest
+    - qprocess
+    - quser
+    - qwinsta
+    - route
+    - systeminfo
+    - tasklist
+    - whoami
+
+    # Active Directory / domain
+    - adfind
+    - csvde
+    - dsquery
+    - gpresult
+    - gpupdate
+    - ldifde
+    - nltest
+
+    # Registry
+    - reg
+    - regedit
+    - regedt32
+
+    # Services / scheduling
+    - sc
+    - schtasks
+
+    # Scripting / execution (LOLBins)
+    - certutil
+    - cmstp
+    - cmd
+    - control
+    - cscript
+    - expand
+    - extrac32
+    - hh
+    - installutil
+    - makecab
+    - mavinject
+    - msbuild
+    - msdeploy
+    - msdt
+    - mshta
+    - msiexec
+    - odbcconf
+    - pcalua
+    - pcwrun
+    - presentationhost
+    - powershell
+    - pwsh
+    - regasm
+    - regsvcs
+    - regsvr32
+    - replace
+    - rpcping
+    - rundll32
+    - runscripthelper
+    - secedit
+    - stordiag
+    - ttdinject
+    - tttracer
+    - verclsid
+    - wab
+    - wmic
+    - wscript
+    - wsl
+    - xwizard
+
+    # Network tools
+    - curl
+    - ftp
+    - nmap
+    - ping
+    - telnet
+    - tftp
+    - tracert
+    - wget
+
+    # Compression
+    - compact
+    - makecab
+
+    # File operations / NTFS
+    - attrib
+    - bitsadmin
+    - cacls
+    - icacls
+    - robocopy
+    - sfc
+    - xcopy
+
+    # Credential / secrets
+    - procdump
+    - vaultcmd
+
+    # Event logs / audit
+    - auditpol
+    - wevtutil
+
+    # Firewall / network config
+    - netsh
+
+    # Database / NTDS
+    - esentutl
+    - ntdsutil
+
+    # Update / MSI
+    - wusa
+
+    # Lateral movement
+    - psexec
+    - winrm
+    - winrs
+
+    # Misc
+    - bcdedit
+    - dfsvc
+    - dnscmd
+    - forfiles
+    - mmc
+    - mtstocom
+    - pcwrun
+    - wbadmin
+
+# ---------------------------------------------------------------------------
+# Linux
+# ---------------------------------------------------------------------------
+linux:
+  cmd:
+    # Time & clock
+    - adjtimex
+    - chronyc
+    - chronyd
+    - clockdiff
+    - date
+    - hwclock
+    - ntpdate
+    - ntpq
+    - ntpstat
+    - rdate
+    - timedatectl
+
+    # System discovery / enumeration
+    - dmesg
+    - env
+    - free
+    - getent
+    - groups
+    - history
+    - hostname
+    - id
+    - last
+    - lastlog
+    - lscpu
+    - lshw
+    - lsusb
+    - lsblk
+    - printenv
+    - uname
+    - uptime
+    - users
+    - w
+    - who
+    - whoami
+
+    # Process
+    - bg
+    - disown
+    - fg
+    - htop
+    - jobs
+    - kill
+    - killall
+    - lsof
+    - ltrace
+    - nohup
+    - pgrep
+    - pkill
+    - ps
+    - screen
+    - strace
+    - timeout
+    - tmux
+    - top
+    - watch
+
+    # File system
+    - awk
+    - cat
+    - chattr
+    - chmod
+    - chown
+    - cp
+    - cut
+    - df
+    - diff
+    - du
+    - file
+    - find
+    - grep
+    - head
+    - ln
+    - locate
+    - ls
+    - lsattr
+    - mkdir
+    - mount
+    - mv
+    - od
+    - rm
+    - sed
+    - seq
+    - sort
+    - stat
+    - tail
+    - tee
+    - touch
+    - tree
+    - umount
+    - uniq
+    - wc
+    - whereis
+    - which
+    - xargs
+
+    # Network
+    - arp
+    - curl
+    - dig
+    - ftp
+    - host
+    - ifconfig
+    - ip
+    - nc
+    - ncat
+    - nmap
+    - nslookup
+    - ping
+    - route
+    - rsync
+    - scp
+    - sftp
+    - socat
+    - ss
+    - ssh
+    - tcpdump
+    - telnet
+    - tftp
+    - traceroute
+    - wget
+
+    # Firewall
+    - firewall-cmd
+    - ip6tables
+    - iptables
+    - nftables
+    - ufw
+
+    # Scripting / interpreters
+    - awk
+    - bash
+    - ksh
+    - lua
+    - perl
+    - php
+    - python
+    - python3
+    - ruby
+    - sh
+    - tcl
+    - zsh
+
+    # Privilege escalation
+    - doas
+    - groupadd
+    - groupdel
+    - newgrp
+    - passwd
+    - su
+    - sudo
+    - useradd
+    - userdel
+    - usermod
+    - visudo
+
+    # Persistence / init
+    - at
+    - chkconfig
+    - cron
+    - crontab
+    - init
+    - service
+    - systemctl
+
+    # Compression / archiving
+    - 7z
+    - bzip2
+    - bunzip2
+    - gzip
+    - gunzip
+    - tar
+    - unxz
+    - unzip
+    - xz
+    - zip
+
+    # Encoding / crypto
+    - base64
+    - gpg
+    - md5sum
+    - openssl
+    - sha1sum
+    - sha256sum
+    - xxd
+
+    # Kernel modules
+    - insmod
+    - lsmod
+    - modprobe
+    - rmmod
+
+    # Package management
+    - apt
+    - dnf
+    - dpkg
+    - pip
+    - pip3
+    - rpm
+    - yum
+
+    # Misc
+    - tee
+    - yes
+
+# ---------------------------------------------------------------------------
+# macOS
+# ---------------------------------------------------------------------------
+macos:
+  cmd:
+    # Time & clock
+    - date
+    - ntpdate
+    - sntp
+    - systemsetup
+    - timedatectl    # uncommon on macOS but appears in mixed reports
+
+    # System discovery / enumeration
+    - defaults
+    - dmesg
+    - dscacheutil
+    - dscl
+    - env
+    - free
+    - groups
+    - history
+    - hostname
+    - id
+    - last
+    - lastlog
+    - mdls
+    - mdfind
+    - plutil
+    - printenv
+    - sw_vers
+    - sysctl
+    - system_profiler
+    - uname
+    - uptime
+    - users
+    - w
+    - who
+    - whoami
+
+    # Process
+    - kill
+    - killall
+    - launchctl
+    - launchd
+    - lsof
+    - nohup
+    - pgrep
+    - pkill
+    - ps
+    - screen
+    - top
+    - tmux
+
+    # File system
+    - awk
+    - cat
+    - chmod
+    - chown
+    - codesign
+    - cp
+    - cut
+    - df
+    - diff
+    - diskutil
+    - du
+    - file
+    - find
+    - grep
+    - hdiutil
+    - head
+    - ln
+    - locate
+    - ls
+    - mkdir
+    - mount
+    - mv
+    - od
+    - rm
+    - sed
+    - sort
+    - spctl
+    - stat
+    - tail
+    - tee
+    - touch
+    - tree
+    - wc
+    - whereis
+    - which
+    - xattr
+
+    # Network
+    - arp
+    - curl
+    - dig
+    - ftp
+    - host
+    - ifconfig
+    - nc
+    - ncat
+    - nmap
+    - nslookup
+    - ping
+    - route
+    - scp
+    - sftp
+    - ssh
+    - tcpdump
+    - telnet
+    - traceroute
+    - wget
+
+    # Scripting / interpreters
+    - bash
+    - ksh
+    - lua
+    - osascript
+    - perl
+    - php
+    - python
+    - python3
+    - ruby
+    - sh
+    - zsh
+
+    # Privilege escalation
+    - dscl
+    - passwd
+    - su
+    - sudo
+
+    # Persistence
+    - launchctl
+    - launchd
+
+    # Security bypass / signing
+    - codesign
+    - kmutil
+    - kextload
+    - kextunload
+    - security
+    - spctl
+    - xattr
+
+    # Compression / archiving
+    - bzip2
+    - gzip
+    - tar
+    - unzip
+    - zip
+
+    # Encoding / crypto
+    - base64
+    - md5
+    - openssl
+    - shasum
+    - xxd
+
+    # Package management
+    - brew
+    - pip
+    - pip3
+
+# ---------------------------------------------------------------------------
+# Cross-platform (common across Windows / Linux / macOS)
+# ---------------------------------------------------------------------------
+cross_platform:
+  cmd:
+    # Discovery / recon
+    - curl
+    - dig
+    - hostname
+    - nmap
+    - nslookup
+    - ping
+    - telnet
+    - traceroute
+    - wget
+    - whoami
+
+    # Remote access
+    - ftp
+    - nc
+    - ncat
+    - scp
+    - sftp
+    - socat
+    - ssh
+
+    # Scripting / interpreters
+    - bash
+    - lua
+    - perl
+    - php
+    - python
+    - python3
+    - ruby
+    - sh
+
+    # Encoding / crypto
+    - base64
+    - openssl
+
+    # Compression
+    - gzip
+    - tar
+    - unzip
+    - zip
+
+    # Container / cloud
+    - aws
+    - az
+    - docker
+    - gcloud
+    - git
+    - kubectl
+    - terraform
+
+    # Network capture
+    - tcpdump
+    - tshark
+    - wireshark
+
+  software:
+    # -----------------------------------------------------------------------
+    # Credential access / dumping
+    # -----------------------------------------------------------------------
+    - impacket
+    - kekeo
+    - lazagne
+    - mimikatz
+    - nanodump
+    - pypykatz
+    - rubeus
+    - secretsdump
+    - dumpert
+    - gsecdump
+    - pwdump
+    - fgdump
+    - wce            # Windows Credential Editor
+
+    # -----------------------------------------------------------------------
+    # C2 frameworks / implants
+    # -----------------------------------------------------------------------
+    - brute-ratel
+    - caldera
+    - cobalt         # Cobalt Strike
+    - cobaltstrike
+    - covenant
+    - empire
+    - havoc
+    - metasploit
+    - meterpreter
+    - mythic
+    - nighthawk
+    - poshc2
+    - silenttrinity
+    - sliver
+
+    # -----------------------------------------------------------------------
+    # Post-exploitation / privilege escalation
+    # -----------------------------------------------------------------------
+    - bloodhound
+    - godpotato
+    - inveigh
+    - juicypotato
+    - printspoofer
+    - roguepotato
+    - rottenpotato
+    - seatbelt
+    - sharphound
+    - sharpup
+    - sharpview
+    - sweetpotato
+    - watson
+    - powerup
+    - powerless
+    - powersploit
+
+    # -----------------------------------------------------------------------
+    # Lateral movement
+    # -----------------------------------------------------------------------
+    - atexec
+    - crackmapexec
+    - dcomexec
+    - psexec
+    - smbexec
+    - wmiexec
+
+    # -----------------------------------------------------------------------
+    # Recon / scanning
+    # -----------------------------------------------------------------------
+    - aquatone
+    - eyewitness
+    - gowitness
+    - masscan
+    - responder
+
+    # -----------------------------------------------------------------------
+    # Exploitation
+    # -----------------------------------------------------------------------
+    - sqlmap
+
+    # -----------------------------------------------------------------------
+    # Exfiltration / tunneling
+    # -----------------------------------------------------------------------
+    - chisel
+    - dnscat
+    - frp
+    - iodine
+    - ligolo
+    - proxychains
+    - proxifier
+    - tor
+
+    # -----------------------------------------------------------------------
+    # RATs / malware families (commonly named in threat reports)
+    # -----------------------------------------------------------------------
+    - asyncrat
+    - darkcomet
+    - nanocore
+    - njrat
+    - orcus
+    - plugx
+    - poisonivy
+    - quasar
+    - remcos
+
+    # -----------------------------------------------------------------------
+    # Packers / loaders
+    # -----------------------------------------------------------------------
+    - donut
+    - scarecrow
+    - upx
+    - veil
+
+    # -----------------------------------------------------------------------
+    # Forensics / analysis tools (may appear in incident reports)
+    # -----------------------------------------------------------------------
+    - autopsy
+    - procdump
+    - redline
+    - volatility
+
+    # -----------------------------------------------------------------------
+    # Capture / MITM
+    # -----------------------------------------------------------------------
+    - burpsuite
+    - responder
+    - tcpdump
+    - wireshark
