@@ -652,57 +652,43 @@ def _extract_relevant_passages(
     technique_name: str,
     technique_id: str,
     indicators: list | None = None,
-    aliases: list | None = None,
 ) -> str:
-    """Return the most relevant paragraphs from full_text for this group/technique.
+    """Return the most relevant paragraphs from full_text for this technique.
 
-    Scoring (higher = more relevant, returned first):
-      3 pts — paragraph mentions both a group term AND a technique term
-      2 pts — paragraph mentions a group term only
-      1 pt  — paragraph mentions a technique term only
+    MITRE has already done the actor→citation linkage, so searching for the
+    group name is redundant: citations are either specifically about that
+    actor (linkage guaranteed) or describe a generic tool/technique (where
+    the actor name won't appear anyway).  We score purely on technique
+    relevance.
 
-    Paragraphs with no match at all are excluded.  If nothing scores ≥ 1
-    the full head of the text is returned (ensures STIX-only fallback still
-    produces output).
+    Scoring: count of distinct technique search terms found in the paragraph.
+    Paragraphs with zero hits are excluded.  Ties are broken by original
+    document order (stable sort).  Returns up to MAX_RELEVANT_CHARS.
     """
     if not full_text:
         return ""
 
-    # Build two disjoint term sets so we can score each axis independently.
-    group_terms: set = set()
-    technique_terms: set = set()
+    search_terms: set = set()
 
-    # Group name + every alias (each alias may be multi-word, split them)
-    _all_names = [group_name] + list(aliases or [])
-    for name in _all_names:
-        if not name:
-            continue
-        nl = name.lower()
-        group_terms.add(nl)
-        for part in nl.split():
-            if len(part) >= 4:
-                group_terms.add(part)
-
-    # Technique name (kept as full phrase to avoid false positives on common words)
+    # Technique name as a full phrase (avoids false positives on common words)
     if technique_name and len(technique_name) >= 4:
-        technique_terms.add(technique_name.lower())
+        search_terms.add(technique_name.lower())
 
-    # Technique ID — also add parent ID for sub-techniques
+    # Technique ID — also add parent ID for sub-techniques (e.g. T1059 from T1059.001)
     if technique_id:
-        technique_terms.add(technique_id.lower())
+        search_terms.add(technique_id.lower())
         if "." in technique_id:
-            technique_terms.add(technique_id.split(".")[0].lower())
+            search_terms.add(technique_id.split(".")[0].lower())
 
-    # Up to 5 extracted indicators as supplementary technique signals
+    # Extracted indicators as supplementary signals (e.g. "net time", "hwclock")
     if indicators:
         for ind in indicators[:5]:
             if isinstance(ind, str) and len(ind) >= 4:
-                technique_terms.add(ind.lower())
+                search_terms.add(ind.lower())
 
-    group_terms = {t for t in group_terms if len(t) >= 3}
-    technique_terms = {t for t in technique_terms if len(t) >= 3}
+    search_terms = {t for t in search_terms if len(t) >= 3}
 
-    if not group_terms and not technique_terms:
+    if not search_terms:
         return full_text[:MAX_RELEVANT_CHARS]
 
     paragraphs = re.split(r"\n\s*\n", full_text)
@@ -714,28 +700,16 @@ def _extract_relevant_passages(
         if len(para) < 30:
             continue
         para_lower = para.lower()
-
-        group_hit = any(t in para_lower for t in group_terms) if group_terms else False
-        tech_hit = any(t in para_lower for t in technique_terms) if technique_terms else False
-
-        if group_hit and tech_hit:
-            score = 3
-        elif group_hit:
-            score = 2
-        elif tech_hit:
-            score = 1
-        else:
-            continue
-
-        scored.append((score, para))
-        total_len += len(para)
-        if total_len >= MAX_RELEVANT_CHARS * 3:  # collect generously before trimming
-            break
+        hits = sum(1 for t in search_terms if t in para_lower)
+        if hits:
+            scored.append((hits, para))
+            total_len += len(para)
+            if total_len >= MAX_RELEVANT_CHARS * 3:
+                break
 
     if not scored:
         return ""
 
-    # Sort by descending score, then emit until we hit the char budget
     scored.sort(key=lambda x: -x[0])
     passages = []
     chars = 0
@@ -826,7 +800,6 @@ def collect_reference_content(
     technique_name: str,
     technique_id: str,
     indicators: list | None = None,
-    aliases: list | None = None,
     verbose: bool = False,
 ) -> list:
     """Fetch content from citation URLs using a multi-method fallback chain.
@@ -893,7 +866,7 @@ def collect_reference_content(
         if cached is not None:
             if cached:
                 relevant = _extract_relevant_passages(
-                    cached, group_name, technique_name, technique_id, indicators, aliases
+                    cached, group_name, technique_name, technique_id, indicators
                 )
                 entry["extracted_content"] = relevant or cached[:MAX_RELEVANT_CHARS]
                 entry["method"] = "cached"
@@ -963,7 +936,7 @@ def collect_reference_content(
         # Extract relevant passages if we got content
         if text:
             relevant = _extract_relevant_passages(
-                text, group_name, technique_name, technique_id, indicators, aliases
+                text, group_name, technique_name, technique_id, indicators
             )
             entry["extracted_content"] = relevant or text[:MAX_RELEVANT_CHARS]
         else:
@@ -1259,7 +1232,6 @@ def collect_references_parallel(
     technique_name: str,
     technique_id: str,
     indicators: list | None = None,
-    aliases: list | None = None,
     max_workers: int = 10,
 ) -> list:
     """Fetch multiple citations concurrently using a thread pool.
@@ -1275,14 +1247,14 @@ def collect_references_parallel(
     # Single citation — no need for threading overhead
     if len(citations) == 1:
         return collect_reference_content(
-            citations, group_name, technique_name, technique_id, indicators, aliases
+            citations, group_name, technique_name, technique_id, indicators
         )
 
     results = []
 
     def _fetch_one(cit):
         return collect_reference_content(
-            [cit], group_name, technique_name, technique_id, indicators, aliases
+            [cit], group_name, technique_name, technique_id, indicators
         )
 
     with ThreadPoolExecutor(max_workers=min(max_workers, len(citations))) as pool:

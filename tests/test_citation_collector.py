@@ -85,53 +85,17 @@ def test_extract_relevant_no_matches():
     assert result == ""
 
 
-def test_extract_relevant_aliases():
-    """Aliases allow matching when the primary group name is not mentioned."""
+def test_extract_relevant_technique_only_scoring():
+    """Citations are scored on technique relevance only — group name is irrelevant
+    since MITRE has already done the actor→citation linkage."""
     text = (
-        "Cozy Bear has been observed using spearphishing to gain initial access.\n\n"
-        "The group leveraged System Time Discovery to synchronise activity.\n\n"
+        "System Time Discovery via timedatectl is common on Linux systems.\n\n"
+        "Adversaries query the system clock to synchronise implant activity.\n\n"
         "Unrelated paragraph about weather and sports."
     )
-    # Primary name "APT29" does not appear, but alias "Cozy Bear" does
-    result = _extract_relevant_passages(
-        text, "APT29", "System Time Discovery", "T1124",
-        aliases=["Cozy Bear", "The Dukes"]
-    )
-    assert "Cozy Bear" in result
+    result = _extract_relevant_passages(text, "ZIRCONIUM", "System Time Discovery", "T1124")
     assert "System Time Discovery" in result
     assert "weather" not in result
-
-
-def test_extract_relevant_alias_technique_both_score_highest():
-    """Paragraphs matching both alias AND technique rank above group-only matches."""
-    text = (
-        "HAFNIUM exploited the vulnerability to access time synchronisation services.\n\n"
-        "HAFNIUM is a Chinese state-sponsored group.\n\n"
-        "System Time Discovery via timedatectl is common on Linux."
-    )
-    result = _extract_relevant_passages(
-        text, "ZIRCONIUM", "System Time Discovery", "T1124",
-        aliases=["HAFNIUM", "APT41"]
-    )
-    # The para with both alias and technique should be present
-    assert "exploited the vulnerability to access time synchronisation" in result
-
-
-def test_extract_relevant_generic_technique_filtered_without_group():
-    """A page that only broadly mentions time concepts but not the group/alias
-    should score lower than paragraphs that also name the actor."""
-    text = (
-        "Apple provides APIs for time synchronisation on macOS systems.\n\n"
-        "HAFNIUM used net time to query domain controllers.\n\n"
-        "NTP is the standard protocol for network time."
-    )
-    result = _extract_relevant_passages(
-        text, "ZIRCONIUM", "System Time Discovery", "T1124",
-        aliases=["HAFNIUM"]
-    )
-    # The HAFNIUM+net time paragraph should appear; the generic Apple paragraph
-    # may appear but should not dominate (score 1 vs 3)
-    assert "HAFNIUM" in result
 
 
 def test_extract_relevant_known_commands():
