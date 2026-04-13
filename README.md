@@ -261,7 +261,19 @@ When a citation page is successfully fetched, MITRESaw runs its extraction patte
 
 A comprehensive per-platform allowlist covers single-word commands that would otherwise be missed by the multi-word/flag heuristic. For example, `hwclock`, `timedatectl`, `date`, `net`, `sc`, `w32tm` — all common in threat reports but trivially short. The YAML is organised by platform (`windows`, `linux`, `macos`, `cross_platform`) and type (`cmd`, `software`) and can be extended without touching code.
 
-Approximately 300 single-word commands and 80 known offensive tool names (mimikatz, rubeus, bloodhound, cobalt strike, etc.) are included by default. Tools that appear in backticks without a file extension (e.g. `` `mimikatz` ``) are classified as `software`; system commands are classified as `cmd`.
+Approximately 300 single-word commands and 80 known offensive tool names (mimikatz, rubeus, bloodhound, cobalt strike, etc.) are included by default.
+
+**Classification priority** — when a backtick-quoted string is encountered, the classifier checks in this order:
+
+1. Registry path (`HKLM\...`, `HKCU\...`) → `reg`
+2. File/directory path (`C:\...`, `\\unc\...`, `/etc/...`) → `paths`
+3. **First word is a known command** (from YAML) → `cmd` — this takes priority over any file extension in the arguments, so `powershell -File x.ps1`, `schtasks /tr x.exe`, and `del /f /q x.exe` are correctly classified as `cmd` rather than `software`
+4. Contains a known file extension (`.exe`, `.dll`, `.ps1`, etc.) → `software`
+5. Known offensive tool name (from YAML, no extension) → `software`
+6. Multi-word or contains flags/path separators → `cmd`
+7. Single-word match in YAML `cmd` list → `cmd`
+
+Windows shell built-ins covered include: `cmd`, `powershell`, `pwsh`, `schtasks`, `sc`, `reg`, `net`, `del`, `copy`, `move`, `ren`, `rmdir`, `type`, `attrib`, `icacls`, `xcopy`, `robocopy`, and ~280 others across Windows, Linux, macOS, and cross-platform.
 
 #### Relevance Filtering
 
@@ -469,6 +481,39 @@ No authentication is included — intended for local use only.
 Because the MITRE ATT&amp;CK has been built and is managed in the United States, the keywords provided need to be in US English, as opposed to UK English (e.g. defense vs defence).
 <br><br><br>
 
+
+## Testing
+
+```bash
+# Run all tests
+.venv/bin/python -m pytest tests/ -v
+
+# Run with full inspection output (recommended for reviewing what the pipeline extracts)
+.venv/bin/python -m pytest tests/test_citation_workflow.py -v -s
+
+# Run a specific section
+.venv/bin/python -m pytest tests/test_citation_workflow.py -v -s -k "TestRelevanceExtraction"
+```
+
+The test suite covers:
+
+| Section | File | What it tests |
+|---------|------|---------------|
+| A — Relevance Extraction | `test_citation_workflow.py` | Paragraph filtering: right text survives, noise is dropped |
+| B — Indicator Extraction | `test_citation_workflow.py` | cmd/software/reg/path/CVE/port classification from realistic text |
+| C — Full Pipeline | `test_citation_workflow.py` | End-to-end: relevance filter → extraction → dedup |
+| D — ATT&CK Spot-checks | `test_citation_workflow.py` | Parametrized fixtures for 8 real technique IDs |
+| E — Edge Cases | `test_citation_workflow.py` | Empty input, short text, garbled PDF, HTML stripping |
+| F — Known Limitations (xfail) | `test_citation_workflow.py` | Documents known gaps; `XPASS` means a limitation has been fixed |
+| Unit tests | `test_citation_collector.py` | Function-level tests for URL rewriting, skip logic, HTML parsing, imports |
+
+Running with `-s` prints `WHAT / WHY / PASS` description lines before each test's output so the suite is self-documenting without reading the source.
+
+**Section F (xfail)** tracks known limitations rather than bugs. An `xfail` result means the limitation is still present (expected). An `XPASS` result means it has been fixed — the marker should be removed and the test promoted to a normal pass.
+
+Current known limitations:
+- Commands in a prose paragraph that contains no technique name/ID score zero in the relevance filter and are dropped, even if the technique was established in an earlier paragraph. Fix: the paragraph must explicitly mention the technique name or ID alongside the command.
+- Bare process names in backticks (e.g. `` `lsass` ``, `` `explorer` ``) with no `.exe` extension and not listed in `data/known_commands.yaml` are not captured. Fix: add the name to the YAML.
 
 ## Acknowledgements
 * [Best-README-Template](https://github.com/othneildrew/Best-README-Template)
