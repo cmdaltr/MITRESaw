@@ -225,9 +225,12 @@ For each `(Citation: X)` found in procedure text, technique descriptions, and de
 | **headless** | Playwright Chromium for Cloudflare/JS-protected sites | ✅ |
 | **wayback** | Wayback Machine (web.archive.org) archived snapshot | ✅ |
 | **google_cache** | Google's cached version of the page | ✅ |
-| **pdf:PyPDF2** | PDF downloaded and text extracted | ✅ |
+| **pdf:PyPDF2 / pdf:pdfplumber** | PDF downloaded and text extracted via parser | ✅ |
+| **pdf:ocr** | Scanned/image-only PDFs rendered and OCR'd via `pdf2image` + `pytesseract` | ✅ |
 | **cached** | Previously fetched, loaded from `.citation_cache/` | ✅ |
 | **stix_metadata** | STIX description field only (author, title, date) | ⚠️ |
+
+The OCR method is a fallback used only when a PDF yields no extractable text via the standard parsers (i.e. it is a scanned document or image-based PDF). It requires `pdf2image` (wraps poppler) and `pytesseract` (wraps Tesseract) to be installed. If absent, the collector falls back to `stix_metadata` as normal.
 
 ### URL Rewriting
 
@@ -253,6 +256,16 @@ When a citation page is successfully fetched, MITRESaw runs its extraction patte
 | 🌐 | `ports` | Network port numbers |
 
 **Only new indicators are shown** — anything already extracted by MITRESaw's native pipeline is deduplicated. This means techniques that had no native indicators (e.g. T1621 MFA Request Generation) can still gain indicators from their citation sources.
+
+#### Known Commands (`data/known_commands.yaml`)
+
+A comprehensive per-platform allowlist covers single-word commands that would otherwise be missed by the multi-word/flag heuristic. For example, `hwclock`, `timedatectl`, `date`, `net`, `sc`, `w32tm` — all common in threat reports but trivially short. The YAML is organised by platform (`windows`, `linux`, `macos`, `cross_platform`) and type (`cmd`, `software`) and can be extended without touching code.
+
+Approximately 300 single-word commands and 80 known offensive tool names (mimikatz, rubeus, bloodhound, cobalt strike, etc.) are included by default. Tools that appear in backticks without a file extension (e.g. `` `mimikatz` ``) are classified as `software`; system commands are classified as `cmd`.
+
+#### Relevance Filtering
+
+Before extracting indicators, fetched citation text is filtered to the most relevant paragraphs. Scoring is **technique-focused** — paragraphs are ranked by the number of technique-related terms they contain (technique name, technique ID, sub-technique parent ID, and up to five extracted indicators used as supplementary signals). Group name is deliberately excluded from scoring: MITRE has already done the actor→citation linkage, and searching for the group name is redundant regardless of whether the citation is actor-specific or describes generic tool behaviour.
 
 Citation-extracted indicators are:
 - **Displayed in the terminal** under each citation with emojis
@@ -369,8 +382,10 @@ Workers start at the configured maximum (default 50) and automatically adjust du
 | Package | Purpose | Install |
 |---------|---------|---------|
 | `playwright` | Headless browser for JS/Cloudflare sites | `pip install playwright && playwright install chromium` |
+| `pdf2image` | Render PDF pages to images for OCR | `pip install pdf2image` (also requires [poppler](https://poppler.freedesktop.org): `brew install poppler` / `apt install poppler-utils`) |
+| `pytesseract` | OCR images from scanned PDFs | `pip install pytesseract` (also requires [Tesseract](https://github.com/tesseract-ocr/tesseract): `brew install tesseract` / `apt install tesseract-ocr`) |
 
-Playwright is optional — the collector works without it but will skip headless browsing for Cloudflare/JS-protected sites.
+All three are optional — the collector works without them and falls back gracefully. Install `pdf2image` + `pytesseract` (plus their system libraries) to enable OCR of scanned/image-only PDFs that yield no text via PyPDF2 or pdfplumber.
 
 ### Failed Citations Report
 
