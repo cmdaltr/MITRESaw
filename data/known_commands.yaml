@@ -121,9 +121,20 @@ windows:
     - attrib
     - bitsadmin
     - cacls
+    - copy
+    - del
+    - erase
     - icacls
+    - md
+    - mkdir
+    - move
+    - rd
+    - ren
+    - rename
+    - rmdir
     - robocopy
     - sfc
+    - type
     - xcopy
 
     # Credential / secrets

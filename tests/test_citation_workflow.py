@@ -15,6 +15,7 @@ Test groups:
   C) Full pipeline — relevance → indicator extraction → dedup → classification
   D) Parametrized spot-checks — real ATT&CK group/technique pairs
   E) Edge cases — empty content, garbled PDF text, image-only stubs
+  F) Known bugs (xfail) — confirmed broken behaviour; XPASS means the bug is fixed
 """
 
 import json
@@ -482,6 +483,43 @@ class TestIndicatorExtraction:
                          "information about", "the type of", "for example"]
         for phrase in prose_phrases:
             assert phrase not in cmds, f"Prose fragment '{phrase}' should not be a cmd indicator"
+
+    def test_known_cmd_takes_priority_over_extension_match(self):
+        """Known commands with .exe/.ps1 arguments must not be misclassified as software."""
+        print("\n  WHAT: Three backtick strings where the first word is a known command")
+        print("        but the arguments contain a file extension (.ps1, .exe) that")
+        print("        previously triggered the software/filename pattern first:")
+        print("          `powershell -ExecutionPolicy Bypass -File stage2.ps1`")
+        print("          `schtasks /create /tn ... /tr update.exe /sc daily`")
+        print("          `del /f /q C:\\Windows\\Temp\\payload.exe`")
+        print("  WHY:  The old classifier checked extensions before checking whether the")
+        print("        first word was a known command, so these landed in 'software'.")
+        print("        Fix: first-word known-cmd check now runs before extension check.")
+        print("  PASS: All three appear in 'cmd' — none in 'software'.")
+        cases = {
+            "powershell -File": (
+                "The actor loaded `powershell -ExecutionPolicy Bypass -File C:\\Temp\\stage2.ps1` "
+                "as a second-stage payload delivery mechanism on the compromised host."
+            ),
+            "schtasks with exe": (
+                "Persistence was established via `schtasks /create /tn WindowsUpdate "
+                "/tr C:\\Temp\\update.exe /sc daily /st 09:00` on the compromised host."
+            ),
+            "del with exe": (
+                "The actor cleaned up artefacts using `del /f /q C:\\Windows\\Temp\\payload.exe` "
+                "immediately after the exfiltration task completed on the victim machine."
+            ),
+        }
+        for label, text in cases.items():
+            result = extract_indicators_from_text(text)
+            _print_indicators(result, label)
+            cmds = [c.lower() for c in result.get("cmd", [])]
+            sw   = [s.lower() for s in result.get("software", [])]
+            first_word = label.split()[0].lower()  # 'powershell', 'schtasks', 'del'
+            assert any(first_word in c for c in cmds), \
+                f"'{label}' should be cmd, got software={sw}"
+            assert not any(first_word in s for s in sw), \
+                f"'{label}' must not be in software: {sw}"
 
     def test_garbled_pdf_text_rejected(self):
         """Garbled/binary text from bad PDF extraction should return no indicators."""
@@ -960,3 +998,89 @@ class TestEdgeCases:
                     print("    (no text content)")
             except Exception as e:
                 print(f"    Error reading {f.name}: {e}")
+
+
+# ---------------------------------------------------------------------------
+# F) Known bugs — xfail
+#    These tests confirm broken behaviour. They are expected to fail right now.
+#    When the underlying bug is fixed, pytest will report XPASS — that's your
+#    signal to remove the xfail marker and promote the test to a normal pass.
+# ---------------------------------------------------------------------------
+
+class TestKnownBugs:
+
+    @pytest.fixture(autouse=True, scope="class")
+    def _section_banner(self):
+        print("\n")
+        print("  ╔══════════════════════════════════════════════════════════╗")
+        print("  ║  SECTION F — Known Bugs (xfail)                          ║")
+        print("  ║  Expected to FAIL. XPASS means the bug has been fixed.   ║")
+        print("  ╚══════════════════════════════════════════════════════════╝")
+        yield
+
+    @pytest.mark.xfail(strict=False, reason=(
+        "KNOWN LIMITATION: the relevance filter scores paragraphs by technique terms. "
+        "In reports that use a separate table to map technique IDs and then discuss "
+        "the commands in a later prose section (without repeating the technique name), "
+        "the prose section scores zero and is dropped — even though the commands are "
+        "technique-relevant. The filter has no table-aware parsing."
+    ))
+    def test_commands_separated_from_technique_by_table(self):
+        """Commands in a table-mapped paragraph with no technique name are missed."""
+        print("\n  WHAT: Report structured like a real advisory: a table maps T1124 to")
+        print("        'net time', then a separate prose section discusses the commands")
+        print("        WITHOUT repeating 'T1124' or 'System Time Discovery'.")
+        print("  WHY:  Real reports often separate technique→command mapping (in a table)")
+        print("        from the command description (in prose). The filter only scores on")
+        print("        technique terms and has no way to follow the table→prose reference.")
+        print("  PASS: xfail — this limitation is accepted for now.")
+        text = textwrap.dedent("""\
+            Executive Summary
+            =================
+            This advisory describes System Time Discovery (T1124) activity observed
+            across several Windows hosts during the intrusion.
+
+            Command Details
+            ===============
+            The implant first ran `net time` to synchronise with the domain controller,
+            then queried `w32tm /query /status` to confirm the Windows Time Service was
+            accessible. No technique names or IDs appear in this paragraph — only the
+            commands themselves. This is typical of advisory prose sections that follow
+            a technique-mapping table in the same document.
+        """)
+        result = _extract_relevant_passages(
+            text, "HAFNIUM", "System Time Discovery", "T1124"
+        )
+        _print_passages(result, "Technique in intro only — command-only para should surface")
+        # The 'Command Details' paragraph has no T1124/System Time Discovery mention.
+        # It scores zero and is dropped — only the Executive Summary paragraph is kept.
+        # The commands are entirely absent from the output even though they are clearly
+        # related. This assertion FAILS (xfail) — a known limitation.
+        assert "net time" in result, (
+            "Command paragraph not captured — no technique terms in that paragraph"
+        )
+
+    @pytest.mark.xfail(strict=False, reason=(
+        "KNOWN LIMITATION: single-word process or module names that are not in "
+        "known_commands.yaml and have no file extension, flags, or path separators "
+        "are silently dropped by the extractor. e.g. `lsass`, `explorer`, `ntdll`."
+    ))
+    def test_bare_process_names_without_extension_captured(self):
+        """Single-word process names without .exe extension in backticks are missed."""
+        print("\n  WHAT: Text with bare process names in backticks: `lsass`, `explorer`,")
+        print("        `ntdll` — no file extension, no flags, not in known_commands YAML.")
+        print("  WHY:  The extractor's last resort for unknown single-word backtick content")
+        print("        is the known_commands allowlist. If a name isn't there, it's dropped.")
+        print("        Process names without .exe are common in analysis reports.")
+        print("  PASS: xfail — add names to the YAML allowlist as needed to fix.")
+        text = (
+            "The actor injected into `lsass` to steal credentials. "
+            "`explorer` was used as a host process for shellcode. "
+            "`ntdll` hooks were installed to intercept API calls."
+        )
+        result = extract_indicators_from_text(text)
+        _print_indicators(result, "bare process names — expect empty (known gap)")
+        sw = [s.lower() for s in result.get("software", [])]
+        assert "lsass" in sw and "explorer" in sw, (
+            "Bare process names not captured — add to known_commands.yaml to fix"
+        )

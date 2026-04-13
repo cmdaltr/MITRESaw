@@ -132,7 +132,17 @@ def test_should_skip_url():
     assert _should_skip_url("https://example.com/report.docx") is True  # Binary, not PDF
     assert _should_skip_url("https://example.com/report.pdf") is False  # PDFs handled by Method 4
     assert _should_skip_url("https://example.com/report.html") is False
-    assert _should_skip_url("https://www.fireeye.com/blog/threat-research") is False
+    assert _should_skip_url("https://www.fireeye.com/blog/threat-research") is True  # Dead domain — pipeline rewrites to cloud.google.com before this check
+
+
+def test_fireeye_rewrite_then_skip():
+    """fireeye.com is rewritten to cloud.google.com by _rewrite_url; the rewritten URL is not skipped."""
+    # fireeye.com no longer exists (acquired by Mandiant, then Google).
+    # The pipeline calls _rewrite_url BEFORE _should_skip_url, so the
+    # skip list never sees a fireeye.com URL during normal operation.
+    rewritten = _rewrite_url("https://www.fireeye.com/blog/threat-research/2020/12/evasive-attacker.html")
+    assert "cloud.google.com" in rewritten, "fireeye.com should be rewritten to cloud.google.com"
+    assert _should_skip_url(rewritten) is False, "rewritten cloud.google.com URL should not be skipped"
 
 
 # ---------------------------------------------------------------------------

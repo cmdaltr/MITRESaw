@@ -994,6 +994,10 @@ def extract_indicators_from_text(text: str) -> dict:
                 indicators.setdefault("reg", []).append(bt)
             elif re.match(r"[A-Za-z]:\\", bt) or bt.startswith("\\\\") or re.match(r"/(?:etc|var|tmp|usr|home|opt|bin|proc)/", bt):
                 indicators.setdefault("paths", []).append(bt)
+            elif bt_lower.split() and bt_lower.split()[0] in _KNOWN_CMD_NAMES:
+                # First word is a known command — always cmd regardless of extensions
+                # in the arguments (e.g. `del /f /q payload.exe`, `powershell -File x.ps1`)
+                indicators.setdefault("cmd", []).append(bt)
             elif re.search(r"\.(?:exe|dll|ps1|bat|vbs|sh|py|cmd)\b", bt_lower):
                 indicators.setdefault("software", []).append(bt)
             elif bt_lower in _KNOWN_SOFTWARE_NAMES:
