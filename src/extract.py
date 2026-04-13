@@ -265,12 +265,60 @@ def extract_filepath_indicators(description):
         .strip('"')
     )
     filepath_identifiers = []
+
+    # --- Step 0: harvest <code> and backtick content before stripping tags ---
+    # Extract each tagged segment explicitly so we can treat its content as a
+    # potential standalone indicator (e.g. DLL name, space-after-filename).
+    _tagged_segments = (
+        re.findall(r"<code>(.*?)</code>", description, re.IGNORECASE | re.DOTALL)
+        + re.findall(r"`([^`]+)`", description)
+    )
+    _fname_re = re.compile(
+        r"([A-Za-z0-9_\-\.]{2,}\.(?:exe|dll|sys|bat|cmd|ps1|vbs|vbe|js|jse|"
+        r"wsf|wsh|scr|cpl|lnk|hta|msi|msp|jar|py|sh|pif|inf|reg))\s*$",
+        re.IGNORECASE,
+    )
+    for _seg in _tagged_segments:
+        _seg_s = _seg.strip()
+        # Quoted Windows paths inside the segment (allow spaces)
+        _seg_quoted = re.findall(r'"((?:[A-Za-z]:\\|%[A-Za-z_]+%\\)[^"<>|]{3,})"', _seg_s)
+        filepath_identifiers.extend(_seg_quoted)
+        # Unquoted Windows paths — skip any that are a truncated prefix of a quoted match
+        _seg_quoted_lower = [q.lower() for q in _seg_quoted]
+        for _p in re.findall(r"((?:[A-Za-z]:\\|%[A-Za-z_]+%\\)[^\s\"'<>|,\)]{3,})", _seg_s):
+            if not any(q.startswith(_p.lower()) for q in _seg_quoted_lower):
+                filepath_identifiers.append(_p)
+        # Unix path inside the segment
+        for _p in re.findall(
+            r"((?:/etc|/tmp|/var|/usr|/opt|/home|/bin|/sbin|/dev|/proc|/sys)/\S{2,})", _seg_s
+        ):
+            filepath_identifiers.append(_p)
+        # Standalone filename at end of segment (catches DLL names, space-after-filename)
+        _m = _fname_re.search(_seg_s)
+        if _m:
+            filepath_identifiers.append(_m.group(1))
+
+    # Strip <code> tags so the general regexes below treat their content as plain text
+    description = re.sub(r"</?code>", "", description, flags=re.IGNORECASE)
+
     # Windows paths: C:\..., %ENV%\...
-    win_paths = re.findall(
+    # Pass 1 — quoted paths allow spaces: "c:\Program Files\..."
+    quoted_win = re.findall(
+        r'"((?:[A-Za-z]:\\|%[A-Za-z_]+%\\)[^"<>|]{3,})"',
+        description,
+    )
+    filepath_identifiers.extend(quoted_win)
+    # Pass 2 — unquoted paths (no spaces); skip if already covered by a quoted match
+    unquoted_win = re.findall(
         r"((?:[A-Za-z]:\\|%[A-Za-z_]+%\\)[^\s\"'<>|,\)]{3,})",
         description,
     )
-    filepath_identifiers.extend(win_paths)
+    quoted_lower = [q.lower() for q in quoted_win]
+    for p in unquoted_win:
+        p_lower = p.lower()
+        # Drop if it is a prefix/truncation of any quoted path
+        if not any(q.startswith(p_lower) for q in quoted_lower):
+            filepath_identifiers.append(p)
     # Unix paths: /etc/..., /tmp/..., /var/..., /usr/..., /opt/..., /home/...
     unix_paths = re.findall(
         r"((?:/etc|/tmp|/var|/usr|/opt|/home|/bin|/sbin|/dev|/proc|/sys)/[^\s\"'<>|,\)]{2,})",
@@ -293,7 +341,18 @@ def extract_filepath_indicators(description):
             continue
         if len(fp) > 3 and fp not in cleaned:
             cleaned.append(fp)
-    return sorted(list(set(cleaned)))
+    # Remove truncated-prefix duplicates: if "c:\Foo" exists alongside
+    # "c:\Foo Bar" the shorter one is a spurious truncation — drop it.
+    cleaned_lower = [c.lower() for c in cleaned]
+    deduped = [
+        fp for fp in cleaned
+        if not any(
+            other.startswith(fp.lower() + " ") or other.startswith(fp.lower() + "\\")
+            for other in cleaned_lower
+            if other != fp.lower()
+        )
+    ]
+    return sorted(list(set(deduped)))
 
 
 def extract_indicators(
