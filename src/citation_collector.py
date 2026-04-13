@@ -1006,6 +1006,33 @@ def extract_indicators_from_text(text: str) -> dict:
                 # Single-word known command (e.g. date, hwclock, timedatectl, net, sc)
                 indicators.setdefault("cmd", []).append(bt)
 
+    # Filter prose fragments from cmd/software backtick captures.
+    # These are the same patterns used by extract.py but applied here to
+    # citation text which has no MITRE markdown formatting to constrain scope.
+    _PROSE_PHRASES = frozenset([
+        "where the", "such as", "can be used", "can additionally",
+        "information about", "information such", "the type of",
+        "for example", "is used to", "are used to", "may use",
+        "can also", "can list", "will be", "used by",
+        "providers also", "cloud providers", "infrastructure as",
+        "as well as", "in order to", "refers to", "known as",
+        "which is", "that is", "there is", "there are",
+    ])
+    _PROSE_STARTS = (
+        "in ", "on ", "the ", "that ", "which ", "a ", "an ", "and ",
+        "or ", "for ", "to ", "from ", "with ", "this ", "these ",
+        "can ", "may ", "is ", "are ", "it ", "its ", "also ",
+        "when ", "if ", "as ", "by ", "at ", "of ",
+    )
+    for _prose_type in ("cmd", "software"):
+        if _prose_type in indicators:
+            indicators[_prose_type] = [
+                v for v in indicators[_prose_type]
+                if not any(phrase in v.lower() for phrase in _PROSE_PHRASES)
+                and not any(v.lower().startswith(prefix) for prefix in _PROSE_STARTS)
+                and len(v) <= 150
+            ]
+
     # CVE IDs
     cve_re = re.compile(r"CVE-\d{4}-\d{4,7}")
     cves = list(set(cve_re.findall(text)))
