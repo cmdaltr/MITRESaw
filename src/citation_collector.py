@@ -954,6 +954,39 @@ def collect_reference_content(
     return results
 
 
+_INDICATOR_NOISE_CHARS = frozenset("@%[]{}^!;~<>=|#$&")
+
+
+def _is_plausible_indicator(bt: str) -> bool:
+    """Return False if a backtick string is clearly garbled text, not a real indicator.
+
+    Garbled strings arise from badly-extracted PDFs (ASCII garbage, RTF markup,
+    base64 fragments, etc.).  Real commands/paths/tools are mostly alphabetic with
+    a small set of punctuation characters.
+    """
+    # Embedded newlines / form-feeds — PDF paragraph boundaries bleeding in
+    if any(c in bt for c in "\n\r\x0b\x0c"):
+        return False
+    # RTF control word sequences like \pard \ql \BM7 from PDF-to-text artifacts.
+    # Windows paths (C:\Windows\...) and UNC paths (\\server\share) are exempt —
+    # backslashes in those are path separators, not RTF escapes.
+    _has_win_path = bool(
+        re.search(r"[A-Za-z]:\\", bt) or   # drive path: C:\...
+        re.search(r"\\\\[A-Za-z]", bt)      # UNC path: \\server (anywhere in string)
+    )
+    if not _has_win_path and re.search(r"\\[A-Za-z]{2,}", bt):
+        return False
+    # High density of characters that almost never appear in real commands/paths
+    noise = sum(1 for c in bt if c in _INDICATOR_NOISE_CHARS)
+    if noise >= 2 and len(bt) > 0 and noise / len(bt) > 0.07:
+        return False
+    # Very low alphabetic ratio — real indicators are mostly letters
+    alpha = sum(1 for c in bt if c.isalpha())
+    if len(bt) > 5 and alpha / len(bt) < 0.40:
+        return False
+    return True
+
+
 def extract_indicators_from_text(text: str) -> dict:
     """Extract indicators from fetched citation text using MITRESaw's patterns.
 
@@ -988,6 +1021,8 @@ def extract_indicators_from_text(text: str) -> dict:
         for bt in backticks[:30]:
             bt = bt.strip()
             if len(bt) < 3 or len(bt) > 200:
+                continue
+            if not _is_plausible_indicator(bt):
                 continue
             bt_lower = bt.lower()
             if re.match(r"HK(?:LM|CU|CR|U|CC)\\", bt, re.IGNORECASE):

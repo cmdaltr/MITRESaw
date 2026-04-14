@@ -13,6 +13,19 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+# XML 1.0 forbids certain control characters in cell values. openpyxl writes
+# them verbatim, producing an XLSX that Excel rejects with a "found a problem
+# with some content" dialog. Strip them before assigning any string cell value.
+# Allowed: \x09 (tab), \x0A (LF), \x0D (CR), \x20+ (printable).
+_RE_XML_ILLEGAL = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\uFFFE\uFFFF]")
+
+
+def _safe(val):
+    """Strip XML-illegal characters from string values; pass other types through."""
+    if isinstance(val, str):
+        return _RE_XML_ILLEGAL.sub("", val)
+    return val
+
 
 
 
@@ -540,7 +553,7 @@ def generate_evidence_report(
         ]
 
         for col_idx, val in enumerate(values, 1):
-            cell = ws.cell(row=row_idx, column=col_idx, value=val)
+            cell = ws.cell(row=row_idx, column=col_idx, value=_safe(val))
             cell.fill = row_fill
             cell.alignment = align_left
             cell.border = _THIN_BORDER
@@ -627,7 +640,7 @@ def generate_evidence_report(
         bg = _group_bg(g_name)
         row_fill = PatternFill(start_color=bg, end_color=bg, fill_type="solid")
         for col_idx, val in enumerate(values, 1):
-            cell = ws2.cell(row=gs_row, column=col_idx, value=val)
+            cell = ws2.cell(row=gs_row, column=col_idx, value=_safe(val))
             cell.font = Font(name="Calibri", size=10, color="E0F2FE")
             cell.fill = row_fill
             cell.alignment = align_left
@@ -684,7 +697,7 @@ def generate_evidence_report(
         bg = _BG_DARK if (tp_row - 4) % 2 == 0 else _BG_ALT
         row_fill = PatternFill(start_color=bg, end_color=bg, fill_type="solid")
         for col_idx, val in enumerate(values, 1):
-            cell = ws3.cell(row=tp_row, column=col_idx, value=val)
+            cell = ws3.cell(row=tp_row, column=col_idx, value=_safe(val))
             cell.font = Font(name="Calibri", size=10, color="E0F2FE")
             cell.fill = row_fill
             cell.alignment = align_left

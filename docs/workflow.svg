@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1000" height="1380" viewBox="0 0 1000 1380" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif">
+
+  <!-- Background -->
+  <rect width="1000" height="1380" fill="#0f172a"/>
+
+  <!-- Title -->
+  <text x="500" y="44" text-anchor="middle" font-size="22" font-weight="bold" fill="#0ea5e9">MITRESaw — Pipeline Workflow</text>
+  <text x="500" y="68" text-anchor="middle" font-size="13" fill="#7fb3d3">How a raw MITRE ATT&amp;CK STIX bundle becomes a detection-ready evidence spreadsheet</text>
+
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <!-- PHASE 1 — INPUT -->
+  <!-- ══════════════════════════════════════════════════════════ -->
+
+  <!-- Phase label -->
+  <rect x="20" y="92" width="140" height="26" rx="4" fill="#1e3a5f"/>
+  <text x="90" y="110" text-anchor="middle" font-size="12" font-weight="bold" fill="#38bdf8">PHASE 1 — INPUT</text>
+
+  <!-- MITRE ATT&CK STIX Bundle box -->
+  <rect x="20" y="128" width="960" height="70" rx="8" fill="#1e293b" stroke="#0ea5e9" stroke-width="1.5"/>
+  <text x="500" y="156" text-anchor="middle" font-size="14" font-weight="bold" fill="#e0f2fe">MITRE ATT&amp;CK STIX Bundle  (enterprise-attack.json)</text>
+  <text x="500" y="178" text-anchor="middle" font-size="12" fill="#94a3b8">Groups · Techniques · Procedures · External References · CVEs  —  fetched from MITRE or loaded from disk</text>
+
+  <!-- Arrow down -->
+  <line x1="500" y1="198" x2="500" y2="228" stroke="#0ea5e9" stroke-width="2" marker-end="url(#arrow-blue)"/>
+
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <!-- PHASE 2 — PARSE & FILTER (mitre_extract.py) -->
+  <!-- ══════════════════════════════════════════════════════════ -->
+
+  <rect x="20" y="220" width="170" height="26" rx="4" fill="#1e3a5f"/>
+  <text x="105" y="238" text-anchor="middle" font-size="12" font-weight="bold" fill="#38bdf8">PHASE 2 — PARSE &amp; FILTER</text>
+
+  <rect x="20" y="256" width="960" height="110" rx="8" fill="#1e293b" stroke="#0ea5e9" stroke-width="1.5"/>
+  <text x="500" y="280" text-anchor="middle" font-size="14" font-weight="bold" fill="#e0f2fe">extract.py  —  STIX Parse &amp; Filter</text>
+
+  <!-- Three sub-boxes -->
+  <rect x="35"  y="292" width="295" height="62" rx="5" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+  <text x="182" y="312" text-anchor="middle" font-size="12" font-weight="bold" fill="#7dd3fc">Group Filtering</text>
+  <text x="182" y="330" text-anchor="middle" font-size="11" fill="#94a3b8">--threatgroups  /  --framework</text>
+  <text x="182" y="346" text-anchor="middle" font-size="11" fill="#94a3b8">Enterprise · ICS · Mobile</text>
+
+  <rect x="352" y="292" width="295" height="62" rx="5" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+  <text x="500"  y="312" text-anchor="middle" font-size="12" font-weight="bold" fill="#7dd3fc">Technique Filtering</text>
+  <text x="500"  y="330" text-anchor="middle" font-size="11" fill="#94a3b8">--searchterms  /  --platforms</text>
+  <text x="500"  y="346" text-anchor="middle" font-size="11" fill="#94a3b8">Technique name · tactic · description</text>
+
+  <rect x="670" y="292" width="295" height="62" rx="5" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+  <text x="817" y="312" text-anchor="middle" font-size="12" font-weight="bold" fill="#7dd3fc">Indicator Extraction</text>
+  <text x="817" y="330" text-anchor="middle" font-size="11" fill="#94a3b8">Backtick cmds · registry paths</text>
+  <text x="817" y="346" text-anchor="middle" font-size="11" fill="#94a3b8">CVEs · ports · known tools</text>
+
+  <!-- Arrow down -->
+  <line x1="500" y1="366" x2="500" y2="396" stroke="#0ea5e9" stroke-width="2" marker-end="url(#arrow-blue)"/>
+
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <!-- PHASE 3 — INTERMEDIATE CSV -->
+  <!-- ══════════════════════════════════════════════════════════ -->
+
+  <rect x="20" y="388" width="210" height="26" rx="4" fill="#14532d"/>
+  <text x="125" y="406" text-anchor="middle" font-size="12" font-weight="bold" fill="#86efac">PHASE 3 — INTERMEDIATE OUTPUT</text>
+
+  <rect x="200" y="388" width="600" height="54" rx="8" fill="#14532d" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="500" y="410" text-anchor="middle" font-size="13" font-weight="bold" fill="#bbf7d0">ThreatActors_Techniques.csv</text>
+  <text x="500" y="430" text-anchor="middle" font-size="11" fill="#86efac">One row per (group, technique) pair  ·  evidence JSON  ·  procedure text  ·  external_references</text>
+
+  <!-- Arrow down — two paths -->
+  <!-- Left: Citation Collector -->
+  <line x1="350" y1="442" x2="270" y2="492" stroke="#f97316" stroke-width="2" marker-end="url(#arrow-orange)"/>
+  <text x="248" y="482" text-anchor="middle" font-size="11" fill="#f97316">optional</text>
+
+  <!-- Right: Evidence Report -->
+  <line x1="650" y1="442" x2="730" y2="492" stroke="#0ea5e9" stroke-width="2" marker-end="url(#arrow-blue)"/>
+
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <!-- PHASE 4a — CITATION COLLECTOR (optional) -->
+  <!-- ══════════════════════════════════════════════════════════ -->
+
+  <rect x="20" y="490" width="220" height="26" rx="4" fill="#7c2d12"/>
+  <text x="130" y="508" text-anchor="middle" font-size="12" font-weight="bold" fill="#fed7aa">PHASE 4a — CITATION ENRICHMENT</text>
+
+  <rect x="20" y="524" width="460" height="340" rx="8" fill="#1e293b" stroke="#f97316" stroke-width="1.5"/>
+  <text x="250" y="548" text-anchor="middle" font-size="14" font-weight="bold" fill="#fed7aa">citation_collector.py</text>
+
+  <!-- URL Rewriting -->
+  <rect x="35" y="558" width="430" height="48" rx="5" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+  <text x="250" y="578" text-anchor="middle" font-size="12" font-weight="bold" fill="#fb923c">1  URL Rewriting</text>
+  <text x="250" y="596" text-anchor="middle" font-size="11" fill="#94a3b8">fireeye.com → cloud.google.com  ·  mandiant.com → cloud.google.com</text>
+
+  <!-- Skip Filter -->
+  <rect x="35" y="612" width="430" height="48" rx="5" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+  <text x="250" y="632" text-anchor="middle" font-size="12" font-weight="bold" fill="#fb923c">2  Skip Filter</text>
+  <text x="250" y="650" text-anchor="middle" font-size="11" fill="#94a3b8">Homepage / Wikipedia / binary files / dead domains / Cisco docs</text>
+
+  <!-- Multi-Method Fetch -->
+  <rect x="35" y="666" width="430" height="72" rx="5" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+  <text x="250" y="686" text-anchor="middle" font-size="12" font-weight="bold" fill="#fb923c">3  Multi-Method Fetch  (with disk cache)</text>
+  <text x="250" y="704" text-anchor="middle" font-size="11" fill="#94a3b8">Method 1: Direct HTTP  ·  Method 2: Wayback Machine</text>
+  <text x="250" y="720" text-anchor="middle" font-size="11" fill="#94a3b8">Method 3: Google Cache  ·  Method 4: PDF extraction</text>
+  <text x="250" y="736" text-anchor="middle" font-size="11" fill="#94a3b8">Fallback: STIX description metadata (always available)</text>
+
+  <!-- Relevance Filter -->
+  <rect x="35" y="744" width="430" height="48" rx="5" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+  <text x="250" y="764" text-anchor="middle" font-size="12" font-weight="bold" fill="#fb923c">4  Relevance Filter</text>
+  <text x="250" y="782" text-anchor="middle" font-size="11" fill="#94a3b8">Score paragraphs on technique terms · discard unrelated passages</text>
+
+  <!-- Indicator Extraction -->
+  <rect x="35" y="798" width="430" height="54" rx="5" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+  <text x="250" y="818" text-anchor="middle" font-size="12" font-weight="bold" fill="#fb923c">5  Indicator Extraction + Plausibility Filter</text>
+  <text x="250" y="836" text-anchor="middle" font-size="11" fill="#94a3b8">Backtick cmds · RTF garbage rejected · known-cmd check before extension check</text>
+  <text x="250" y="852" text-anchor="middle" font-size="11" fill="#94a3b8">known_commands.yaml  ·  known_tools list</text>
+
+  <!-- Arrow from citation collector down to merge -->
+  <line x1="250" y1="864" x2="250" y2="914" stroke="#f97316" stroke-width="2" marker-end="url(#arrow-orange)"/>
+
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <!-- PHASE 4b — EVIDENCE REPORT (direct path) -->
+  <!-- ══════════════════════════════════════════════════════════ -->
+
+  <rect x="520" y="490" width="200" height="26" rx="4" fill="#1e3a5f"/>
+  <text x="620" y="508" text-anchor="middle" font-size="12" font-weight="bold" fill="#38bdf8">PHASE 4b — DIRECT PATH</text>
+
+  <rect x="520" y="524" width="460" height="70" rx="8" fill="#1e293b" stroke="#0ea5e9" stroke-width="1.5"/>
+  <text x="750" y="548" text-anchor="middle" font-size="13" font-weight="bold" fill="#e0f2fe">evidence_report.py</text>
+  <text x="750" y="568" text-anchor="middle" font-size="11" fill="#94a3b8">Reads ThreatActors_Techniques.csv directly</text>
+  <text x="750" y="584" text-anchor="middle" font-size="11" fill="#94a3b8">No citation enrichment — MITRE data only</text>
+
+  <!-- Arrow from direct path down -->
+  <line x1="750" y1="594" x2="750" y2="914" stroke="#0ea5e9" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#arrow-blue)"/>
+
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <!-- PHASE 5 — EVIDENCE REPORT ENGINE -->
+  <!-- ══════════════════════════════════════════════════════════ -->
+
+  <rect x="20" y="906" width="220" height="26" rx="4" fill="#1e3a5f"/>
+  <text x="130" y="924" text-anchor="middle" font-size="12" font-weight="bold" fill="#38bdf8">PHASE 5 — REPORT ENGINE</text>
+
+  <rect x="20" y="940" width="960" height="190" rx="8" fill="#1e293b" stroke="#0ea5e9" stroke-width="1.5"/>
+  <text x="500" y="964" text-anchor="middle" font-size="14" font-weight="bold" fill="#e0f2fe">evidence_report.py  —  XLSX Generation</text>
+
+  <!-- Three columns -->
+  <!-- Column 1 -->
+  <rect x="35"  y="974" width="295" height="144" rx="5" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+  <text x="182" y="994" text-anchor="middle" font-size="12" font-weight="bold" fill="#7dd3fc">Atomisation &amp; Dedup</text>
+  <text x="182" y="1012" text-anchor="middle" font-size="11" fill="#94a3b8">One output row per indicator</text>
+  <text x="182" y="1028" text-anchor="middle" font-size="11" fill="#94a3b8">Merge same indicator from</text>
+  <text x="182" y="1044" text-anchor="middle" font-size="11" fill="#94a3b8">multiple sources (Procedure +</text>
+  <text x="182" y="1060" text-anchor="middle" font-size="11" fill="#94a3b8">Citation + Technique)</text>
+  <text x="182" y="1076" text-anchor="middle" font-size="11" fill="#94a3b8">XML-illegal chars stripped</text>
+  <text x="182" y="1092" text-anchor="middle" font-size="11" fill="#94a3b8">(_safe) before XLSX write</text>
+
+  <!-- Column 2 -->
+  <rect x="352" y="974" width="295" height="144" rx="5" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+  <text x="500"  y="994" text-anchor="middle" font-size="12" font-weight="bold" fill="#7dd3fc">Detection Guidance</text>
+  <text x="500"  y="1012" text-anchor="middle" font-size="11" fill="#94a3b8">Per-indicator detection context</text>
+  <text x="500"  y="1028" text-anchor="middle" font-size="11" fill="#94a3b8">cmd  → Sysmon EID 1 / EID 4688</text>
+  <text x="500"  y="1044" text-anchor="middle" font-size="11" fill="#94a3b8">reg  → Sysmon EID 12/13</text>
+  <text x="500"  y="1060" text-anchor="middle" font-size="11" fill="#94a3b8">cve  → CISA KEV / NVD</text>
+  <text x="500"  y="1076" text-anchor="middle" font-size="11" fill="#94a3b8">ports → Firewall / NetFlow</text>
+  <text x="500"  y="1092" text-anchor="middle" font-size="11" fill="#94a3b8">source_type: Procedure / Citation</text>
+  <text x="500"  y="1108" text-anchor="middle" font-size="11" fill="#94a3b8">/ Technique  (per origin)</text>
+
+  <!-- Column 3 -->
+  <rect x="670" y="974" width="295" height="144" rx="5" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+  <text x="817" y="994" text-anchor="middle" font-size="12" font-weight="bold" fill="#7dd3fc">Styling &amp; Sheets</text>
+  <text x="817" y="1012" text-anchor="middle" font-size="11" fill="#94a3b8">Dark-theme XLSX (openpyxl)</text>
+  <text x="817" y="1028" text-anchor="middle" font-size="11" fill="#94a3b8">Per-group colour coding</text>
+  <text x="817" y="1044" text-anchor="middle" font-size="11" fill="#94a3b8">Evidence Report (main sheet)</text>
+  <text x="817" y="1060" text-anchor="middle" font-size="11" fill="#94a3b8">Group Summary sheet</text>
+  <text x="817" y="1076" text-anchor="middle" font-size="11" fill="#94a3b8">Tactic Pivot sheet</text>
+  <text x="817" y="1092" text-anchor="middle" font-size="11" fill="#94a3b8">Technique Matrix sheet</text>
+  <text x="817" y="1108" text-anchor="middle" font-size="11" fill="#94a3b8">(multi-group runs only)</text>
+
+  <!-- Arrow down -->
+  <line x1="500" y1="1130" x2="500" y2="1158" stroke="#22c55e" stroke-width="2" marker-end="url(#arrow-green)"/>
+
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <!-- PHASE 6 — OUTPUT -->
+  <!-- ══════════════════════════════════════════════════════════ -->
+
+  <rect x="20" y="1150" width="140" height="26" rx="4" fill="#14532d"/>
+  <text x="90" y="1168" text-anchor="middle" font-size="12" font-weight="bold" fill="#86efac">PHASE 6 — OUTPUT</text>
+
+  <rect x="20" y="1184" width="960" height="100" rx="8" fill="#14532d" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="500" y="1208" text-anchor="middle" font-size="14" font-weight="bold" fill="#bbf7d0">mitre_procedures.xlsx</text>
+
+  <!-- Four output columns -->
+  <rect x="35"  y="1218" width="215" height="54" rx="5" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+  <text x="142" y="1238" text-anchor="middle" font-size="11" font-weight="bold" fill="#4ade80">Evidence Report</text>
+  <text x="142" y="1254" text-anchor="middle" font-size="10" fill="#86efac">13-col indicator rows</text>
+  <text x="142" y="1268" text-anchor="middle" font-size="10" fill="#86efac">with detection guidance</text>
+
+  <rect x="263" y="1218" width="215" height="54" rx="5" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+  <text x="370" y="1238" text-anchor="middle" font-size="11" font-weight="bold" fill="#4ade80">Group Summary</text>
+  <text x="370" y="1254" text-anchor="middle" font-size="10" fill="#86efac">Per-actor technique count,</text>
+  <text x="370" y="1268" text-anchor="middle" font-size="10" fill="#86efac">tactic coverage, top tactic</text>
+
+  <rect x="491" y="1218" width="215" height="54" rx="5" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+  <text x="598" y="1238" text-anchor="middle" font-size="11" font-weight="bold" fill="#4ade80">Tactic Pivot</text>
+  <text x="598" y="1254" text-anchor="middle" font-size="10" fill="#86efac">Frequency of each tactic</text>
+  <text x="598" y="1268" text-anchor="middle" font-size="10" fill="#86efac">across all groups</text>
+
+  <rect x="719" y="1218" width="245" height="54" rx="5" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+  <text x="841" y="1238" text-anchor="middle" font-size="11" font-weight="bold" fill="#4ade80">Technique Matrix</text>
+  <text x="841" y="1254" text-anchor="middle" font-size="10" fill="#86efac">Cross-group frequency table</text>
+  <text x="841" y="1268" text-anchor="middle" font-size="10" fill="#86efac">(multi-group runs only)</text>
+
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <!-- Legend -->
+  <!-- ══════════════════════════════════════════════════════════ -->
+  <rect x="20" y="1300" width="960" height="64" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="500" y="1320" text-anchor="middle" font-size="12" font-weight="bold" fill="#94a3b8">Key Files</text>
+
+  <text x="40"  y="1344" font-size="11" fill="#0ea5e9">extract.py</text>
+  <text x="110" y="1344" font-size="11" fill="#64748b">  STIX parse / filter / indicator extract</text>
+  <text x="340" y="1344" font-size="11" fill="#f97316">citation_collector.py</text>
+  <text x="462" y="1344" font-size="11" fill="#64748b">  fetch &amp; enrich from citation URLs</text>
+  <text x="650" y="1344" font-size="11" fill="#0ea5e9">evidence_report.py</text>
+  <text x="762" y="1344" font-size="11" fill="#64748b">  XLSX report generator</text>
+  <text x="900" y="1344" font-size="11" fill="#22c55e">data/known_commands.yaml</text>
+
+  <!-- Arrow markers -->
+  <defs>
+    <marker id="arrow-blue" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#0ea5e9"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#f97316"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#22c55e"/>
+    </marker>
+  </defs>
+
+</svg>

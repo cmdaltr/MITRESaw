@@ -10,6 +10,7 @@ from src.citation_collector import (
     _should_skip_url,
     _rewrite_url,
     _is_pdf_url,
+    _is_plausible_indicator,
     _stix_description_fallback,
     import_citation_files,
 )
@@ -123,6 +124,27 @@ def test_extract_relevant_known_software():
     sw_lower = [s.lower() for s in result["software"]]
     assert "mimikatz" in sw_lower
     assert "rubeus" in sw_lower
+
+
+def test_plausible_indicator_accepts_valid():
+    """Real commands and paths must pass the plausibility filter."""
+    assert _is_plausible_indicator("powershell -enc abc123") is True
+    assert _is_plausible_indicator("net use \\\\server\\share") is True
+    assert _is_plausible_indicator("del /f /q C:\\Windows\\Temp\\x.exe") is True
+    assert _is_plausible_indicator("mimikatz") is True
+    assert _is_plausible_indicator("hwclock") is True
+
+
+def test_plausible_indicator_rejects_garbage():
+    """Garbled PDF artifacts must be rejected by the plausibility filter."""
+    # RTF control word sequence from bad PDF extraction
+    assert _is_plausible_indicator("sxwx{pard3\\BM7") is False
+    # High-density noise characters
+    assert _is_plausible_indicator("ChY6]MHiWTDAms3@iJ%;") is False
+    # Very low alphabetic ratio
+    assert _is_plausible_indicator("o9\"2 9JX") is False
+    # Embedded newline (PDF paragraph bleed)
+    assert _is_plausible_indicator("cmd\n/c whoami") is False
 
 
 def test_should_skip_url():

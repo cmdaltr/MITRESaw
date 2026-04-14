@@ -53,6 +53,18 @@
 
 At its core, MITRESaw creates a CSV-formatted version of the [MITRE ATT&amp;CK Framework](https://attack.mitre.org) and outputs individual Threat Actor [ATT&amp;CK Navigator](https://mitre-attack.github.io/attack-navigator/) JSON files, depending on keywords provided.<br>
 MITRESaw has evolved to also produce search queries based on extracted indicators (aligned with Threat Group TTPs). Searches currently provided are compatible with Splunk, Azure Sentinel and Elastic/Kibana. SIGMA will be included soon.
+
+## Pipeline Workflow
+
+![MITRESaw workflow diagram](docs/workflow.svg)
+
+The diagram above shows how a raw MITRE ATT&amp;CK STIX bundle flows through MITRESaw into a detection-ready XLSX report:
+
+1. **Parse &amp; Filter** (`extract.py`) — loads the STIX bundle, applies group/platform/term filters, and extracts indicators from procedure text.
+2. **Intermediate CSV** — `ThreatActors_Techniques.csv` holds one row per (group, technique) pair with evidence JSON.
+3. **Citation Enrichment** (`citation_collector.py`, optional `-C`) — fetches each citation URL, filters to relevant passages, and extracts additional indicators.
+4. **Report Engine** (`evidence_report.py`) — atomises indicators to one row each, deduplicates across sources, attaches detection guidance, and writes the styled XLSX.
+
 <br><br><br>
 
 ## Installation
@@ -176,8 +188,8 @@ When no group/platform/term filters are provided, files are placed in the date r
 
 | Sheet | Description |
 |-------|-------------|
-| Evidence Report | One row per atomic indicator with 14 columns (see schema below) |
-| Group Summary | Per-group stats: technique count, indicator count, tactic coverage, invocation coverage |
+| Evidence Report | One row per atomic indicator with 13 columns (see schema below) |
+| Group Summary | Per-group stats: technique count, indicator count, tactic coverage, top tactic |
 | Tactic Pivot | Indicators per tactic, sorted by count, with example technique IDs |
 | Technique Matrix | Intersection matrix (only when 2+ groups): techniques as rows, groups as columns, `1` where a group uses that technique, sorted by group coverage descending for prioritising hunting |
 | Reference Detail | Citation sources with extracted content, collection method, and URL (only with `-C`) |
@@ -188,24 +200,23 @@ When no group/platform/term filters are provided, files are placed in the date r
 
 The `--evidence-report` / `-E` flag generates a styled XLSX evidence report (`mitre_procedures.xlsx`) with **one row per atomic indicator** extracted from MITRE ATT&CK procedure examples, plus a companion `mitre_procedures.csv` for SIEM ingestion.
 
-### 14-Column Schema
+### 13-Column Schema
 
 | # | Column | Description |
 |---|--------|-------------|
 | 1 | Evidential Element | The atomic indicator (command, registry key, CVE, port, path, software, event ID) |
 | 2 | Threat Group | Canonical group name |
-| 3 | Procedure Example | MITRE ATT&CK procedure text (cleaned: markdown links shown as `Name (ID)`, citations removed) |
-| 4 | Technique ID | ATT&CK technique ID (e.g. T1059.001) |
-| 5 | Technique Name | ATT&CK technique name |
-| 6 | Tactic | ATT&CK tactic |
-| 7 | Platforms | Target platforms (e.g. Windows, Linux, macOS) |
-| 8 | Framework | ATT&CK framework (Enterprise, ICS, Mobile) |
-| 9 | MITRE Invocations | Invocation strings extracted from procedure text — backtick-wrapped commands, CLI flags, registry paths, file paths as MITRE documented them |
+| 3 | Technique ID | ATT&CK technique ID (e.g. T1059.001) |
+| 4 | Technique Name | ATT&CK technique name |
+| 5 | Tactic | ATT&CK tactic |
+| 6 | Platforms | Target platforms (e.g. Windows, Linux, macOS) |
+| 7 | Framework | ATT&CK framework (Enterprise, ICS, Mobile) |
+| 8 | Source Type | Where the indicator was sourced: `Procedure`, `Citation`, `Technique`, or `MITRE ATT&CK` (when evidence was absent) |
+| 9 | Procedure Example | MITRE ATT&CK procedure text (cleaned: markdown links shown as `Name (ID)`, citations removed) |
 | 10 | Detection Guidance | Detection context per indicator type (Sysmon EIDs, detection methods) |
 | 11 | Log Sources | MITRESaw-mapped log sources (e.g. `Sysmon: 1`, `Security EventLog: 4688`, `AppLocker EventLog`, `netflow`, `PCAP`, `*nix /var/log`) |
 | 12 | Reference URL | URL from procedure text or constructed ATT&CK technique URL |
 | 13 | Navigation Layer URL | ATT&CK Navigator JSON layer URL for the group |
-| 14 | Source Type | Website or GitHub \| Website |
 
 ### Technique Matrix
 
