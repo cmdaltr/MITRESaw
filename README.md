@@ -39,6 +39,7 @@
 ## Table of Contents
 
 * [About the Project](#about-the-project)
+* [Capabilities and Limitations](docs/CAPABILITIES.md)
 * [Installation](#installation)
 * [Usage](#usage)
 * [Contributing](#contributing)
