@@ -1670,11 +1670,15 @@ def mainsaw(
             if r.get("extracted_content")
             and r.get("method") not in ("stix_metadata", "no_content", "")
         )
-        _failed = [
-            r
-            for r in _all_citation_refs
-            if r.get("method") in ("stix_metadata", "no_content", "")
-        ]
+        # Deduplicate by URL — the same source can be cited by many procedures
+        _seen_failed_urls = set()
+        _failed = []
+        for r in _all_citation_refs:
+            if r.get("method") in ("stix_metadata", "no_content", ""):
+                _furl = r.get("url", "") or r.get("citation_name", "")
+                if _furl not in _seen_failed_urls:
+                    _seen_failed_urls.add(_furl)
+                    _failed.append(r)
     _pb_extract.done(_total_procedures, len(_all_citation_refs))
 
     # Write failed citations report (YAML)
