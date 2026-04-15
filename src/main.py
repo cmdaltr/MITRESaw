@@ -1625,11 +1625,31 @@ def mainsaw(
                                         v.lower() for v in _novel
                                     )
 
+                            # Enrich any CVEs found in citation content
+                            if "cve" in _new_indicators:
+                                from src.tools.map_bespoke_logs import enrich_cves_for_evidence
+                                _new_indicators["cve"] = enrich_cves_for_evidence(
+                                    _new_indicators["cve"]
+                                )
+
                             # Print new indicators with emojis
                             if _new_indicators:
                                 for _etype, _evals in _new_indicators.items():
                                     _emoji = _INDICATOR_EMOJI.get(_etype, "")
-                                    _vals_str = ", ".join(f"`{v}`" for v in _evals[:8])
+                                    if _etype == "cve":
+                                        # _evals is list of enriched dicts
+                                        # [{cve_id: "product|desc|indicators|poc|kev"}]
+                                        _cve_parts = []
+                                        for _cve_entry in _evals:
+                                            for _cve_id, _cve_val in _cve_entry.items():
+                                                _vparts = _cve_val.split("|") if _cve_val else []
+                                                _ind = _vparts[2] if len(_vparts) > 2 else ""
+                                                _cve_parts.append(
+                                                    f"`{_cve_id}`" + (f": {_ind}" if _ind else "")
+                                                )
+                                        _vals_str = ", ".join(_cve_parts[:4])
+                                    else:
+                                        _vals_str = ", ".join(f"`{v}`" for v in _evals[:8])
                                     print(
                                         f"{_indent}       {_emoji} \033[33m{_vals_str}\033[0m"
                                     )
