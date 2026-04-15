@@ -11,6 +11,7 @@ This document states plainly what MITRESaw does and does not do, so analysts can
 - Filter by framework (Enterprise / ICS / Mobile), platform (Windows, Linux, macOS, etc.), threat group name, and keyword search terms.
 - Extract indicators directly from MITRE's own procedure text — commands in backticks, registry keys, file paths, CVEs, ports, and known tool names. These are **MITRE-authored** and represent what MITRE's analysts specifically documented.
 - Generate ATT&CK Navigator JSON layers per group.
+- Preview run scope with `--dry-run` — loads STIX, applies all filters, counts matching groups/procedures/citations, checks cache status, and prints an estimated time. Exits without fetching content or writing files. Safe to run repeatedly.
 
 ### Evidence report generation (high confidence)
 - Produce a styled multi-sheet XLSX with one row per atomic indicator, deduplication across sources, and per-indicator detection guidance (Sysmon EIDs, log sources, KEV references).
@@ -90,10 +91,12 @@ Use the `Source Type` column in the Evidence Report to understand the confidence
 
 ## Recommended workflow
 
-1. **Filter aggressively** — use `--threatgroups`, `--platforms`, and `--searchterms` to narrow the output to your environment and threat model. Running against all groups and all platforms produces thousands of rows, most of which will not be relevant.
+1. **Preview scope first** — use `--dry-run` before committing to a full run. It shows how many groups match your filters, how many procedures and citations will be processed, and how much of the cache is warm. This lets you tune filters before waiting for a full extraction.
 
-2. **Start with Procedure-sourced rows** — these are the most reliable. Review citation-sourced rows separately and with more scepticism.
+2. **Filter aggressively** — use `--threatgroups`, `--platforms`, and `--searchterms` to narrow the output to your environment and threat model. Running against all groups and all platforms produces thousands of rows, most of which will not be relevant.
 
-3. **Use the Reference URL column** — click through to the original ATT&CK technique page or citation source to verify the context of any indicator before using it in a detection.
+3. **Start with Procedure-sourced rows** — these are the most reliable. Review citation-sourced rows separately and with more scepticism.
 
-4. **Treat the output as a starting point, not a finished product** — MITRESaw accelerates the process of converting MITRE ATT&CK into detection candidates. It does not replace analyst judgement.
+4. **Use the Reference URL column** — click through to the original ATT&CK technique page or citation source to verify the context of any indicator before using it in a detection.
+
+5. **Treat the output as a starting point, not a finished product** — MITRESaw accelerates the process of converting MITRE ATT&CK into detection candidates. It does not replace analyst judgement.

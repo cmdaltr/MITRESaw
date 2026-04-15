@@ -40,6 +40,7 @@
 
 * [About the Project](#about-the-project)
 * [Capabilities and Limitations](docs/CAPABILITIES.md)
+* [Per-Flag Flow Diagrams](docs/FLOW_DIAGRAMS.md)
 * [Installation](#installation)
 * [Usage](#usage)
 * [Contributing](#contributing)
@@ -66,6 +67,16 @@ The diagram above shows how a raw MITRE ATT&amp;CK STIX bundle flows through MIT
 3. **Citation Enrichment** (`citation_collector.py`, optional `-C`) — fetches each citation URL, filters to relevant passages, and extracts additional indicators.
 4. **Report Engine** (`evidence_report.py`) — atomises indicators to one row each, deduplicates across sources, attaches detection guidance, and writes the styled XLSX.
 
+For granular per-flag flow diagrams, see **[docs/FLOW_DIAGRAMS.md](docs/FLOW_DIAGRAMS.md)**:
+
+| Diagram | Flags | What it shows |
+|---------|-------|---------------|
+| [Dry-run](docs/flow_dryrun.svg) | `--dry-run` | Scope preview — read-only, exits before any extraction |
+| [Basic extraction](docs/flow_basic.svg) | `-D` | STIX load → filter → extract → CSV |
+| [Evidence report](docs/flow_evidence.svg) | `-E` | Atomise → detect guidance → multi-sheet XLSX |
+| [Citation collection](docs/flow_citations.svg) | `-C` | Pre-fetch batch → multi-method chain → relevance filter → inject |
+| [Retry / cache](docs/flow_retry.svg) | `-rS -rN -rJ --clear-cache` | Cache manipulation before main run |
+
 <br><br><br>
 
 ## Installation
@@ -82,7 +93,7 @@ usage: MITRESaw.py [-h] [-l {groups,platforms,strings}]
                    [-f FRAMEWORK] [-p PLATFORMS] [-s STRINGS]
                    [-g THREATGROUPS] [-a] [-n] [-o] [-q]
                    [-c COLUMNS] [-D] [-x {csv,json,xml}] [-E] [-C]
-                   [-w MAX_WORKERS] [-A] [-F]
+                   [-w MAX_WORKERS] [-A] [-F] [--dry-run]
                    [-rS] [-rN] [-rJ [YAML]] [--clear-cache]
                    [-I [DIR]]
 
@@ -106,6 +117,9 @@ options:
   -w, --max-workers N               Max parallel threads for fetching (1-50, default: 50)
   -A, --auto                        Skip the pre-run ETA confirmation prompt
   -F, --fetch                       Force fresh download of ATT&CK STIX data
+  --dry-run                         Preview scope and exit — shows groups matched, procedures,
+                                    citation counts, cache status, and estimated time without
+                                    fetching content or writing output files
   -rS, --retry-stix                 Retry citations that fell back to STIX metadata
   -rN, --retry-nocontent            Retry citations that had no content at all
   -rJ, --retry-js [YAML]            Retry failed citations using Playwright headed browser
@@ -195,6 +209,11 @@ This gives you everything you need to get started: `mitre_procedures.csv` for lo
 
 # Force refresh STIX data and clear citation cache
 ./MITRESaw.py -D -E -C --clear-cache -F
+
+# Preview scope before running (no output files written)
+./MITRESaw.py --dry-run -f Enterprise -s Iran -E -C
+./MITRESaw.py --dry-run -g APT29 -p Windows -E -C
+./MITRESaw.py --dry-run -D -E -C
 ```
 
 Valid column names for `--columns`:
@@ -284,8 +303,8 @@ The OCR method is a fallback used only when a PDF yields no extractable text via
 ### URL Rewriting
 
 Known migrated or SPA-rendered URLs are automatically rewritten before fetching:
-- `www.mandiant.com/resources/...` → `cloud.google.com/blog/topics/threat-intelligence/...`
-- `www.fireeye.com/blog/...` → `cloud.google.com/blog/topics/threat-intelligence/...`
+- `fireeye.com` (all paths, `www`, `www2`, bare domain) → `cloud.google.com/blog/topics/threat-intelligence/...`
+- `mandiant.com` (all paths) → `cloud.google.com/blog/topics/threat-intelligence/...`
 - `lolbas-project.github.io/lolbas/...` → raw YAML from the LOLBAS GitHub repo (the LOLBAS site is a Vue.js SPA that returns an empty shell to automated fetches)
 
 ### Filtered Citations
@@ -385,25 +404,64 @@ Use `-rS` and `-rN` together to retry all failures while keeping successful cach
 ./MITRESaw.py -rS -rN -D -E -C
 ```
 
+All retry operations show live progress:
+- **`-rS` / `-rN`**: scanning progress with count removed and ETA (e.g. `Scanning cache: 3200/5234  (143 removed)  ETA: 8s`)
+- **`-rJ`**: per-URL result with rolling ETA (e.g. `✅ [12/87  ✔ 4  ⏱ 3m 20s remaining  elapsed 34s]  Report Title  [https://...]`)
+
 Use `-rJ` to batch-retry JS-blocked sites with a headed browser, then run normally:
 ```bash
 ./MITRESaw.py -rJ data/2026-04-15/citations_failed.yaml
 ./MITRESaw.py -D -E -C
 ```
 
-### Pre-Run ETA Estimate
+### Pre-Run Scope Preview (`--dry-run`)
 
-When using `-C`, MITRESaw scans the cache before starting and shows a summary:
+Use `--dry-run` to preview scope before committing to a full run. It loads STIX data, applies all filters, counts matching groups/procedures/citations, checks cache status, and prints the summary — then exits without fetching or writing anything:
+
+```bash
+./MITRESaw.py --dry-run -f Enterprise -s Iran -E -C
+```
+
+Output:
 
 ```
-    ┌─────────────────────────────────────────────
-    │  Procedures:         4750
-    │  Citations:         17451
-    │  Cached:            4562
-    │  Uncached:          1306
-    │  Workers:              50
-    │  Estimated time:   1m 18s
-    └─────────────────────────────────────────────
+    Dry-run scope preview
+    ─────────────────────────────────────────────
+    🌐  Framework:   Enterprise
+    👥  Groups:          12  matched
+    🩻  Procedures:     318
+    ✍️  Citations:      1187
+        🔍 243 to fetch
+        💾 944 cached
+    👷  Workers:          50
+    🚩  Flags:
+        • -E  Evidence Report (XLSX)
+        • -C  Citation enrichment
+    🕰️  Est. time:    ~10s
+    ─────────────────────────────────────────────
+```
+
+Works with or without `-C` — without it, shows groups, procedures, active flags, and extraction-only time estimate.
+
+### Pre-Run ETA Estimate
+
+When using `-C`, MITRESaw scans the cache before starting and shows the same scope summary, then prompts before fetching:
+
+```
+    Pre-fetch plan
+    ─────────────────────────────────────────────
+    🌐  Framework:   Enterprise
+    👥  Groups:         147  matched
+    🩻  Procedures:    4750
+    ✍️  Citations:    17451
+        🔍 1306 to fetch
+        💾 4562 cached
+    👷  Workers:          50
+    🚩  Flags:
+        • -E  Evidence Report (XLSX)
+        • -C  Citation enrichment
+    🕰️  Est. time:   1m 18s
+    ─────────────────────────────────────────────
 
     Continue? [Y/n]
 ```

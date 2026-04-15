@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="720" height="460" viewBox="0 0 720 460" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#38bdf8"/>
+    </marker>
+    <marker id="arr-g" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#4ade80"/>
+    </marker>
+    <marker id="arr-y" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#facc15"/>
+    </marker>
+  </defs>
+
+  <rect width="720" height="460" fill="#0f172a"/>
+
+  <!-- Title -->
+  <text x="360" y="34" text-anchor="middle" font-size="16" font-weight="bold" fill="#0ea5e9">--dry-run  Flow</text>
+  <text x="360" y="54" text-anchor="middle" font-size="11" fill="#64748b">Loads STIX, applies filters, prints scope preview, exits — no content fetched, no files written</text>
+
+  <!-- Step 1: STIX Load -->
+  <rect x="240" y="70" width="240" height="44" rx="6" fill="#1e293b" stroke="#0ea5e9" stroke-width="1.5"/>
+  <text x="360" y="89" text-anchor="middle" font-size="12" font-weight="bold" fill="#e0f2fe">Load STIX Bundle</text>
+  <text x="360" y="106" text-anchor="middle" font-size="10" fill="#94a3b8">enterprise / ICS / Mobile  (local or TAXII)</text>
+  <line x1="360" y1="114" x2="360" y2="136" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Step 2: Apply Filters -->
+  <rect x="200" y="136" width="320" height="44" rx="6" fill="#1e293b" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="360" y="155" text-anchor="middle" font-size="12" font-weight="bold" fill="#c4b5fd">Apply Filters</text>
+  <text x="360" y="172" text-anchor="middle" font-size="10" fill="#94a3b8">-f framework  ·  -g groups  ·  -p platforms  ·  -s search terms</text>
+  <line x1="360" y1="180" x2="360" y2="202" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Step 3: Count -->
+  <rect x="200" y="202" width="320" height="54" rx="6" fill="#1e293b" stroke="#0ea5e9" stroke-width="1.5"/>
+  <text x="360" y="222" text-anchor="middle" font-size="12" font-weight="bold" fill="#e0f2fe">Count Scope</text>
+  <text x="360" y="238" text-anchor="middle" font-size="10" fill="#94a3b8">Groups matched  ·  Procedures  ·  Active flags</text>
+  <text x="360" y="250" text-anchor="middle" font-size="10" fill="#64748b">(get_group_techniques_parallel — read-only)</text>
+
+  <!-- Branch: -C present? -->
+  <line x1="360" y1="256" x2="360" y2="278" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arr)"/>
+  <polygon points="360,278 295,302 360,326 425,302" fill="#0f172a" stroke="#facc15" stroke-width="1.5"/>
+  <text x="360" y="299" text-anchor="middle" font-size="11" fill="#facc15">-C flag?</text>
+  <text x="360" y="313" text-anchor="middle" font-size="9" fill="#64748b">(--citations)</text>
+
+  <!-- Yes: check cache -->
+  <line x1="295" y1="302" x2="160" y2="302" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr-g)"/>
+  <text x="230" y="296" text-anchor="middle" font-size="9" fill="#4ade80">yes</text>
+  <rect x="60" y="282" width="100" height="40" rx="5" fill="#14532d" stroke="#4ade80" stroke-width="1.2"/>
+  <text x="110" y="298" text-anchor="middle" font-size="10" fill="#86efac">Check Cache</text>
+  <text x="110" y="312" text-anchor="middle" font-size="9" fill="#4ade80">cached / uncached</text>
+  <line x1="110" y1="322" x2="110" y2="358" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr-g)"/>
+  <line x1="110" y1="358" x2="200" y2="372" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr-g)"/>
+
+  <!-- No: direct to print -->
+  <line x1="425" y1="302" x2="560" y2="302" stroke="#facc15" stroke-width="1.5" marker-end="url(#arr-y)"/>
+  <text x="490" y="296" text-anchor="middle" font-size="9" fill="#facc15">no</text>
+  <line x1="560" y1="302" x2="560" y2="372" stroke="#facc15" stroke-width="1.5" marker-end="url(#arr-y)"/>
+  <line x1="560" y1="372" x2="520" y2="372" stroke="#facc15" stroke-width="1.5" marker-end="url(#arr-y)"/>
+
+  <!-- Print Summary -->
+  <rect x="200" y="356" width="320" height="54" rx="6" fill="#1e3a5f" stroke="#38bdf8" stroke-width="2"/>
+  <text x="360" y="377" text-anchor="middle" font-size="12" font-weight="bold" fill="#e0f2fe">Print Scope Preview</text>
+  <text x="360" y="392" text-anchor="middle" font-size="10" fill="#94a3b8">Framework · Groups · Procedures · Citations (if -C)</text>
+  <text x="360" y="404" text-anchor="middle" font-size="10" fill="#94a3b8">Active flags · Estimated time</text>
+  <line x1="360" y1="410" x2="360" y2="432" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Exit -->
+  <rect x="290" y="432" width="140" height="22" rx="5" fill="#450a0a" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="360" y="448" text-anchor="middle" font-size="11" font-weight="bold" fill="#fca5a5">Exit  (no files written)</text>
+</svg>

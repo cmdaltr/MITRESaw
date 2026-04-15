@@ -16,17 +16,22 @@ from mitreattack.stix20 import MitreAttackData
 
 
 class _ScrollWriter:
-    """Stdout wrapper that writes into a scroll region above pinned rows."""
+    """Stdout wrapper that erases the progress bar before any content is written,
+    so the bar never gets duplicated in the scroll buffer."""
 
-    def __init__(self, real_stdout, reserved_rows):
+    def __init__(self, real_stdout, pb):
         self._real = real_stdout
-        self._rows = reserved_rows
+        self._pb = pb
 
     def write(self, text):
         if not text:
             return 0
-        # Save cursor → move into scroll region → restore won't help here,
-        # so just write normally — the scroll region confines it automatically.
+        # If the bar is currently drawn, erase it before writing content.
+        # "\033[0J" erases from the cursor (which sits at the first bar row)
+        # to the end of the screen, removing all bar lines in one shot.
+        if self._pb._bar_drawn:
+            self._real.write("\033[0J")
+            self._pb._bar_drawn = False
         return self._real.write(text)
 
     def flush(self):
@@ -38,24 +43,25 @@ class _ScrollWriter:
     def isatty(self):
         return self._real.isatty()
 
-    # Forward any other attribute to the real stdout
     def __getattr__(self, name):
         return getattr(self._real, name)
 
 
 class _ProgressBar:
-    """Dual progress bar pinned at the bottom of the terminal.
+    """Dual progress bar that follows the end of output.
 
-    Uses ANSI scroll region to keep the bar fixed while all other
-    output scrolls above it. Replaces sys.stdout so ALL print()
-    calls are automatically confined to the scroll region.
+    No scroll regions are used — the bar is drawn after the last content
+    line, and _ScrollWriter erases it before the next content write.
+    This avoids the multi-bar duplication caused by unreliable DECSTBM
+    support across terminal emulators.
     """
 
-    _ROWS = 6  # blank + procedures + citations + separator + eta + elapsed
+    _ROWS = 6  # procedures + citations + separator + eta + elapsed + blank
 
     def __init__(self):
         self._start = None
         self._active = False
+        self._bar_drawn = False   # True when the bar is currently on screen
         self._total_procs = 0
         self._total_cits = 0
         self._recent_times = []
@@ -80,45 +86,29 @@ class _ProgressBar:
         return f"{int(secs)}s"
 
     def _get_out(self):
-        """Get the real stdout (bypass scroll writer)."""
         return self._real_stdout if self._real_stdout else sys.stdout
 
     def _setup(self):
-        try:
-            th = os.get_terminal_size().lines
-        except OSError:
-            th = 40
         out = sys.stdout
-        # Set scroll region: lines 1 to (th - reserved rows)
-        scroll_bottom = th - self._ROWS
-        # Move cursor to scroll region, set it, then move cursor back into region
-        out.write(f"\033[{scroll_bottom + 1};1H")  # move below scroll area
-        for i in range(self._ROWS):
-            out.write(f"\033[{scroll_bottom + 1 + i};1H\033[2K")  # clear reserved rows
-        out.write(f"\033[1;{scroll_bottom}r")  # set scroll region
-        out.write(f"\033[{scroll_bottom};1H")  # put cursor at bottom of scroll region
-        out.flush()
-        # Replace sys.stdout so all print() goes through scroll region
         self._real_stdout = out
-        sys.stdout = _ScrollWriter(out, self._ROWS)
+        sys.stdout = _ScrollWriter(out, self)
         self._active = True
 
     def _draw_bar(self, lines):
-        """Draw lines in the pinned area below the scroll region."""
+        """Draw bar lines at the current cursor position, then move cursor
+        back up to the first bar row so _ScrollWriter knows where to erase."""
         out = self._get_out()
         try:
-            th = os.get_terminal_size().lines
             tw = os.get_terminal_size().columns
         except OSError:
-            th, tw = 40, 120
-        scroll_bottom = th - self._ROWS
-        # Save cursor, write into pinned area, restore cursor
-        out.write("\033[s")  # save cursor
-        for i, line in enumerate(lines):
-            row = scroll_bottom + 1 + i
-            out.write(f"\033[{row};1H\033[2K{line[:tw]}")
-        out.write("\033[u")  # restore cursor
+            tw = 120
+        for line in lines:
+            out.write(f"\r\033[2K{line[:tw]}\n")
+        # Move cursor back up to the first bar row.
+        # _ScrollWriter will erase from here with \033[0J before next write.
+        out.write(f"\033[{len(lines)}A\r")
         out.flush()
+        self._bar_drawn = True
 
     def update(
         self,
@@ -199,10 +189,9 @@ class _ProgressBar:
     def done(self, proc_total, cit_total):
         out = self._get_out()
         try:
-            th = os.get_terminal_size().lines
             tw = os.get_terminal_size().columns
         except OSError:
-            th, tw = 40, 120
+            tw = 120
 
         bw = min(60, tw - 35)
         p_bar = self._bar_done(proc_total, bw, "\033[32m")
@@ -221,7 +210,6 @@ class _ProgressBar:
             else f"   Citations:  {cit_total} collected"
         )
 
-        # Show completion in pinned area briefly
         _sep = "\033[90m" + "─" * (bw + _count_w + 23) + "\033[0m"
         elapsed_str = self._format_time(secs)
         self._draw_bar(
@@ -236,21 +224,18 @@ class _ProgressBar:
         )
         time.sleep(0.5)
 
-        # Restore sys.stdout
+        # Move cursor to end of bar, then restore sys.stdout
+        out.write(f"\033[{self._ROWS}B\r")
+        out.flush()
+
         if self._real_stdout:
             sys.stdout = self._real_stdout
             self._real_stdout = None
 
-        # Reset scroll region to full terminal and clear pinned rows
-        scroll_bottom = th - self._ROWS
-        out.write(f"\033[1;{th}r")  # reset scroll region
-        for i in range(self._ROWS):
-            out.write(f"\033[{scroll_bottom + 1 + i};1H\033[2K")
-        out.write(f"\033[{scroll_bottom + 1};1H")  # cursor after content
-        out.flush()
         self._active = False
+        self._bar_drawn = False
 
-        # Permanent summary (prints from cursor position, no overlap)
+        # Permanent summary printed normally after bar
         print(f"\n   Procedures: {p_bar}  {_p_count}  (100.0%)")
         print(f"   {_cit_line.strip()}")
         print(f"   {_sep}")
@@ -786,6 +771,7 @@ def mainsaw(
     collect_citations=False,
     citation_workers=10,
     auto_confirm=False,
+    dry_run=False,
 ):
 
     # Load STIX data (only check version if -F is used)
@@ -1092,10 +1078,17 @@ def mainsaw(
             # technique description, and technique detection.
             # terms == ['.'] means "no filter" — include everything.
             if str(terms) != "['.']" and terms:
-                _proc_text = " ".join([
-                    group_name, _gdesc, technique_id, technique_name,
-                    _usage, _tdesc, _tdet,
-                ]).lower()
+                _proc_text = " ".join(
+                    [
+                        group_name,
+                        _gdesc,
+                        technique_id,
+                        technique_name,
+                        _usage,
+                        _tdesc,
+                        _tdet,
+                    ]
+                ).lower()
                 if not any(t.strip().lower() in _proc_text for t in terms):
                     continue
 
@@ -1130,8 +1123,12 @@ def mainsaw(
     _citation_url_lookup = {}  # source_name → {"url": ..., "description": ...}
     _mitre_ref_numbers = {}  # (group_name_lower, source_name) → MITRE [N] number
     _all_citation_refs = []
-    _seen_citations = set()    # (group, citation_name) — prevents same group re-fetching same URL
-    _seen_global_urls = set()  # URL — prevents same URL appearing in _all_citation_refs twice
+    _seen_citations = (
+        set()
+    )  # (group, citation_name) — prevents same group re-fetching same URL
+    _seen_global_urls = (
+        set()
+    )  # URL — prevents same URL appearing in _all_citation_refs twice
     if collect_citations:
         for _fw, _ad in all_attack_data.items():
             _sp = getattr(_ad, "stix_filepath", None) or getattr(_ad, "src", None)
@@ -1210,12 +1207,14 @@ def mainsaw(
     last_group_name = None
     _total_procedures = len(consolidated_procedures)
 
-    # Pre-run ETA estimate and confirmation
+    # Pre-run ETA estimate, confirmation, and --dry-run scope preview
+    _sep_pf = "\033[90m" + "─" * 45 + "\033[0m"
+    _cached_count = 0
+    _uncached_count = 0
+
     if collect_citations and _total_cit_pairs > 0:
         from src.citation_collector import _cache_key, CACHE_DIR
 
-        _cached_count = 0
-        _uncached_count = 0
         _checked_urls = set()
         for _p in consolidated_procedures:
             _pp = _p.split("||")
@@ -1237,32 +1236,62 @@ def mainsaw(
                 else:
                     _uncached_count += 1
 
-        # Estimate: ~0.002s per cached, ~2s per uncached (avg with 8s timeouts)
-        _est_cached_s = _cached_count * 0.002
-        _est_uncached_s = _uncached_count * 2.0 / max(1, citation_workers)
-        _est_proc_s = _total_procedures * 0.005  # extraction overhead
-        _est_total = _est_cached_s + _est_uncached_s + _est_proc_s
+    # Estimate total time
+    _est_cached_s = _cached_count * 0.002
+    _est_uncached_s = _uncached_count * 2.0 / max(1, citation_workers)
+    _est_proc_s = _total_procedures * 0.005
+    _est_total = _est_cached_s + _est_uncached_s + _est_proc_s
+    if _est_total >= 3600:
+        _est_str = f"{int(_est_total // 3600)}h {int((_est_total % 3600) // 60)}m"
+    elif _est_total >= 60:
+        _est_str = f"{int(_est_total // 60)}m {int(_est_total % 60):02d}s"
+    elif _est_total >= 1:
+        _est_str = f"{int(_est_total)}s"
+    else:
+        _est_str = "< 1s"
 
-        if _est_total >= 3600:
-            _est_str = f"{int(_est_total // 3600)}h {int((_est_total % 3600) // 60)}m"
-        elif _est_total >= 60:
-            _est_str = f"{int(_est_total // 60)}m {int(_est_total % 60):02d}s"
-        else:
-            _est_str = f"{int(_est_total)}s"
+    _matched_groups = len(set(groups_in_scope))
 
-        _sep_pf = "\033[90m" + "─" * 45 + "\033[0m"
-        print(f"    \033[1mPre-fetch plan\033[0m")
+    # Build flags summary for dry-run
+    _active_flags = []
+    if evidence_report:
+        _active_flags.append("-E  Evidence Report (XLSX)")
+    if collect_citations:
+        _active_flags.append("-C  Citation enrichment")
+    if columns and not preset:
+        _active_flags.append(f"-c  Columns: {columns[:60]}")
+
+    if dry_run or (collect_citations and _total_cit_pairs > 0):
+        _plan_label = "Dry-run scope preview" if dry_run else "Pre-fetch plan"
+        print(f"    \033[1m{_plan_label}\033[0m")
         print(f"    {_sep_pf}")
-        print(f"    🩻  Procedures: {_total_procedures:>6,}")
-        print(f"    ✍️  Citations:  {_cached_count + _uncached_count:>6,}")
-        if _uncached_count or _cached_count:
+        print(f"    🌐 Framework:      {'  '.join(attack_frameworks)}")
+        _groups_filtered = [g.strip() for g in groups if g.strip() and g.strip() != "."]
+        if _groups_filtered:
+            _groups_display = ", ".join(g.replace("_", " ") for g in _groups_filtered)
+            print(f"    👥  Groups:      {_matched_groups:>6,}  matched  ({_groups_display})")
+        else:
+            print(f"    👥  Groups:      {_matched_groups:>6,}  matched")
+        print(f"    🩻  Procedures:  {_total_procedures:>6,}")
+        if collect_citations:
+            _total_cit = _cached_count + _uncached_count
+            print(f"    ✍️  Citations:   {_total_cit:>6,}")
             if _uncached_count:
                 print(f"        🔍 {_uncached_count:,} to fetch")
             if _cached_count:
-                print(f"         💾 {_cached_count:,} cached")
-        print(f"    👷 Workers:    {citation_workers:>6,}")
-        print(f"    🕰️  Est. time:   {_est_str:>6}")
+                print(f"        💾 {_cached_count:,} cached")
+            print(f"    👷  Workers:    {citation_workers:>6,}")
+        if _active_flags:
+            print(f"    🚩  Flags:")
+            for _fl in _active_flags:
+                print(f"        {_fl}")
+        if collect_citations:
+            print(f"    🕰️  Est. time:  {_est_str:>7}")
         print(f"    {_sep_pf}")
+
+        if dry_run:
+            print()
+            return
 
         if not auto_confirm:
             try:
@@ -1547,10 +1576,12 @@ def mainsaw(
                     _INDICATOR_EMOJI,
                 )
                 from src.exclusions import filter_indicators as _filter_exclusions
-                _tech_platforms = [
-                    p.strip() for p in _parts[9].split(",")
-                    if p.strip()
-                ] if len(_parts) > 9 else []
+
+                _tech_platforms = (
+                    [p.strip() for p in _parts[9].split(",") if p.strip()]
+                    if len(_parts) > 9
+                    else []
+                )
 
                 # Build set of existing indicators for dedup
                 _existing_indicators = set()
@@ -1571,7 +1602,9 @@ def mainsaw(
 
                 _indent = "      "
                 for _ref in _new_cits:
-                    _ref_print_url = _ref.get("url", "") or _ref.get("citation_name", "")
+                    _ref_print_url = _ref.get("url", "") or _ref.get(
+                        "citation_name", ""
+                    )
                     # Skip terminal print for URLs already shown under another group/technique
                     if _ref_print_url in _printed_citation_urls:
                         continue
@@ -1591,8 +1624,6 @@ def mainsaw(
                         _icon = "\033[33m\u26a0\ufe0f\033[0m "  # metadata only
                     else:
                         _icon = "\033[31m\u274c\033[0m"  # no content
-                    _name = _cn[:28].ljust(28)
-                    _method_short = _method[:14].ljust(14)
                     _url = _ref.get("url", "")
                     # no_content entries are written to citations_failed.yaml — skip terminal noise
                     if _method == "no_content":
@@ -1601,9 +1632,14 @@ def mainsaw(
                         _tw = os.get_terminal_size().columns
                     except OSError:
                         _tw = 120
-                    _used = 6 + 5 + 1 + 28 + 4 + 14 + 3 + 5
-                    _url_max = max(30, _tw - _used)
-                    _url_part = f" [{_url[:_url_max]}]" if _url else ""
+                    _method_short = _method[:14].ljust(14)
+                    # Title: use as much space as available, leaving room for method + icon
+                    _title_max = max(20, _tw - 6 - 5 - 4 - 14 - 3 - 5)
+                    _name = _cn[:_title_max]
+                    _url_indent = " " * (6 + 5 + 1)  # align under title
+                    _url_part = (
+                        f"\n{_url_indent}\033[90m[{_url}]\033[0m" if _url else ""
+                    )
                     print(
                         f"{_indent}\033[90m{_num_str:>5}\033[0m \033[36m{_name}\033[0m \033[90m\u2192\033[0m \033[33m{_method_short}\033[0m {_icon}{_url_part}"
                     )
@@ -1639,7 +1675,10 @@ def mainsaw(
 
                             # Enrich any CVEs found in citation content
                             if "cve" in _new_indicators:
-                                from src.tools.map_bespoke_logs import enrich_cves_for_evidence
+                                from src.tools.map_bespoke_logs import (
+                                    enrich_cves_for_evidence,
+                                )
+
                                 _new_indicators["cve"] = enrich_cves_for_evidence(
                                     _new_indicators["cve"]
                                 )
@@ -1654,14 +1693,25 @@ def mainsaw(
                                         _cve_parts = []
                                         for _cve_entry in _evals:
                                             for _cve_id, _cve_val in _cve_entry.items():
-                                                _vparts = _cve_val.split("|") if _cve_val else []
-                                                _ind = _vparts[2] if len(_vparts) > 2 else ""
+                                                _vparts = (
+                                                    _cve_val.split("|")
+                                                    if _cve_val
+                                                    else []
+                                                )
+                                                _ind = (
+                                                    _vparts[2]
+                                                    if len(_vparts) > 2
+                                                    else ""
+                                                )
                                                 _cve_parts.append(
-                                                    f"`{_cve_id}`" + (f": {_ind}" if _ind else "")
+                                                    f"`{_cve_id}`"
+                                                    + (f": {_ind}" if _ind else "")
                                                 )
                                         _vals_str = ", ".join(_cve_parts[:4])
                                     else:
-                                        _vals_str = ", ".join(f"`{v}`" for v in _evals[:8])
+                                        _vals_str = ", ".join(
+                                            f"`{v}`" for v in _evals[:8]
+                                        )
                                     print(
                                         f"{_indent}       {_emoji} \033[33m{_vals_str}\033[0m"
                                     )

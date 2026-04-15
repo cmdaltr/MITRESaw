@@ -185,6 +185,15 @@ parser.add_argument(
     const=True,
     default=False,
 )
+parser.add_argument(
+    "--dry-run",
+    help="Preview scope and exit — loads STIX data, applies all filters, prints the pre-run\n"
+         "summary (groups matched, procedures, citations, cache status, estimated time)\n"
+         "without fetching any content or writing any output files.\n",
+    action="store_const",
+    const=True,
+    default=False,
+)
 
 
 args = parser.parse_args()
@@ -385,6 +394,7 @@ def main():
         collect_citations=collect_citations,
         citation_workers=args.max_workers,
         auto_confirm=args.auto,
+        dry_run=args.dry_run,
     )
 
 

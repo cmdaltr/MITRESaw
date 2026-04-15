@@ -1031,14 +1031,20 @@ def _rewrite_url(url: str) -> str:
     """Rewrite known redirected/migrated URLs to their current location."""
     if not url:
         return url
-    # Mandiant blogs migrated to Google Cloud
-    if "www.mandiant.com/resources" in url:
-        slug = url.rsplit("/", 1)[-1]
-        return f"https://cloud.google.com/blog/topics/threat-intelligence/{slug}/"
-    # FireEye blogs also migrated to Mandiant/Google
-    if "www.fireeye.com/blog/" in url:
-        slug = url.rsplit("/", 1)[-1]
-        return f"https://cloud.google.com/blog/topics/threat-intelligence/{slug}/"
+    # FireEye / Mandiant → Google Cloud (all content migrated)
+    # Covers: www.fireeye.com, www2.fireeye.com, fireeye.com,
+    #         www.mandiant.com, mandiant.com — any path.
+    _fe_m = re.match(
+        r"https?://(?:www2?\.)?(?:fireeye|mandiant)\.com(/.*)?$", url, re.IGNORECASE
+    )
+    if _fe_m:
+        # Extract the last non-empty path segment as the slug
+        _path = (_fe_m.group(1) or "").rstrip("/")
+        _slug = _path.rsplit("/", 1)[-1] if _path else ""
+        if _slug:
+            return f"https://cloud.google.com/blog/topics/threat-intelligence/{_slug}/"
+        # No recognisable slug — send to the index page
+        return "https://cloud.google.com/blog/topics/threat-intelligence/"
     # LOLBAS project site is a Vue.js SPA — individual binary pages return a JS
     # shell with no meaningful content.  Rewrite to the raw YAML source in the
     # GitHub repo, which contains full command descriptions, use cases, and
@@ -1630,10 +1636,15 @@ def clear_cache_all_failed() -> int:
 
 def _clear_cache_by(predicate) -> int:
     """Remove cache entries matching a predicate function."""
+    import sys as _sys
+    import time as _time
     if not CACHE_DIR.exists():
         return 0
+    files = list(CACHE_DIR.glob("*.json"))
+    total = len(files)
     removed = 0
-    for f in CACHE_DIR.glob("*.json"):
+    _start = _time.time()
+    for i, f in enumerate(files, 1):
         try:
             data = json.loads(f.read_text())
             if predicate(data):
@@ -1642,6 +1653,17 @@ def _clear_cache_by(predicate) -> int:
         except Exception:
             f.unlink()
             removed += 1
+        if i % 200 == 0 or i == total:
+            _elapsed = _time.time() - _start
+            _rate = i / _elapsed if _elapsed > 0 else i
+            _eta = (total - i) / _rate if _rate > 0 else 0
+            _sys.stdout.write(
+                f"\r    Scanning cache: {i:,}/{total:,}  ({removed:,} removed)  "
+                f"ETA: {int(_eta)}s   "
+            )
+            _sys.stdout.flush()
+    if total > 0:
+        _sys.stdout.write("\n")
     return removed
 
 
@@ -1756,6 +1778,8 @@ def retry_js_citations(failed_yaml: str | None = None) -> tuple[int, int]:
     """
     import yaml as _yaml
 
+    # url → citation_name mapping for display
+    _url_titles: dict[str, str] = {}
     urls: list[str] = []
 
     # 1. Collect URLs to retry
@@ -1767,6 +1791,7 @@ def retry_js_citations(failed_yaml: str | None = None) -> tuple[int, int]:
                 _u = (_e.get("url") or "").strip()
                 if _u:
                     urls.append(_u)
+                    _url_titles[_u] = (_e.get("citation_name") or "").strip()
         except Exception:
             pass
 
@@ -1779,6 +1804,7 @@ def retry_js_citations(failed_yaml: str | None = None) -> tuple[int, int]:
                     _u = _d.get("url", "").strip()
                     if _u:
                         urls.append(_u)
+                        # no citation_name in raw cache entries
             except Exception:
                 pass
 
@@ -1787,20 +1813,57 @@ def retry_js_citations(failed_yaml: str | None = None) -> tuple[int, int]:
         print("    -> No failed URLs found to retry.")
         return 0, 0
 
-    print(f"    -> Retrying {len(urls)} URL(s) with Playwright headless...")
+    import time as _time
+    total = len(urls)
+    print(f"    -> Retrying {total:,} URL(s) with Playwright headless...")
     attempted = 0
     recovered = 0
+    _start = _time.time()
+    _recent: list[float] = []  # timestamps of last N completions for rolling ETA
 
     for _url in urls:
         attempted += 1
-        _short = _url[:70]
+        _title = _url_titles.get(_url, "")
+        _label = f"{_title}  [{_url}]" if _title else f"[{_url}]"
+
         text, detail = _fetch_headless(_url)
+
+        _now = _time.time()
+        _recent.append(_now)
+        if len(_recent) > 10:
+            _recent = _recent[-10:]
+
+        _elapsed = _now - _start
+        _remaining = total - attempted
+        if len(_recent) >= 2:
+            _window = _recent[-1] - _recent[0]
+            _avg = _window / (len(_recent) - 1)
+            _eta = _avg * _remaining
+        elif _elapsed > 0:
+            _avg = _elapsed / attempted
+            _eta = _avg * _remaining
+        else:
+            _eta = 0
+
+        if _eta >= 60:
+            _eta_str = f"{int(_eta // 60)}m {int(_eta % 60):02d}s"
+        else:
+            _eta_str = f"{int(_eta)}s"
+
+        _elapsed_str = (
+            f"{int(_elapsed // 60)}m {int(_elapsed % 60):02d}s"
+            if _elapsed >= 60
+            else f"{int(_elapsed)}s"
+        )
+
+        _progress = f"\033[90m[{attempted}/{total}  ✔ {recovered}  ⏱ {_eta_str} remaining  elapsed {_elapsed_str}]\033[0m"
+
         if text:
             _write_cache(_url, text, "headless")
             recovered += 1
-            print(f"       ✅ {_short}")
+            print(f"       \033[32m✅\033[0m {_progress}  {_label}")
         else:
-            print(f"       ❌ {_short}  ({detail})")
+            print(f"       \033[31m❌\033[0m {_progress}  {_label}  ({detail})")
 
     return attempted, recovered
 

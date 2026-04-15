@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="740" viewBox="0 0 800 740" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#38bdf8"/>
+    </marker>
+    <marker id="arr-g" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#4ade80"/>
+    </marker>
+    <marker id="arr-r" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#f87171"/>
+    </marker>
+    <marker id="arr-y" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#facc15"/>
+    </marker>
+    <marker id="arr-o" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#fb923c"/>
+    </marker>
+  </defs>
+
+  <rect width="800" height="740" fill="#0f172a"/>
+
+  <text x="400" y="30" text-anchor="middle" font-size="16" font-weight="bold" fill="#0ea5e9">Citation Collection Flow  (-C)</text>
+  <text x="400" y="50" text-anchor="middle" font-size="11" fill="#64748b">Requires -E  ·  For each (Citation: X) found in procedure text, attempts fetch via multi-method chain</text>
+
+  <!-- Phase 0: Scope / Confirm -->
+  <rect x="220" y="62" width="360" height="36" rx="5" fill="#1e2d3d" stroke="#38bdf8" stroke-width="1.2" stroke-dasharray="4,3"/>
+  <text x="400" y="77" text-anchor="middle" font-size="11" fill="#7fb3d3">↑  Basic + Evidence extraction  (-D -E)  completes first</text>
+  <text x="400" y="92" text-anchor="middle" font-size="10" fill="#64748b">STIX load · filter · procedures · CSV · XLSX sheets</text>
+
+  <!-- Scope confirm -->
+  <line x1="400" y1="98" x2="400" y2="118" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="220" y="118" width="360" height="40" rx="5" fill="#1e293b" stroke="#facc15" stroke-width="1.5"/>
+  <text x="400" y="135" text-anchor="middle" font-size="12" font-weight="bold" fill="#fde68a">Pre-fetch Plan  (scope + cache check)</text>
+  <text x="400" y="150" text-anchor="middle" font-size="10" fill="#94a3b8">Groups · procedures · citations cached/uncached · est. time  →  Continue? [Y/n]  (skip with -A)</text>
+
+  <!-- Pre-fetch batch -->
+  <line x1="400" y1="158" x2="400" y2="178" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="190" y="178" width="420" height="44" rx="5" fill="#1e293b" stroke="#0ea5e9" stroke-width="1.5"/>
+  <text x="400" y="197" text-anchor="middle" font-size="12" font-weight="bold" fill="#e0f2fe">Pre-fetch Batch  (parallel, all workers)</text>
+  <text x="400" y="212" text-anchor="middle" font-size="10" fill="#94a3b8">All uncached citation URLs fetched simultaneously before main loop starts</text>
+  <text x="400" y="223" text-anchor="middle" font-size="10" fill="#64748b">Live counter: N/M (%) ETA shown · rate limiting auto-adapts workers</text>
+
+  <!-- Multi-method chain label -->
+  <line x1="400" y1="222" x2="400" y2="244" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="400" y="258" text-anchor="middle" font-size="11" font-weight="bold" fill="#94a3b8">— Multi-method fetch chain (per URL) —</text>
+
+  <!-- Chain steps -->
+  <!-- Direct HTTP -->
+  <rect x="20" y="268" width="110" height="38" rx="5" fill="#1e3a5f" stroke="#38bdf8" stroke-width="1.5"/>
+  <text x="75" y="283" text-anchor="middle" font-size="10" font-weight="bold" fill="#7fb3d3">① direct</text>
+  <text x="75" y="297" text-anchor="middle" font-size="9" fill="#64748b">HTTP + headers</text>
+  <line x1="130" y1="287" x2="152" y2="287" stroke="#38bdf8" stroke-width="1.2" marker-end="url(#arr)"/>
+
+  <!-- Headless -->
+  <rect x="152" y="268" width="110" height="38" rx="5" fill="#1e3a5f" stroke="#38bdf8" stroke-width="1.5"/>
+  <text x="207" y="283" text-anchor="middle" font-size="10" font-weight="bold" fill="#7fb3d3">② headless</text>
+  <text x="207" y="297" text-anchor="middle" font-size="9" fill="#64748b">Playwright stealth</text>
+  <line x1="262" y1="287" x2="284" y2="287" stroke="#38bdf8" stroke-width="1.2" marker-end="url(#arr)"/>
+
+  <!-- Headed -->
+  <rect x="284" y="268" width="120" height="38" rx="5" fill="#1e3a5f" stroke="#4ade80" stroke-width="1.5"/>
+  <text x="344" y="283" text-anchor="middle" font-size="10" font-weight="bold" fill="#86efac">③ headed</text>
+  <text x="344" y="297" text-anchor="middle" font-size="9" fill="#64748b">headed window · Cloudflare</text>
+  <line x1="404" y1="287" x2="426" y2="287" stroke="#38bdf8" stroke-width="1.2" marker-end="url(#arr)"/>
+
+  <!-- Wayback -->
+  <rect x="426" y="268" width="110" height="38" rx="5" fill="#1e3a5f" stroke="#38bdf8" stroke-width="1.5"/>
+  <text x="481" y="283" text-anchor="middle" font-size="10" font-weight="bold" fill="#7fb3d3">④ wayback</text>
+  <text x="481" y="297" text-anchor="middle" font-size="9" fill="#64748b">web.archive.org</text>
+  <line x1="536" y1="287" x2="558" y2="287" stroke="#38bdf8" stroke-width="1.2" marker-end="url(#arr)"/>
+
+  <!-- Google Cache -->
+  <rect x="558" y="268" width="100" height="38" rx="5" fill="#1e3a5f" stroke="#38bdf8" stroke-width="1.5"/>
+  <text x="608" y="283" text-anchor="middle" font-size="10" font-weight="bold" fill="#7fb3d3">⑤ google</text>
+  <text x="608" y="297" text-anchor="middle" font-size="9" fill="#64748b">cache</text>
+  <line x1="658" y1="287" x2="680" y2="287" stroke="#38bdf8" stroke-width="1.2" marker-end="url(#arr)"/>
+
+  <!-- PDF -->
+  <rect x="680" y="268" width="100" height="38" rx="5" fill="#1e3a5f" stroke="#38bdf8" stroke-width="1.5"/>
+  <text x="730" y="283" text-anchor="middle" font-size="10" font-weight="bold" fill="#7fb3d3">⑥ PDF</text>
+  <text x="730" y="297" text-anchor="middle" font-size="9" fill="#64748b">PyPDF2 / OCR</text>
+
+  <!-- Labels under chain -->
+  <text x="75" y="320" text-anchor="middle" font-size="9" fill="#64748b">quality check</text>
+  <text x="207" y="320" text-anchor="middle" font-size="9" fill="#64748b">inner_text</text>
+  <text x="344" y="320" text-anchor="middle" font-size="9" fill="#4ade80">bypasses JS detect</text>
+  <text x="608" y="320" text-anchor="middle" font-size="9" fill="#64748b">cached snapshots</text>
+  <text x="730" y="320" text-anchor="middle" font-size="9" fill="#64748b">+ OCR fallback</text>
+
+  <!-- Arrow: success path -->
+  <line x1="400" y1="330" x2="400" y2="350" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr-g)"/>
+  <text x="400" y="346" text-anchor="middle" font-size="9" fill="#4ade80">content obtained</text>
+
+  <!-- Quality gate -->
+  <rect x="200" y="352" width="400" height="44" rx="5" fill="#1e293b" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="400" y="371" text-anchor="middle" font-size="12" font-weight="bold" fill="#c4b5fd">Content Quality Gate</text>
+  <text x="400" y="386" text-anchor="middle" font-size="10" fill="#94a3b8">Gibberish / binary check  (≥65% alnum density)  ·  URL-rewriting  ·  skip list check</text>
+  <text x="400" y="397" text-anchor="middle" font-size="10" fill="#64748b">Known-dead domains rewritten: fireeye → cloud.google  ·  LOLBAS SPA → raw GitHub YAML</text>
+  <line x1="400" y1="396" x2="400" y2="416" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Relevance filter -->
+  <rect x="200" y="416" width="400" height="44" rx="5" fill="#1e293b" stroke="#0ea5e9" stroke-width="1.5"/>
+  <text x="400" y="435" text-anchor="middle" font-size="12" font-weight="bold" fill="#e0f2fe">Relevance Filter</text>
+  <text x="400" y="451" text-anchor="middle" font-size="10" fill="#94a3b8">Paragraphs scored by technique keywords  ·  top N kept  ·  group name excluded from scoring</text>
+  <text x="400" y="462" text-anchor="middle" font-size="10" fill="#64748b">Technique name · ID · sub-technique parent · up to 5 extracted indicators as signals</text>
+  <line x1="400" y1="460" x2="400" y2="480" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Extract indicators -->
+  <rect x="200" y="480" width="400" height="54" rx="5" fill="#1e293b" stroke="#0ea5e9" stroke-width="1.5"/>
+  <text x="400" y="499" text-anchor="middle" font-size="12" font-weight="bold" fill="#e0f2fe">Extract Indicators from Citation Text</text>
+  <text x="400" y="514" text-anchor="middle" font-size="10" fill="#94a3b8">cmd · reg · paths · CVE (+ CVSS enrichment) · ports (≥20) · software</text>
+  <text x="400" y="526" text-anchor="middle" font-size="10" fill="#64748b">Platform filter · noise-char pre-flag check · known_commands.yaml · dedup vs native</text>
+  <text x="400" y="537" text-anchor="middle" font-size="10" fill="#64748b">Source type: Citation  ·  only new indicators shown</text>
+  <line x1="400" y1="534" x2="400" y2="554" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Inject -->
+  <rect x="200" y="554" width="400" height="44" rx="5" fill="#1e293b" stroke="#4ade80" stroke-width="1.5"/>
+  <text x="400" y="573" text-anchor="middle" font-size="12" font-weight="bold" fill="#86efac">Inject into Evidence Report</text>
+  <text x="400" y="589" text-anchor="middle" font-size="10" fill="#94a3b8">Citation-sourced rows added alongside native rows  ·  Reference Detail sheet written</text>
+  <line x1="400" y1="598" x2="400" y2="618" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- STIX fallback row -->
+  <rect x="120" y="618" width="240" height="40" rx="5" fill="#451a03" stroke="#fb923c" stroke-width="1.5"/>
+  <text x="240" y="635" text-anchor="middle" font-size="11" font-weight="bold" fill="#fdba74">All methods failed  →  stix_metadata</text>
+  <text x="240" y="650" text-anchor="middle" font-size="9" fill="#94a3b8">Author / title / date from STIX bundle  ·  logged to citations_failed.yaml</text>
+
+  <!-- Write failed yaml -->
+  <rect x="440" y="618" width="240" height="40" rx="5" fill="#14532d" stroke="#4ade80" stroke-width="1.5"/>
+  <text x="560" y="635" text-anchor="middle" font-size="11" font-weight="bold" fill="#86efac">Write citations_failed.yaml</text>
+  <text x="560" y="650" text-anchor="middle" font-size="9" fill="#94a3b8">Deduplicated by URL  ·  attempt chain  ·  group  ·  technique ID</text>
+
+  <!-- Cache write note -->
+  <rect x="200" y="676" width="400" height="30" rx="5" fill="#1e293b" stroke="#64748b" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="400" y="688" text-anchor="middle" font-size="10" fill="#64748b">All fetched content written to  .citation_cache/  for reuse on future runs</text>
+  <text x="400" y="700" text-anchor="middle" font-size="10" fill="#64748b">Empty / failed entries also cached — skips full method chain on retry within same run</text>
+
+  <!-- headed auto note -->
+  <rect x="200" y="716" width="400" height="22" rx="4" fill="#0f172a" stroke="#4ade80" stroke-width="1"/>
+  <text x="400" y="731" text-anchor="middle" font-size="10" fill="#4ade80">headed mode auto-triggered when headless returns &lt;200 chars and display is available (macOS/Windows/Linux desktop)</text>
+</svg>

@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="760" height="560" viewBox="0 0 760 560" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#38bdf8"/>
+    </marker>
+    <marker id="arr-g" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#4ade80"/>
+    </marker>
+  </defs>
+
+  <rect width="760" height="560" fill="#0f172a"/>
+
+  <text x="380" y="32" text-anchor="middle" font-size="16" font-weight="bold" fill="#0ea5e9">Evidence Report Flow  (-E)</text>
+  <text x="380" y="52" text-anchor="middle" font-size="11" fill="#64748b">Everything in -D  plus  atomised XLSX with multiple analytical sheets</text>
+
+  <!-- Basic extraction block (collapsed) -->
+  <rect x="220" y="68" width="320" height="34" rx="6" fill="#1e2d3d" stroke="#38bdf8" stroke-width="1.2" stroke-dasharray="5,3"/>
+  <text x="380" y="82" text-anchor="middle" font-size="11" fill="#7fb3d3">↑  Basic extraction  (-D)  — procedures extracted from STIX</text>
+  <text x="380" y="96" text-anchor="middle" font-size="10" fill="#64748b">Filter · extract · deduplicate · write mitre_procedures.csv</text>
+  <line x1="380" y1="102" x2="380" y2="124" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Atomise -->
+  <rect x="200" y="124" width="360" height="54" rx="6" fill="#1e293b" stroke="#0ea5e9" stroke-width="1.5"/>
+  <text x="380" y="143" text-anchor="middle" font-size="12" font-weight="bold" fill="#e0f2fe">Atomise Indicators</text>
+  <text x="380" y="159" text-anchor="middle" font-size="10" fill="#94a3b8">One XLSX row per atomic indicator (cmd, reg, path, CVE, port, software)</text>
+  <text x="380" y="171" text-anchor="middle" font-size="10" fill="#64748b">Deduplication across procedures · source type assigned (Procedure / Technique)</text>
+  <line x1="380" y1="178" x2="380" y2="200" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Enrich detection -->
+  <rect x="200" y="200" width="360" height="44" rx="6" fill="#1e293b" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="380" y="219" text-anchor="middle" font-size="12" font-weight="bold" fill="#c4b5fd">Attach Detection Guidance</text>
+  <text x="380" y="235" text-anchor="middle" font-size="10" fill="#94a3b8">Sysmon EIDs · log sources · CISA KEV · CVE CVSS enrichment</text>
+  <line x1="380" y1="244" x2="380" y2="266" stroke="#38bdf8" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Build sheets label -->
+  <text x="380" y="284" text-anchor="middle" font-size="11" fill="#64748b">XLSX sheets written:</text>
+
+  <!-- Sheet grid -->
+  <!-- Evidence Report -->
+  <rect x="30" y="292" width="160" height="52" rx="5" fill="#1e293b" stroke="#4ade80" stroke-width="1.5"/>
+  <text x="110" y="311" text-anchor="middle" font-size="11" font-weight="bold" fill="#86efac">Evidence Report</text>
+  <text x="110" y="325" text-anchor="middle" font-size="9" fill="#94a3b8">1 row / indicator</text>
+  <text x="110" y="337" text-anchor="middle" font-size="9" fill="#64748b">13 columns · styled</text>
+
+  <!-- Group Summary -->
+  <rect x="210" y="292" width="160" height="52" rx="5" fill="#1e293b" stroke="#4ade80" stroke-width="1.5"/>
+  <text x="290" y="311" text-anchor="middle" font-size="11" font-weight="bold" fill="#86efac">Group Summary</text>
+  <text x="290" y="325" text-anchor="middle" font-size="9" fill="#94a3b8">Per-group stats</text>
+  <text x="290" y="337" text-anchor="middle" font-size="9" fill="#64748b">techniques · indicators</text>
+
+  <!-- Tactic Pivot -->
+  <rect x="390" y="292" width="160" height="52" rx="5" fill="#1e293b" stroke="#4ade80" stroke-width="1.5"/>
+  <text x="470" y="311" text-anchor="middle" font-size="11" font-weight="bold" fill="#86efac">Tactic Pivot</text>
+  <text x="470" y="325" text-anchor="middle" font-size="9" fill="#94a3b8">Indicators per tactic</text>
+  <text x="470" y="337" text-anchor="middle" font-size="9" fill="#64748b">sorted by count</text>
+
+  <!-- Technique Matrix -->
+  <rect x="570" y="292" width="160" height="52" rx="5" fill="#1e293b" stroke="#f59e0b" stroke-width="1.2" stroke-dasharray="4,3"/>
+  <text x="650" y="308" text-anchor="middle" font-size="11" font-weight="bold" fill="#fcd34d">Technique Matrix</text>
+  <text x="650" y="322" text-anchor="middle" font-size="9" fill="#94a3b8">only when 2+ groups</text>
+  <text x="650" y="334" text-anchor="middle" font-size="9" fill="#64748b">cross-group technique coverage</text>
+  <text x="650" y="342" text-anchor="middle" font-size="8" fill="#f59e0b">sorted by group coverage</text>
+
+  <!-- Arrow to xlsx output -->
+  <line x1="110" y1="344" x2="110" y2="400" stroke="#4ade80" stroke-width="1.2"/>
+  <line x1="290" y1="344" x2="290" y2="400" stroke="#4ade80" stroke-width="1.2"/>
+  <line x1="470" y1="344" x2="470" y2="400" stroke="#4ade80" stroke-width="1.2"/>
+  <line x1="650" y1="344" x2="650" y2="400" stroke="#4ade80" stroke-width="1.2"/>
+  <line x1="110" y1="400" x2="650" y2="400" stroke="#4ade80" stroke-width="1.2"/>
+  <line x1="380" y1="400" x2="380" y2="422" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr-g)"/>
+
+  <!-- Output -->
+  <rect x="220" y="422" width="320" height="44" rx="6" fill="#14532d" stroke="#4ade80" stroke-width="1.5"/>
+  <text x="380" y="441" text-anchor="middle" font-size="12" font-weight="bold" fill="#86efac">Write mitre_procedures.xlsx</text>
+  <text x="380" y="457" text-anchor="middle" font-size="10" fill="#94a3b8">Styled · frozen headers · conditional formatting · per-sheet column widths</text>
+
+  <!-- Reference Detail note -->
+  <rect x="220" y="482" width="320" height="34" rx="5" fill="#1e293b" stroke="#f59e0b" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="380" y="497" text-anchor="middle" font-size="11" font-weight="bold" fill="#fcd34d">+  Reference Detail sheet  (only with -C)</text>
+  <text x="380" y="510" text-anchor="middle" font-size="10" fill="#64748b">Citation sources · method · extracted content · URL</text>
+</svg>
