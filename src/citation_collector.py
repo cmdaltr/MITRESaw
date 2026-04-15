@@ -766,49 +766,65 @@ def _fetch_headless(url: str) -> tuple:
 
     import random
 
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
+    def _run_browser(headless: bool) -> str:
+        """Launch browser, navigate, return inner_text or ''."""
+        try:
+            with sync_playwright() as p:
+                launch_args = [
                     "--disable-blink-features=AutomationControlled",
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
-                ],
-            )
-            context = browser.new_context(
-                user_agent=random.choice(_USER_AGENTS),
-                viewport={"width": 1920, "height": 1080},
-                locale="en-US",
-                timezone_id="America/New_York",
-                color_scheme="light",
-                java_script_enabled=True,
-            )
-            context.add_init_script(_STEALTH_JS)
-            page = context.new_page()
-
-            # Navigate with short timeout
-            try:
-                page.goto(url, wait_until="domcontentloaded", timeout=15000)
-            except Exception:
+                ]
+                browser = p.chromium.launch(headless=headless, args=launch_args)
+                context = browser.new_context(
+                    user_agent=random.choice(_USER_AGENTS),
+                    viewport={"width": 1920, "height": 1080},
+                    locale="en-US",
+                    timezone_id="America/New_York",
+                    color_scheme="light",
+                    java_script_enabled=True,
+                )
+                context.add_init_script(_STEALTH_JS)
+                page = context.new_page()
+                try:
+                    page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                except Exception:
+                    browser.close()
+                    return ""
+                page.wait_for_timeout(3000)
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                page.wait_for_timeout(1000)
+                # inner_text gives rendered visible text directly — no html_to_text needed
+                try:
+                    text = page.inner_text("body")
+                except Exception:
+                    text = ""
                 browser.close()
-                return "", "headless:navigation_failed"
+                return text[:MAX_CONTENT_CHARS] if text else ""
+        except Exception:
+            return ""
 
-            # Brief wait for JS rendering
-            page.wait_for_timeout(3000)
+    try:
+        # Pass 1 — headless (fast, no display required)
+        text = _run_browser(headless=True)
+        if text and len(text) > 200:
+            return text, "headless"
 
-            # Quick scroll to trigger lazy content
-            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            page.wait_for_timeout(1000)
+        # Pass 2 — headed (bypasses Cloudflare fingerprinting; requires display)
+        # Only attempt when a display is available (macOS always has one;
+        # Linux servers need DISPLAY set).
+        import sys as _sys
+        _has_display = (
+            _sys.platform == "darwin"
+            or bool(os.environ.get("DISPLAY"))
+            or bool(os.environ.get("WAYLAND_DISPLAY"))
+        )
+        if _has_display:
+            text = _run_browser(headless=False)
+            if text and len(text) > 200:
+                return text, "headless_headed"
 
-            content = page.content()
-            browser.close()
-
-            if content and len(content) > 500:
-                text = html_to_text(content[:MAX_CONTENT_CHARS])
-                if text and len(text) > 200:
-                    return text, "headless"
-            return "", "headless:no_content"
+        return "", "headless:no_content"
     except Exception as e:
         return "", f"headless:{type(e).__name__}"
 
@@ -1231,8 +1247,8 @@ def collect_reference_content(
             text, detail = _fetch_headless(url)
             entry["attempts"].append(f"headless → {detail}")
             if text:
-                _write_cache(url, text, "headless")
-                entry["method"] = "headless"
+                _write_cache(url, text, detail)   # preserves headless vs headless_headed
+                entry["method"] = detail
 
         # Method 2 — Wayback Machine
         if not text:
