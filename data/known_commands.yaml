@@ -206,7 +206,6 @@ linux:
     - uptime
     - users
     - w
-    - who
     - whoami
 
     # Process
@@ -241,7 +240,6 @@ linux:
     - df
     - diff
     - du
-    - file
     - find
     - grep
     - head
@@ -410,7 +408,6 @@ macos:
     - uptime
     - users
     - w
-    - who
     - whoami
 
     # Process
@@ -439,7 +436,6 @@ macos:
     - diff
     - diskutil
     - du
-    - file
     - find
     - grep
     - hdiutil

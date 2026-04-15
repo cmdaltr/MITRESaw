@@ -1013,6 +1013,29 @@ def _rewrite_url(url: str) -> str:
     if "www.fireeye.com/blog/" in url:
         slug = url.rsplit("/", 1)[-1]
         return f"https://cloud.google.com/blog/topics/threat-intelligence/{slug}/"
+    # LOLBAS project site is a Vue.js SPA — individual binary pages return a JS
+    # shell with no meaningful content.  Rewrite to the raw YAML source in the
+    # GitHub repo, which contains full command descriptions, use cases, and
+    # detection guidance as plain text.
+    # Pattern: https://lolbas-project.github.io/lolbas/{Type}/{Name}/
+    #       → https://raw.githubusercontent.com/LOLBAS-Project/LOLBAS/master/yml/OS{Type}s/{Name}.yml
+    _lolbas_m = re.match(
+        r"https?://lolbas-project\.github\.io/lolbas/(\w+)/([^/]+)/?$",
+        url, re.IGNORECASE,
+    )
+    if _lolbas_m:
+        _ltype, _lname = _lolbas_m.group(1), _lolbas_m.group(2)
+        # Map URL type segment → YAML subdirectory
+        _type_map = {
+            "binaries": "OSBinaries",
+            "scripts":  "OSScripts",
+            "libraries": "OSLibraries",
+        }
+        _subdir = _type_map.get(_ltype.lower(), f"OS{_ltype.title()}s")
+        return (
+            f"https://raw.githubusercontent.com/LOLBAS-Project/LOLBAS"
+            f"/master/yml/{_subdir}/{_lname}.yml"
+        )
     return url
 
 
@@ -1372,9 +1395,14 @@ def extract_indicators_from_text(text: str) -> dict:
             indicators.setdefault("software", []).append(bt)
         elif re.search(r"[-/]", bt):
             # Has flags or path separators — require ≥2 chars before the first
-            # flag/separator so standalone flags like -Vz8 or i/m are excluded
+            # flag/separator so standalone flags like -Vz8 or i/m are excluded.
+            # Pre-flag must also be a known command, all-lowercase, or ≥4 chars;
+            # short all-uppercase prefixes (e.g. PL in PL/ygP) are garbled text.
             _pre_flag = re.split(r"[\s\-/]", bt)[0]
-            if len(_pre_flag) >= 2:
+            if (len(_pre_flag) >= 2
+                    and (_pre_flag.lower() in _KNOWN_CMD_NAMES
+                         or _pre_flag == _pre_flag.lower()
+                         or len(_pre_flag) >= 4)):
                 indicators.setdefault("cmd", []).append(bt)
         elif bt_lower in _KNOWN_CMD_NAMES:
             # Single-word known command (e.g. date, hwclock, timedatectl, net, sc)
@@ -1451,7 +1479,11 @@ def extract_indicators_from_text(text: str) -> dict:
         # Validate first path component — reject garbled short segments (e.g. D:\w2Mj)
         _after_drive = re.sub(r"^[A-Za-z]:\\", "", _p)
         _first_seg = _after_drive.split("\\")[0] if _after_drive else ""
+        _seg_alpha = sum(1 for c in _first_seg if c.isalpha())
         _seg_digits = sum(1 for c in _first_seg if c.isdigit())
+        # Must have at least 2 alphabetic chars in first segment (rejects g:\+, g:\*)
+        if _first_seg and _seg_alpha < 2:
+            continue
         if (_first_seg and len(_first_seg) <= 6 and _seg_digits == 1
                 and not _first_seg[-1].isdigit()):
             continue  # single non-terminal digit = garbled (w2Mj, D:\w2Mj)
@@ -1491,15 +1523,15 @@ def extract_indicators_from_text(text: str) -> dict:
     _ip_ports = set(_ip_port_re.findall(text))
     _ctx_ports = set(_ctx_port_re.findall(text))
     _all_ports = _hi_ports | _ip_ports | _ctx_ports
-    # Year-like numbers (1990–2030) are only accepted from high-confidence sources
-    # (explicit "port N" / "TCP/N" / "UDP/N" / IP:port) to avoid false-positives
-    # from publication years appearing in prose.
-    _hi_conf = _hi_ports | _ip_ports
+    # Year-like numbers (1990–2030) are excluded unless they appear in an
+    # unambiguous IP:port context (e.g. 192.168.1.1:2017).
+    # "port 2017", "TCP/2017", "UDP/2017" in prose are too easily matched by
+    # publication years, conference years, or CVE years — not admitted.
     ports = [
         p for p in _all_ports
         if 1 <= int(p) <= 65535
         and p not in _ip_octets
-        and not (1990 <= int(p) <= 2030 and p not in _hi_conf)
+        and not (1990 <= int(p) <= 2030 and p not in _ip_ports)
     ]
     if ports:
         indicators["ports"] = ports[:10]

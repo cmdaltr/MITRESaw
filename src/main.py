@@ -1582,6 +1582,9 @@ def mainsaw(
                     _name = _cn[:28].ljust(28)
                     _method_short = _method[:14].ljust(14)
                     _url = _ref.get("url", "")
+                    # no_content entries are written to citations_failed.yaml — skip terminal noise
+                    if _method == "no_content":
+                        continue
                     try:
                         _tw = os.get_terminal_size().columns
                     except OSError:
