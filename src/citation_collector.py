@@ -1210,8 +1210,17 @@ def collect_reference_content(
             text, detail = _fetch_direct(url, session)
             entry["attempts"].append(f"direct → {detail}")
             if text:
-                _write_cache(url, text, "direct")
-                entry["method"] = "direct"
+                # Reject binary/garbled responses that decoded as text but are
+                # not meaningful prose (e.g. gzip returned as text/html, JS blob)
+                _qsample = text[:2000]
+                _qalnum = sum(1 for c in _qsample if c.isalnum() or c == " ")
+                if len(_qsample) > 0 and _qalnum / len(_qsample) < 0.65:
+                    text = ""
+                    _got_403 = True  # try headless for quality failures too
+                    entry["attempts"].append("direct → quality_check_failed→headless")
+                else:
+                    _write_cache(url, text, "direct")
+                    entry["method"] = "direct"
             elif "403" in detail or "401" in detail:
                 _got_403 = True
             elif "js_rendered" in detail:
