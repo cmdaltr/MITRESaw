@@ -567,12 +567,17 @@ def get_group_techniques_parallel(
         filtered_groups = []
         for group in all_groups:
             group_name = group.get("name", "")
-            group_aliases = group.get("aliases", [])
-            # Check if group matches any provided group names
+            # Guard against None — STIX objects may return None for optional fields
+            group_aliases = list(group.get("aliases") or [])
+            # All candidate strings to match against (name + all aliases), lowercased
+            _candidates = [n.strip().lower() for n in [group_name] + group_aliases if n]
+            # Match if any user-supplied term is a substring of any candidate name/alias.
+            # Substring matching lets users enter partial names ("Cozy Bear" → APT29,
+            # "APT" → all APT groups) without requiring exact full-name spelling.
             if any(
-                g.replace("_", " ").lower()
-                in [group_name.lower()] + [a.lower() for a in group_aliases]
+                g.replace("_", " ").strip().lower() in candidate
                 for g in groups
+                for candidate in _candidates
             ):
                 filtered_groups.append(group)
         all_groups = filtered_groups
@@ -1081,6 +1086,19 @@ def mainsaw(
             _tdet = technique_detection.replace("||", " ")
             _ttactics = technique_tactics.replace("||", " ")
             valid_procedure = f"{group_id}||{group_name}||{technique_id}||{technique_name}||{_usage}||-||{_gdesc}||{_tdesc}||{_tdet}||{technique_platforms}||{technique_data_sources}||{_ttactics}||{technique_framework}"
+
+            # Apply string filter: skip procedures that don't mention any search term.
+            # Checked against: group name, group description, technique name, usage,
+            # technique description, and technique detection.
+            # terms == ['.'] means "no filter" — include everything.
+            if str(terms) != "['.']" and terms:
+                _proc_text = " ".join([
+                    group_name, _gdesc, technique_id, technique_name,
+                    _usage, _tdesc, _tdet,
+                ]).lower()
+                if not any(t.strip().lower() in _proc_text for t in terms):
+                    continue
+
             valid_procedures.append(valid_procedure)
 
             # Track techniques

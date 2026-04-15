@@ -7,6 +7,15 @@ from src.main import mainsaw
 
 parser = argparse.ArgumentParser(formatter_class=RawTextHelpFormatter)
 parser.add_argument(
+    "-l", "--list",
+    choices=["groups", "platforms", "strings"],
+    metavar="CATEGORY",
+    help="List available filter values and exit. CATEGORY must be one of:\n"
+         "  groups    — all threat groups and their known aliases\n"
+         "  platforms — all valid platform names for -p\n"
+         "  strings   — suggested search string keywords for -s\n",
+)
+parser.add_argument(
     "-f", "--framework",
     default="Enterprise,ICS,Mobile",
     help="Specify which framework(s) to collect from (comma-separated).\n"
@@ -27,7 +36,7 @@ parser.add_argument(
 parser.add_argument(
     "-g", "--threatgroups",
     default=".",
-    help="Filter Threat Actor results based on specific group names e.g. APT29,HAFNIUM,Lazurus_Group,Turla (use _ instead of spaces)\n Use . to not filter i.e. obtain all Threat Actors (default: .)\n",
+    help="Filter Threat Actor results based on specific group names or aliases e.g. APT29,Cozy_Bear,HAFNIUM,Turla (use _ instead of spaces)\n Use . to not filter i.e. obtain all Threat Actors (default: .)\n",
 )
 parser.add_argument(
     "-a",
@@ -54,25 +63,9 @@ parser.add_argument(
     default=False,
 )
 parser.add_argument(
-    "-Q",
-    "--queries",
-    help="Build search queries based on results - to be imported into Splunk; Azure Sentinel; Elastic/Kibana\n",
-    action="store_const",
-    const=True,
-    default=False,
-)
-parser.add_argument(
     "-q",
     "--quiet",
     help="Suppress per-identifier output; print only when each Threat Group has been fully processed.\n",
-    action="store_const",
-    const=True,
-    default=False,
-)
-parser.add_argument(
-    "-t",
-    "--truncate",
-    help="Truncate printing of indicators for a cleaner output (they are still written to output file)\n",
     action="store_const",
     const=True,
     default=False,
@@ -189,14 +182,95 @@ attack_frameworks = [
     _FRAMEWORK_CANONICAL.get(f.strip().lower(), f.strip().title())
     for f in args.framework.split(",")
 ]
+
+
+# ---------------------------------------------------------------------------
+# -l / --list: list available filter values and exit
+# ---------------------------------------------------------------------------
+if args.list:
+    category = args.list
+
+    if category == "platforms":
+        platforms = [
+            "Azure_AD", "Containers", "Google_Workspace", "IaaS",
+            "Linux", "Network", "Office_365", "PRE", "SaaS",
+            "Windows", "macOS",
+        ]
+        print("\nAvailable platforms (use _ instead of spaces with -p):\n")
+        for p in sorted(platforms):
+            print(f"  {p}")
+        print()
+
+    elif category == "strings":
+        suggestions = [
+            ("Country (attributed or targeted)",
+             ["australia", "canada", "china", "france", "germany", "india",
+              "iran", "israel", "japan", "north_korea", "russia", "taiwan",
+              "ukraine", "united_kingdom", "united_states"]),
+            ("Industry / sector",
+             ["aerospace", "banking", "defense", "education", "energy",
+              "finance", "government", "healthcare", "law", "manufacturing",
+              "media", "mining", "oil_and_gas", "pharmaceutical",
+              "technology", "telecommunications", "transport"]),
+            ("Motivation / intent",
+             ["cryptomining", "cyber_espionage", "data_theft", "destruction",
+              "disinformation", "financial", "hacktivism", "political",
+              "ransomware", "sabotage", "surveillance"]),
+        ]
+        print("\nSuggested search strings for -s (use _ instead of spaces):\n")
+        for heading, terms in suggestions:
+            print(f"  {heading}:")
+            print("    " + ",  ".join(terms))
+            print()
+
+    elif category == "groups":
+        from src.main import load_attack_data
+        print("\nLoading ATT&CK group data...\n")
+        all_groups_seen: dict = {}  # name -> sorted alias list
+        for fw in attack_frameworks:
+            try:
+                attack_data, _ = load_attack_data(fw, force_fetch=args.fetch)
+                for group in attack_data.get_groups(remove_revoked_deprecated=True):
+                    name = group.get("name", "").strip()
+                    if not name:
+                        continue
+                    aliases = [
+                        a.strip() for a in (group.get("aliases") or [])
+                        if a.strip() and a.strip().lower() != name.lower()
+                    ]
+                    if name not in all_groups_seen:
+                        all_groups_seen[name] = aliases
+                    else:
+                        # merge aliases from additional frameworks
+                        existing = set(all_groups_seen[name])
+                        all_groups_seen[name] = sorted(
+                            existing | set(aliases),
+                            key=str.lower,
+                        )
+            except Exception as e:
+                print(f"  Warning: could not load {fw} data: {e}")
+
+        print(f"{'Group':<30}  Aliases")
+        print(f"{'─' * 30}  {'─' * 60}")
+        for name in sorted(all_groups_seen, key=str.lower):
+            aliases = all_groups_seen[name]
+            alias_str = ",  ".join(aliases) if aliases else "—"
+            print(f"  {name:<28}  {alias_str}")
+        print(f"\n  {len(all_groups_seen)} groups listed\n")
+
+    import sys
+    sys.exit(0)
+
+
+# ---------------------------------------------------------------------------
+# Normal run
+# ---------------------------------------------------------------------------
 operating_platforms = [args.platforms]
 search_terms = [args.strings]
 provided_groups = [args.threatgroups]
 show_others = args.showotherlogsources
 art = args.asciiart
 navigationlayers = args.navlayers
-queries = args.queries
-truncate = args.truncate
 columns = args.columns
 preset = args.default
 export_format = args.export
@@ -280,8 +354,8 @@ def main():
         show_others,
         art,
         navigationlayers,
-        queries,
-        truncate,
+        False,   # queries (removed)
+        False,   # truncate (removed)
         attack_frameworks,
         attack_version,
         sheet_tabs,
