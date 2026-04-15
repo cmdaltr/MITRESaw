@@ -414,8 +414,17 @@ def _read_cache(url: str) -> str | None:
             data = json.loads(path.read_text())
             text = data.get("text", "")
             # Sanitize non-printable/binary chars from old cache entries
+            # (e.g. a direct fetch that grabbed a PDF binary blob)
             if text:
                 text = re.sub(r"[^\x20-\x7E\n\r\t]", "", text)
+            # If the surviving text is too sparse to be useful prose
+            # (binary/garbled PDF), treat the cache as empty so the entry
+            # shows as no_content and can be retried with -rN.
+            if text:
+                _sample = text[:2000]
+                _alnum_sp = sum(1 for c in _sample if c.isalnum() or c == " ")
+                if len(_sample) > 0 and _alnum_sp / len(_sample) < 0.65:
+                    return ""
             return text
         except Exception:
             return None
