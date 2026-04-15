@@ -92,7 +92,7 @@ class TestRelevanceExtraction:
             NTP implementation for iOS devices, which is unrelated to the observed
             Windows campaign activity and does not involve T1124 on this platform.
         """)
-        result = _extract_relevant_passages(text, "ZIRCONIUM", "System Time Discovery", "T1124")
+        result = _extract_relevant_passages(text, "System Time Discovery", "T1124")
         _print_passages(result, "T1124 Windows — relevant passages")
 
         assert "net time" in result or "w32tm" in result or "tzutil" in result
@@ -121,7 +121,7 @@ class TestRelevanceExtraction:
 
             Unrelated section about database backup schedules.
         """)
-        result = _extract_relevant_passages(text, "ZIRCONIUM", "System Time Discovery", "T1124")
+        result = _extract_relevant_passages(text, "System Time Discovery", "T1124")
         _print_passages(result, "T1124 Linux — relevant passages")
 
         assert "hwclock" in result or "timedatectl" in result or "T1124" in result
@@ -148,7 +148,7 @@ class TestRelevanceExtraction:
             Invoke-Expression (IEX) was used to execute remotely fetched code
             without writing to disk, a common fileless execution pattern.
         """)
-        result = _extract_relevant_passages(text, "APT29", "PowerShell", "T1059.001")
+        result = _extract_relevant_passages(text, "PowerShell", "T1059.001")
         _print_passages(result, "T1059.001 PowerShell — relevant passages")
 
         assert "PowerShell" in result or "T1059.001" in result or "powershell" in result.lower()
@@ -176,7 +176,7 @@ class TestRelevanceExtraction:
             HKLM\\SECURITY\\SAM was accessed using reg save hklm\\sam C:\\Temp\\sam
             as an alternative credential extraction technique.
         """)
-        result = _extract_relevant_passages(text, "APT33", "OS Credential Dumping", "T1003")
+        result = _extract_relevant_passages(text, "OS Credential Dumping", "T1003")
         _print_passages(result, "T1003 Credential Dumping — relevant passages")
 
         assert "mimikatz" in result.lower() or "lsass" in result.lower() or "T1003" in result
@@ -201,7 +201,7 @@ class TestRelevanceExtraction:
             Unrelated paragraph about Linux crontab configuration for backup tasks.
         """)
         result = _extract_relevant_passages(
-            text, "MuddyWater", "Scheduled Task", "T1053.005",
+            text, "Scheduled Task", "T1053.005",
             indicators=["schtasks"]
         )
         _print_passages(result, "T1053.005 Scheduled Task — relevant passages")
@@ -224,7 +224,7 @@ class TestRelevanceExtraction:
             Network Time Protocol (NTP) uses UDP port 123 for time queries.
         """)
         result = _extract_relevant_passages(
-            text, "ZIRCONIUM", "System Time Discovery", "T1124"
+            text, "System Time Discovery", "T1124"
         )
         _print_passages(result, "Low-signal generic page — should be minimal/empty")
         # No T1124 or System Time Discovery appears — result should be empty
@@ -251,11 +251,11 @@ class TestRelevanceExtraction:
         """)
         # With indicators, timedatectl paragraph should be found
         result_with = _extract_relevant_passages(
-            text, "APT41", "System Time Discovery", "T1124",
+            text, "System Time Discovery", "T1124",
             indicators=["timedatectl", "net time"]
         )
         result_without = _extract_relevant_passages(
-            text, "APT41", "System Time Discovery", "T1124"
+            text, "System Time Discovery", "T1124"
         )
         print(f"\n  With indicators:    {len(result_with)} chars returned")
         print(f"  Without indicators: {len(result_without)} chars returned")
@@ -566,7 +566,7 @@ class TestFullPipeline:
         """Simulate what happens when a citation page is fetched for a technique."""
         # Step 1 — filter to relevant passages
         relevant = _extract_relevant_passages(
-            raw_text, "", technique_name, technique_id, indicators
+            raw_text, technique_name, technique_id, indicators
         )
         # Step 2 — extract indicators from those passages
         extracted = extract_indicators_from_text(relevant) if relevant else {}
@@ -840,7 +840,7 @@ def test_parametrized_technique_pipeline(technique_id, technique_name, text, exp
     print(f"  WHAT: Compact fixture text for {technique_id} run through the full pipeline.")
     print(f"  PASS: All expected indicators in expected_cmds are found in extracted output.")
 
-    relevant = _extract_relevant_passages(text, "", technique_name, technique_id)
+    relevant = _extract_relevant_passages(text, technique_name, technique_id)
     extracted = extract_indicators_from_text(relevant) if relevant else {}
 
     print(f"  Relevance: {len(text):,} → {len(relevant):,} chars")
@@ -886,7 +886,7 @@ class TestEdgeCases:
         print("  WHY:  Boundary condition — both functions must handle empty input without")
         print("        crashing and return sensible empty results.")
         print("  PASS: Relevance filter returns '' and extractor returns {}.")
-        result = _extract_relevant_passages("", "APT29", "PowerShell", "T1059.001")
+        result = _extract_relevant_passages("", "PowerShell", "T1059.001")
         assert result == ""
         extracted = extract_indicators_from_text("")
         assert extracted == {}
@@ -909,7 +909,7 @@ class TestEdgeCases:
         print("        of the input — better than returning nothing at all.")
         print("  PASS: Returned text is at most 4000 chars long.")
         text = "A" * 10000
-        result = _extract_relevant_passages(text, "APT29", "", "")
+        result = _extract_relevant_passages(text, "", "")
         assert len(result) <= 4000  # MAX_RELEVANT_CHARS
 
     def test_stix_metadata_fallback_text(self):
@@ -1049,7 +1049,7 @@ class TestKnownBugs:
             a technique-mapping table in the same document.
         """)
         result = _extract_relevant_passages(
-            text, "HAFNIUM", "System Time Discovery", "T1124"
+            text, "System Time Discovery", "T1124"
         )
         _print_passages(result, "Technique in intro only — command-only para should surface")
         # The 'Command Details' paragraph has no T1124/System Time Discovery mention.

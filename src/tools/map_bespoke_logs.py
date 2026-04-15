@@ -52,6 +52,10 @@ _last_nvd_request = 0.0
 _poc_search_cache = {}
 _last_github_search = 0.0
 _last_gitlab_search = 0.0
+# PoC content fetching
+_poc_content_cache: dict = {}          # poc_url -> fetched text (or "")
+_exploitdb_raw_urls: dict = {}         # exploit-db.com URL -> raw GitLab content URL
+_last_poc_content_fetch = 0.0
 
 
 _ssl_fallback_used = False
@@ -169,8 +173,13 @@ def _search_github_pocs(cve_id, product_name=""):
 
 
 def _search_exploitdb(cve_id):
-    """Search ExploitDB via GitLab API for exploits matching the CVE."""
-    global _last_gitlab_search
+    """Search ExploitDB via GitLab API for exploits matching the CVE.
+
+    As a side-effect, populates _exploitdb_raw_urls so that
+    _fetch_poc_content can later retrieve raw exploit code without a
+    second API call.
+    """
+    global _last_gitlab_search, _exploitdb_raw_urls
     elapsed = time.time() - _last_gitlab_search
     if elapsed < 6.0:
         time.sleep(6.0 - elapsed)
@@ -188,12 +197,102 @@ def _search_exploitdb(cve_id):
                 filename = result.get("filename", "")
                 match = re.search(r"(\d+)\.\w+$", filename)
                 if match:
-                    refs.append(
-                        f"https://www.exploit-db.com/exploits/{match.group(1)}"
+                    edb_url = f"https://www.exploit-db.com/exploits/{match.group(1)}"
+                    refs.append(edb_url)
+                    # Cache the raw GitLab content URL for later PoC fetching
+                    _exploitdb_raw_urls[edb_url] = (
+                        f"https://gitlab.com/exploit-database/exploitdb/-/raw/main/{filename}"
                     )
     except Exception:
         pass
     return refs
+
+
+def _fetch_github_readme(repo_url: str) -> str:
+    """Fetch README.md from a GitHub repo URL.
+
+    Tries the main branch first, then master.  Returns up to 8 KB of text
+    so we capture usage/examples sections without downloading huge files.
+    """
+    m = re.match(r"https?://github\.com/([^/]+/[^/?#]+)", repo_url)
+    if not m:
+        return ""
+    owner_repo = m.group(1).rstrip("/")
+    for branch in ("main", "master"):
+        raw_url = f"https://raw.githubusercontent.com/{owner_repo}/{branch}/README.md"
+        try:
+            resp = _fetch(raw_url)
+            if resp.status_code == 200 and resp.text:
+                return resp.text[:8000]
+        except Exception:
+            pass
+    return ""
+
+
+def _fetch_poc_content(poc_url: str) -> str:
+    """Return text content for a single PoC URL.
+
+    Dispatches to the appropriate fetcher based on the URL domain.
+    Results are cached in-process so the same URL is never fetched twice.
+    Politely rate-limits to one PoC content request per 0.5 s.
+    """
+    global _last_poc_content_fetch
+    if poc_url in _poc_content_cache:
+        return _poc_content_cache[poc_url]
+
+    elapsed = time.time() - _last_poc_content_fetch
+    if elapsed < 0.5:
+        time.sleep(0.5 - elapsed)
+    _last_poc_content_fetch = time.time()
+
+    text = ""
+    url_lower = poc_url.lower()
+
+    if "github.com/" in url_lower:
+        text = _fetch_github_readme(poc_url)
+    elif "exploit-db.com/exploits/" in url_lower:
+        raw_url = _exploitdb_raw_urls.get(poc_url)
+        if raw_url:
+            try:
+                resp = _fetch(raw_url)
+                if resp.status_code == 200:
+                    text = resp.text[:8000]
+            except Exception:
+                pass
+
+    _poc_content_cache[poc_url] = text
+    return text
+
+
+def _extract_poc_indicators(poc_refs: list, max_refs: int = 2) -> dict:
+    """Fetch content from PoC URLs and extract actionable indicators.
+
+    Caps fetches at *max_refs* per CVE to keep runtime reasonable.
+    Uses citation_collector's richer extraction (prose scanning +
+    known_commands.yaml + plausibility filters) rather than the older
+    backtick-only extractor, since PoC READMEs and scripts are plain text.
+
+    Returns a merged indicators dict {type: [values]}.
+    """
+    from src.citation_collector import extract_indicators_from_text as _cc_extract
+
+    merged: dict = {}
+    fetched = 0
+    for url in poc_refs:
+        if fetched >= max_refs:
+            break
+        text = _fetch_poc_content(url)
+        if not text:
+            continue
+        fetched += 1
+        indics = _cc_extract(text)
+        for itype, ivals in indics.items():
+            existing = set(v.lower() for v in merged.get(itype, []))
+            new_vals = [v for v in ivals if v.lower() not in existing]
+            if new_vals:
+                merged.setdefault(itype, []).extend(new_vals)
+                existing.update(v.lower() for v in new_vals)
+    return merged
 
 
 def _extract_cvss_score(cve_data):
@@ -354,6 +453,14 @@ def obtain_cve_details(evidence):
         exploitdb_pocs = _search_exploitdb(cve)
         poc_refs = list(set(poc_refs + github_pocs + exploitdb_pocs))
 
+        # Fetch PoC content and extract indicators from READMEs / exploit scripts
+        poc_indicators = _extract_poc_indicators(poc_refs)
+        for itype, ivals in poc_indicators.items():
+            existing = set(v.lower() for v in indicators.get(itype, []))
+            new_vals = [v for v in ivals if v.lower() not in existing]
+            if new_vals:
+                indicators.setdefault(itype, []).extend(new_vals)
+
         # Extract CVSS score
         cvss_score = _extract_cvss_score(cve_data)
 
@@ -371,6 +478,8 @@ def obtain_cve_details(evidence):
             enrichment_parts.append("Indicators: " + " | ".join(indicator_strs))
         if poc_refs:
             enrichment_parts.append(f"PoC:{len(poc_refs)} refs")
+        if poc_indicators:
+            enrichment_parts.append("PoC indicators extracted")
         if cisa_kev:
             enrichment_parts.append("CISA-KEV:Yes")
 
@@ -490,6 +599,14 @@ def enrich_cves_for_evidence(cve_ids):
         github_pocs = _search_github_pocs(cve, product_name)
         exploitdb_pocs = _search_exploitdb(cve)
         poc_refs = list(set(poc_refs + github_pocs + exploitdb_pocs))
+
+        # Fetch PoC content and extract indicators from READMEs / exploit scripts
+        poc_indicators = _extract_poc_indicators(poc_refs)
+        for itype, ivals in poc_indicators.items():
+            existing = set(v.lower() for v in indicators.get(itype, []))
+            new_vals = [v for v in ivals if v.lower() not in existing]
+            if new_vals:
+                indicators.setdefault(itype, []).extend(new_vals)
 
         # Extract CVSS score
         cvss_score = _extract_cvss_score(cve_data)

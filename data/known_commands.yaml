@@ -66,7 +66,6 @@ windows:
     - certutil
     - cmstp
     - cmd
-    - control
     - cscript
     - expand
     - extrac32
@@ -197,7 +196,6 @@ linux:
     - history
     - hostname
     - id
-    - last
     - lastlog
     - lscpu
     - lshw
@@ -268,7 +266,7 @@ linux:
     - uniq
     - wc
     - whereis
-    - which
+
     - xargs
 
     # Network
@@ -368,11 +366,8 @@ linux:
     - rmmod
 
     # Package management
-    - apt
     - dnf
     - dpkg
-    - pip
-    - pip3
     - rpm
     - yum
 
@@ -403,7 +398,6 @@ macos:
     - history
     - hostname
     - id
-    - last
     - lastlog
     - mdls
     - mdfind
@@ -468,7 +462,7 @@ macos:
     - tree
     - wc
     - whereis
-    - which
+
     - xattr
 
     # Network
@@ -520,7 +514,6 @@ macos:
     - kmutil
     - kextload
     - kextunload
-    - security
     - spctl
     - xattr
 
@@ -540,8 +533,6 @@ macos:
 
     # Package management
     - brew
-    - pip
-    - pip3
 
 # ---------------------------------------------------------------------------
 # Cross-platform (common across Windows / Linux / macOS)

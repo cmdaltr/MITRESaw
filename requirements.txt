@@ -69,3 +69,21 @@ wcwidth==0.6.0
 wheel==0.46.3
 widgetsnbextension==4.0.15
 xlsxwriter==3.2.9
+
+# ---------------------------------------------------------------------------
+# Optional — citation relevance scoring
+# Install for significantly better citation indicator extraction quality.
+# All three degrade gracefully if absent (fallback: keyword counting).
+# ---------------------------------------------------------------------------
+
+# Tier 1a — BM25 paragraph scoring (pip install rank-bm25)
+rank-bm25
+
+# Tier 1b — Porter stemming + WordNet synonyms (pip install nltk)
+# After installing, run once: python -c "import nltk; nltk.download('wordnet'); nltk.download('omw-1.4')"
+nltk
+
+# Tier 2  — Semantic similarity, ~80 MB model download on first use (pip install sentence-transformers)
+# Requires: pip install sentence-transformers
+# Model is cached in ~/.cache/huggingface after first use. No API key needed.
+sentence-transformers

@@ -893,7 +893,7 @@ def mainsaw(
 """,
     ]
     chosen_title = random.choice(titles)
-    tagline = "{}        *ATT&CK for {} v{}\n".format(
+    tagline = "\n\n\n\n{}        *ATT&CK for {} v{}\n".format(
         chosen_title, frameworks_label, attack_version
     )
     time.sleep(1)
@@ -1236,8 +1236,11 @@ def mainsaw(
         print(f"    {_sep_pf}")
         print(f"    🩻  Procedures: {_total_procedures:>6,}")
         print(f"    ✍️  Citations:  {_cached_count + _uncached_count:>6,}")
-        print(f"           🔍 {_uncached_count:,} to fetch")
-        print(f"           💾 {_cached_count:,} cached")
+        if _uncached_count or _cached_count:
+            if _uncached_count:
+                print(f"        🔍 {_uncached_count:,} to fetch")
+            if _cached_count:
+                print(f"         💾 {_cached_count:,} cached")
         print(f"    👷 Workers:    {citation_workers:>6,}")
         print(f"    🕰️  Est. time:   {_est_str:>6}")
         print(f"    {_sep_pf}")
@@ -1299,7 +1302,7 @@ def mainsaw(
             )
 
             def _pf_fetch(cit):
-                return collect_reference_content([cit], "", "", "")
+                return collect_reference_content([cit], "", "")
 
             with ThreadPoolExecutor(max_workers=citation_workers) as _pf_pool:
                 _pf_futures = {
@@ -1461,11 +1464,29 @@ def mainsaw(
 
                 # Fetch all citations for this procedure in parallel
                 if _batch:
+                    # Extract MITRE-documented indicators for this technique to
+                    # guide relevance scoring (BM25/semantic query terms)
+                    _proc_indicators: list = []
+                    _ev_json_now = _parts[13] if len(_parts) > 13 else "{}"
+                    try:
+                        _ev_now = json.loads(_ev_json_now)
+                        for _ev_vals in _ev_now.values():
+                            if isinstance(_ev_vals, list):
+                                for _ev_v in _ev_vals:
+                                    if isinstance(_ev_v, str):
+                                        _proc_indicators.append(_ev_v)
+                                    elif isinstance(_ev_v, dict):
+                                        _proc_indicators.extend(
+                                            str(k) for k in _ev_v.keys()
+                                        )
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
                     _fetched = collect_references_parallel(
                         _batch,
-                        _group,
                         _tname,
                         _tid,
+                        indicators=_proc_indicators or None,
                         max_workers=_active_workers,
                     )
                     _batch_429 = 0
@@ -1497,9 +1518,14 @@ def mainsaw(
             if _new_cits:
                 from src.citation_collector import (
                     extract_indicators_from_text,
+                    filter_indicators_by_platform,
                     _INDICATOR_EMOJI,
                 )
                 from src.exclusions import filter_indicators as _filter_exclusions
+                _tech_platforms = [
+                    p.strip() for p in _parts[9].split(",")
+                    if p.strip()
+                ] if len(_parts) > 9 else []
 
                 # Build set of existing indicators for dedup
                 _existing_indicators = set()
@@ -1554,6 +1580,13 @@ def mainsaw(
                     if _content and _method not in ("stix_metadata", "no_content", ""):
                         _extracted = extract_indicators_from_text(_content)
                         if _extracted:
+                            # Drop cmd indicators from wrong platform
+                            # (e.g. Linux cmds from a Windows-only technique).
+                            # Unknown tools are always kept. Revert: set
+                            # PLATFORM_FILTER_ENABLED=False in citation_collector.py
+                            _extracted = filter_indicators_by_platform(
+                                _extracted, _tech_platforms
+                            )
                             # Apply exclusion list
                             _extracted, _excluded = _filter_exclusions(_extracted)
 
@@ -1622,6 +1655,59 @@ def mainsaw(
             yaml.dump(_yaml_data, _f, default_flow_style=False, sort_keys=False)
     all_evidence.append(technique_findings)
     consolidated_techniques = all_evidence[0]
+
+    # ---------------------------------------------------------------------------
+    # Cross-technique redistribution (Fix 1)
+    # Build MITRE indicator index from procedure rows, then redistribute
+    # full-document indicators to techniques that didn't cite the URL directly.
+    # ---------------------------------------------------------------------------
+    if collect_citations and _all_citation_refs:
+        from src.citation_collector import redistribute_citation_indicators
+
+        _mitre_ind_index: dict = {}
+        for _ct in consolidated_techniques:
+            _ct_parts = _ct.split("||")
+            if len(_ct_parts) <= 13:
+                continue
+            _ct_g = _ct_parts[1]
+            _ct_tid = _ct_parts[2]
+            # Skip citation-injected entries — use only MITRE-authored ones
+            _ct_usage = _ct_parts[4] if len(_ct_parts) > 4 else ""
+            if "Indicators extracted from citation:" in _ct_usage:
+                continue
+            try:
+                _ct_ev = json.loads(_ct_parts[13])
+                _ct_inds: set = set()
+                for _ev_vals in _ct_ev.values():
+                    if isinstance(_ev_vals, list):
+                        for _v in _ev_vals:
+                            if isinstance(_v, str):
+                                _ct_inds.add(_v.lower())
+                            elif isinstance(_v, dict):
+                                _ct_inds.update(str(k).lower() for k in _v.keys())
+                if _ct_inds:
+                    _mitre_ind_index.setdefault((_ct_g, _ct_tid), set()).update(
+                        _ct_inds
+                    )
+            except (json.JSONDecodeError, TypeError, IndexError):
+                pass
+
+        _redistributed_refs = redistribute_citation_indicators(
+            _all_citation_refs, _mitre_ind_index
+        )
+        if _redistributed_refs:
+            # Backfill technique_name from consolidated_techniques where missing
+            _tid_to_name: dict = {}
+            for _ct in consolidated_techniques:
+                _ct_parts = _ct.split("||")
+                if len(_ct_parts) > 3 and _ct_parts[2] and _ct_parts[3]:
+                    _tid_to_name[_ct_parts[2]] = _ct_parts[3]
+            for _rr in _redistributed_refs:
+                if not _rr.get("technique_name"):
+                    _rr["technique_name"] = _tid_to_name.get(
+                        _rr.get("technique_id", ""), ""
+                    )
+            _all_citation_refs.extend(_redistributed_refs)
 
     # Inject citation-extracted indicators as additional entries
     _injected = 0

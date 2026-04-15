@@ -94,7 +94,7 @@ def test_extract_relevant_technique_only_scoring():
         "Adversaries query the system clock to synchronise implant activity.\n\n"
         "Unrelated paragraph about weather and sports."
     )
-    result = _extract_relevant_passages(text, "ZIRCONIUM", "System Time Discovery", "T1124")
+    result = _extract_relevant_passages(text, "System Time Discovery", "T1124")
     assert "System Time Discovery" in result
     assert "weather" not in result
 

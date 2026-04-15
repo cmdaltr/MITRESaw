@@ -27,6 +27,66 @@ from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
+# ---------------------------------------------------------------------------
+# Optional scoring dependencies
+# Tier 1 — BM25 + NLTK stemming/synonyms (pip install rank-bm25 nltk)
+# Tier 2 — Semantic embeddings        (pip install sentence-transformers)
+# All three tiers degrade gracefully: Tier 2 → Tier 1 → keyword fallback.
+# ---------------------------------------------------------------------------
+
+# Tier 1a: BM25
+try:
+    from rank_bm25 import BM25Okapi as _BM25Okapi  # type: ignore
+    _HAS_BM25 = True
+except ImportError:
+    _BM25Okapi = None
+    _HAS_BM25 = False
+
+# Tier 1b: NLTK stemming + WordNet synonyms
+_stemmer = None
+_wordnet_corpus = None
+_HAS_NLTK = False
+_HAS_WORDNET = False
+try:
+    import nltk as _nltk_mod
+    from nltk.stem import PorterStemmer as _PorterStemmer  # type: ignore
+    _stemmer = _PorterStemmer()
+    _HAS_NLTK = True
+    # WordNet — attempt to load; download quietly on first use if missing
+    try:
+        from nltk.corpus import wordnet as _wordnet_corpus  # type: ignore
+        _wordnet_corpus.synsets("test")  # trigger LookupError if data absent
+        _HAS_WORDNET = True
+    except Exception:
+        try:
+            _nltk_mod.download("wordnet", quiet=True)
+            _nltk_mod.download("omw-1.4", quiet=True)
+            from nltk.corpus import wordnet as _wordnet_corpus  # type: ignore
+            _HAS_WORDNET = True
+        except Exception:
+            _wordnet_corpus = None
+            _HAS_WORDNET = False
+except ImportError:
+    _nltk_mod = None
+
+# Tier 2: Semantic model — loaded once on first use
+_SEMANTIC_MODEL = None
+_SEMANTIC_MODEL_CHECKED = False
+
+
+def _get_semantic_model():
+    """Lazy-load all-MiniLM-L6-v2 once; return None if not installed."""
+    global _SEMANTIC_MODEL, _SEMANTIC_MODEL_CHECKED
+    if _SEMANTIC_MODEL_CHECKED:
+        return _SEMANTIC_MODEL
+    _SEMANTIC_MODEL_CHECKED = True
+    try:
+        from sentence_transformers import SentenceTransformer  # type: ignore
+        _SEMANTIC_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+    except Exception:
+        _SEMANTIC_MODEL = None
+    return _SEMANTIC_MODEL
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -50,6 +110,25 @@ _USER_AGENTS = [
 
 # Track last request time per domain to enforce per-domain rate limiting
 _domain_last_request = {}
+
+# ---------------------------------------------------------------------------
+# Cross-technique indicator catalogue (Fix 1)
+# Keyed by URL; populated the FIRST time a document is fetched so that
+# subsequent techniques citing the same URL get the same complete indicator
+# set without re-fetching.  See redistribute_citation_indicators().
+# ---------------------------------------------------------------------------
+_URL_FULL_INDICATORS: dict = {}
+
+# ---------------------------------------------------------------------------
+# Relevance scoring — stop words for technique-name tokenisation
+# These are filtered OUT before building BM25/semantic queries because on
+# their own they are too generic to distinguish technique relevance.
+# ---------------------------------------------------------------------------
+_TECHNIQUE_STOP_WORDS = frozenset({
+    "and", "or", "the", "via", "a", "an", "of", "in", "on", "at",
+    "by", "to", "its", "their", "use", "used", "using", "with",
+    "from", "for", "through", "into", "over", "between",
+})
 
 _SKIP_DOMAINS = {
     "twitter.com", "x.com", "linkedin.com", "facebook.com",
@@ -94,14 +173,24 @@ _PDF_EXTENSIONS = frozenset([".pdf"])
 # Known single-word commands / tools — loaded from data/known_commands.yaml
 # ---------------------------------------------------------------------------
 
+# Set to False to disable platform-based filtering of extracted cmd indicators.
+# Revert: flip this to False if platform filtering causes false negatives.
+PLATFORM_FILTER_ENABLED: bool = True
+
 _KNOWN_CMD_NAMES: frozenset = frozenset()
 _KNOWN_SOFTWARE_NAMES: frozenset = frozenset()
+# Per-platform cmd sets — used by filter_indicators_by_platform()
+_KNOWN_WIN_CMDS: frozenset = frozenset()
+_KNOWN_LINUX_CMDS: frozenset = frozenset()
+_KNOWN_MACOS_CMDS: frozenset = frozenset()
+_KNOWN_CROSS_CMDS: frozenset = frozenset()
 _known_commands_loaded = False
 
 
 def _load_known_commands():
     """Lazily load data/known_commands.yaml and build lookup sets."""
     global _KNOWN_CMD_NAMES, _KNOWN_SOFTWARE_NAMES, _known_commands_loaded
+    global _KNOWN_WIN_CMDS, _KNOWN_LINUX_CMDS, _KNOWN_MACOS_CMDS, _KNOWN_CROSS_CMDS
     if _known_commands_loaded:
         return
     _known_commands_loaded = True
@@ -113,17 +202,100 @@ def _load_known_commands():
             data = yaml.safe_load(f)
         cmd_set: set = set()
         sw_set: set = set()
+        win_set: set = set()
+        linux_set: set = set()
+        macos_set: set = set()
+        cross_set: set = set()
+        _platform_map = {
+            "windows": win_set,
+            "linux": linux_set,
+            "macos": macos_set,
+            "cross_platform": cross_set,
+        }
         for _platform, _types in (data or {}).items():
             if not isinstance(_types, dict):
                 continue
+            _plat_set = _platform_map.get(_platform)
             for _token in (_types.get("cmd") or []):
-                cmd_set.add(str(_token).lower())
+                _tok = str(_token).lower()
+                cmd_set.add(_tok)
+                if _plat_set is not None:
+                    _plat_set.add(_tok)
             for _token in (_types.get("software") or []):
                 sw_set.add(str(_token).lower())
         _KNOWN_CMD_NAMES = frozenset(cmd_set)
         _KNOWN_SOFTWARE_NAMES = frozenset(sw_set)
+        _KNOWN_WIN_CMDS = frozenset(win_set)
+        _KNOWN_LINUX_CMDS = frozenset(linux_set)
+        _KNOWN_MACOS_CMDS = frozenset(macos_set)
+        _KNOWN_CROSS_CMDS = frozenset(cross_set)
     except Exception:
         pass
+
+
+def filter_indicators_by_platform(
+    indicators: dict,
+    technique_platforms: list,
+) -> dict:
+    """Drop cmd indicators that are known commands for a *different* platform.
+
+    Rules:
+    - Only runs when PLATFORM_FILTER_ENABLED is True.
+    - Only filters when the technique targets a strict subset of platforms
+      (e.g. Windows-only). If the technique runs on all major platforms,
+      no filtering happens.
+    - Unknown tool names (not in any known-cmd set) are ALWAYS kept —
+      novel tools are the highest-value extraction output.
+    - software, cve, paths, reg, ports are never filtered (platform-agnostic).
+    - Cross-platform commands (curl, ssh, python, etc.) are always kept.
+
+    To revert: set PLATFORM_FILTER_ENABLED = False at the top of this file.
+    """
+    if not PLATFORM_FILTER_ENABLED:
+        return indicators
+
+    _load_known_commands()
+
+    # Normalise platform strings from MITRE ("Windows", "Linux", "macOS", ...)
+    _plats = {p.lower().strip() for p in (technique_platforms or [])}
+    # "mac os x" and "macos" both appear in STIX data
+    if "mac os x" in _plats:
+        _plats.add("macos")
+
+    # No platforms listed, or all three major platforms present → nothing to filter
+    _major = {"windows", "linux", "macos"}
+    if not _plats or _major.issubset(_plats):
+        return indicators
+
+    # Build the set of platform-appropriate known commands
+    _allowed: set = set(_KNOWN_CROSS_CMDS)  # cross-platform always ok
+    if "windows" in _plats:
+        _allowed |= _KNOWN_WIN_CMDS
+    if "linux" in _plats:
+        _allowed |= _KNOWN_LINUX_CMDS
+    if "macos" in _plats:
+        _allowed |= _KNOWN_MACOS_CMDS
+
+    # Build the set of commands that exist but NOT for this technique's platforms
+    _wrong_platform: set = _KNOWN_CMD_NAMES - _allowed
+
+    if not _wrong_platform or "cmd" not in indicators:
+        return indicators
+
+    filtered_cmds = []
+    for cmd in indicators["cmd"]:
+        root = cmd.split()[0].lower().rstrip(".exe")
+        if root in _wrong_platform:
+            # Known command, wrong platform — drop it
+            continue
+        filtered_cmds.append(cmd)
+
+    result = dict(indicators)
+    if filtered_cmds:
+        result["cmd"] = filtered_cmds
+    else:
+        result.pop("cmd", None)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -438,6 +610,8 @@ def _fetch_pdf(url: str, session=None) -> tuple:
 
     # Try PyPDF2 first
     try:
+        import logging as _logging
+        _logging.getLogger("PyPDF2").setLevel(_logging.ERROR)
         from PyPDF2 import PdfReader
         reader = PdfReader(BytesIO(pdf_bytes))
         pages = []
@@ -646,80 +820,181 @@ def _stix_description_fallback(description: str) -> tuple:
 # Relevance extraction
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Relevance scoring helpers
+# ---------------------------------------------------------------------------
+
+def _stem_tokenize(text: str) -> list:
+    """Lowercase, split on non-alpha, filter stop words, optionally stem."""
+    tokens = re.findall(r"[a-z]{2,}", text.lower())
+    tokens = [t for t in tokens if t not in _TECHNIQUE_STOP_WORDS]
+    if _HAS_NLTK and _stemmer:
+        tokens = [_stemmer.stem(t) for t in tokens]
+    return [t for t in tokens if len(t) >= 2]
+
+
+def _build_bm25_query(technique_name: str, indicator_strings: list) -> list:
+    """Build a weighted BM25 token list from technique name + MITRE indicators.
+
+    Indicators carry 3× weight (ground-truth signal).
+    Technique name tokens carry 1× weight, plus WordNet synonyms where available.
+    Technique ID is intentionally excluded — it never appears in threat reports.
+    """
+    query: list = []
+
+    # Indicators — triple weight: these are what MITRE documented for this technique
+    for ind in indicator_strings:
+        query.extend(_stem_tokenize(ind) * 3)
+
+    # Technique name — tokenised (not exact phrase)
+    name_raw = [t for t in re.findall(r"[a-z]{2,}", (technique_name or "").lower())
+                if t not in _TECHNIQUE_STOP_WORDS]
+    if _HAS_NLTK and _stemmer:
+        query.extend(_stemmer.stem(t) for t in name_raw)
+    else:
+        query.extend(name_raw)
+
+    # WordNet synonyms for technique name tokens (unstemmed lookup → stem result)
+    if _HAS_WORDNET and _wordnet_corpus and _stemmer:
+        for raw_tok in name_raw:
+            try:
+                for syn in _wordnet_corpus.synsets(raw_tok)[:2]:
+                    for lemma in syn.lemmas()[:2]:
+                        word = lemma.name().replace("_", " ").split()[0]
+                        if len(word) >= 3 and word.lower() not in _TECHNIQUE_STOP_WORDS:
+                            query.append(_stemmer.stem(word))
+            except Exception:
+                pass
+
+    return [t for t in query if len(t) >= 2]
+
+
+def _score_bm25(paragraphs: list, query_tokens: list) -> list:
+    """Score paragraphs with BM25Okapi. Returns [(score, paragraph)] with score > 0."""
+    if not _HAS_BM25 or not query_tokens or not paragraphs:
+        return []
+    tokenized = [_stem_tokenize(p) for p in paragraphs]
+    valid = [(tc, p) for tc, p in zip(tokenized, paragraphs) if tc]
+    if not valid:
+        return []
+    bm25 = _BM25Okapi([v[0] for v in valid])
+    scores = bm25.get_scores(query_tokens)
+    return [(float(s), v[1]) for s, v in zip(scores, valid) if s > 0.0]
+
+
+def _score_semantic(paragraphs: list, query: str) -> list:
+    """Score paragraphs by cosine similarity to query via sentence-transformers.
+    Returns [(score, paragraph)] with similarity > 0.20."""
+    model = _get_semantic_model()
+    if model is None or not query or not paragraphs:
+        return []
+    try:
+        import numpy as np  # type: ignore
+        q_emb = model.encode(query, convert_to_numpy=True)
+        p_embs = model.encode(paragraphs, convert_to_numpy=True,
+                               batch_size=32, show_progress_bar=False)
+        q_norm = q_emb / (np.linalg.norm(q_emb) + 1e-10)
+        p_norms = p_embs / (np.linalg.norm(p_embs, axis=1, keepdims=True) + 1e-10)
+        sims = p_norms @ q_norm
+        return [(float(s), p) for s, p in zip(sims, paragraphs) if s > 0.40]
+    except Exception:
+        return []
+
+
+def _assemble_passages(scored: list) -> str:
+    """Sort by score descending, concatenate up to MAX_RELEVANT_CHARS."""
+    scored.sort(key=lambda x: -x[0])
+    passages, chars = [], 0
+    for _, para in scored:
+        passages.append(para)
+        chars += len(para)
+        if chars >= MAX_RELEVANT_CHARS:
+            break
+    return "\n\n".join(passages)
+
+
 def _extract_relevant_passages(
     full_text: str,
-    group_name: str,
     technique_name: str,
     technique_id: str,
     indicators: list | None = None,
 ) -> str:
     """Return the most relevant paragraphs from full_text for this technique.
 
-    MITRE has already done the actor→citation linkage, so searching for the
-    group name is redundant: citations are either specifically about that
-    actor (linkage guaranteed) or describe a generic tool/technique (where
-    the actor name won't appear anyway).  We score purely on technique
-    relevance.
+    Uses a tiered scoring approach — each tier falls back to the next if
+    the dependency is not installed or returns no results:
 
-    Scoring: count of distinct technique search terms found in the paragraph.
-    Paragraphs with zero hits are excluded.  Ties are broken by original
-    document order (stable sort).  Returns up to MAX_RELEVANT_CHARS.
+      Tier 2 (best)  — Semantic cosine similarity via sentence-transformers
+                        all-MiniLM-L6-v2.  Handles terminology mismatches
+                        (e.g. "queries the system clock" ≈ "System Time Discovery").
+      Tier 1         — BM25Okapi + Porter stemming + WordNet synonyms.
+                        rank-bm25 and nltk packages required.
+      Tier 0 (fallback) — Keyword token presence counting (always available).
+
+    Key design decisions vs. original approach:
+    • MITRE indicators are the primary signal (triple-weighted in BM25,
+      included in semantic query) — they are ground truth for the technique.
+    • Technique name is TOKENISED, not matched as an exact phrase.  Threat
+      reports rarely use MITRE's exact phrasing.
+    • Technique ID (T1059.001) is NOT used — it never appears in prose.
+    • Group name is not a parameter — MITRE already linked citations to groups.
     """
     if not full_text:
         return ""
 
-    search_terms: set = set()
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", full_text)]
+    paragraphs = [p for p in paragraphs if len(p) >= 30]
+    if not paragraphs:
+        return ""
 
-    # Technique name as a full phrase (avoids false positives on common words)
-    if technique_name and len(technique_name) >= 4:
-        search_terms.add(technique_name.lower())
-
-    # Technique ID — also add parent ID for sub-techniques (e.g. T1059 from T1059.001)
-    if technique_id:
-        search_terms.add(technique_id.lower())
-        if "." in technique_id:
-            search_terms.add(technique_id.split(".")[0].lower())
-
-    # Extracted indicators as supplementary signals (e.g. "net time", "hwclock")
+    # Flatten indicators to plain strings
+    indicator_strings: list = []
     if indicators:
-        for ind in indicators[:5]:
-            if isinstance(ind, str) and len(ind) >= 4:
-                search_terms.add(ind.lower())
+        for ind in indicators[:10]:
+            if isinstance(ind, str) and len(ind) >= 3:
+                indicator_strings.append(ind)
+            elif isinstance(ind, dict):
+                indicator_strings.extend(
+                    str(k) for k in ind.keys() if len(str(k)) >= 3
+                )
 
-    search_terms = {t for t in search_terms if len(t) >= 3}
+    # ── Tier 2: Semantic scoring ──────────────────────────────────────────────
+    model = _get_semantic_model()
+    if model is not None:
+        query_parts = ([technique_name] if technique_name else []) + indicator_strings[:5]
+        query = " ".join(query_parts)
+        if query:
+            scored = _score_semantic(paragraphs, query)
+            if scored:
+                return _assemble_passages(scored)
+
+    # ── Tier 1: BM25 + stemming ───────────────────────────────────────────────
+    if _HAS_BM25:
+        query_tokens = _build_bm25_query(technique_name or "", indicator_strings)
+        if query_tokens:
+            scored = _score_bm25(paragraphs, query_tokens)
+            if scored:
+                return _assemble_passages(scored)
+
+    # ── Tier 0: Keyword token fallback ───────────────────────────────────────
+    search_terms: set = set()
+    for token in re.findall(r"[a-z]{3,}", (technique_name or "").lower()):
+        if token not in _TECHNIQUE_STOP_WORDS:
+            search_terms.add(token)
+    for ind in indicator_strings:
+        search_terms.add(ind.lower())
 
     if not search_terms:
         return full_text[:MAX_RELEVANT_CHARS]
 
-    paragraphs = re.split(r"\n\s*\n", full_text)
+    min_hits = min(2, len(search_terms))  # require ≥2 terms when available
     scored = []
-    total_len = 0
-
     for para in paragraphs:
-        para = para.strip()
-        if len(para) < 30:
-            continue
         para_lower = para.lower()
         hits = sum(1 for t in search_terms if t in para_lower)
-        if hits:
-            scored.append((hits, para))
-            total_len += len(para)
-            if total_len >= MAX_RELEVANT_CHARS * 3:
-                break
-
-    if not scored:
-        return ""
-
-    scored.sort(key=lambda x: -x[0])
-    passages = []
-    chars = 0
-    for _, para in scored:
-        passages.append(para)
-        chars += len(para)
-        if chars >= MAX_RELEVANT_CHARS:
-            break
-
-    return "\n\n".join(passages)
+        if hits >= min_hits:
+            scored.append((float(hits), para))
+    return _assemble_passages(scored) if scored else ""
 
 
 # ---------------------------------------------------------------------------
@@ -796,7 +1071,6 @@ def resolve_citations(procedure_text: str, external_references: list) -> list:
 
 def collect_reference_content(
     citations: list,
-    group_name: str,
     technique_name: str,
     technique_id: str,
     indicators: list | None = None,
@@ -865,8 +1139,11 @@ def collect_reference_content(
         cached = _read_cache(url)
         if cached is not None:
             if cached:
+                # Populate full-indicator cache on first encounter (Fix 1)
+                if url not in _URL_FULL_INDICATORS:
+                    _URL_FULL_INDICATORS[url] = extract_indicators_from_text(cached)
                 relevant = _extract_relevant_passages(
-                    cached, group_name, technique_name, technique_id, indicators
+                    cached, technique_name, technique_id, indicators
                 )
                 entry["extracted_content"] = relevant or cached[:MAX_RELEVANT_CHARS]
                 entry["method"] = "cached"
@@ -877,6 +1154,7 @@ def collect_reference_content(
                 entry["extracted_content"] = fb_text
                 entry["method"] = "no_content"
                 entry["attempts"].append("cache_hit_empty")
+            entry["full_indicators"] = _URL_FULL_INDICATORS.get(url, {})
             results.append(entry)
             continue
 
@@ -933,10 +1211,14 @@ def collect_reference_content(
                 _write_cache(url, text, "google_cache")
                 entry["method"] = "google_cache"
 
+        # Populate full-indicator cache on first successful fetch (Fix 1)
+        if text and url not in _URL_FULL_INDICATORS:
+            _URL_FULL_INDICATORS[url] = extract_indicators_from_text(text)
+
         # Extract relevant passages if we got content
         if text:
             relevant = _extract_relevant_passages(
-                text, group_name, technique_name, technique_id, indicators
+                text, technique_name, technique_id, indicators
             )
             entry["extracted_content"] = relevant or text[:MAX_RELEVANT_CHARS]
         else:
@@ -949,16 +1231,17 @@ def collect_reference_content(
             # --clear-cache removes these for fresh retry next time
             _write_cache(url, "", "failed")
 
+        entry["full_indicators"] = _URL_FULL_INDICATORS.get(url, {})
         results.append(entry)
 
     return results
 
 
-_INDICATOR_NOISE_CHARS = frozenset("@%[]{}^!;~<>=|#$&")
+_INDICATOR_NOISE_CHARS = frozenset("@%[]{}^!;~<>=|#$&,?")
 
 
 def _is_plausible_indicator(bt: str) -> bool:
-    """Return False if a backtick string is clearly garbled text, not a real indicator.
+    """Return False if a candidate string is clearly garbled text, not a real indicator.
 
     Garbled strings arise from badly-extracted PDFs (ASCII garbage, RTF markup,
     base64 fragments, etc.).  Real commands/paths/tools are mostly alphabetic with
@@ -978,12 +1261,33 @@ def _is_plausible_indicator(bt: str) -> bool:
         return False
     # High density of characters that almost never appear in real commands/paths
     noise = sum(1 for c in bt if c in _INDICATOR_NOISE_CHARS)
-    if noise >= 2 and len(bt) > 0 and noise / len(bt) > 0.07:
+    if noise >= 1 and len(bt) > 0 and noise / len(bt) > 0.07:
         return False
     # Very low alphabetic ratio — real indicators are mostly letters
     alpha = sum(1 for c in bt if c.isalpha())
     if len(bt) > 5 and alpha / len(bt) < 0.40:
         return False
+    digits = sum(1 for c in bt if c.isdigit())
+    # A single digit in a short word that is NOT at the end almost always
+    # indicates a leetspeak letter substitution (t0r, s3cur1ty).
+    # Legitimate tool names either put digits at the end (cmd2) or use
+    # consecutive digit runs as part of the name (w32tm, b64decode).
+    if len(bt) <= 5 and digits == 1 and not bt[-1].isdigit():
+        return False
+    # High digit density in longer strings = encoded/garbled fragment
+    if len(bt) > 6 and digits / len(bt) > 0.40:
+        return False
+    # URL-encoded content (e.g. %3aKus...) — never a real command or tool name
+    if re.search(r'%[0-9A-Fa-f]{2}', bt):
+        return False
+    # Short pure-alpha strings must have consistent case — mixed case in short words
+    # (e.g. rEN, EnV, lC) almost always indicates garbled PDF text, not a real command.
+    # Accepted patterns: all-lowercase, ALL-UPPERCASE, or PascalCase (e.g. Lua, Ren).
+    _words = bt.split()
+    if len(_words) == 1 and len(bt) <= 5 and bt.isalpha():
+        if not (bt == bt.lower() or bt == bt.upper() or
+                (bt[0].isupper() and bt[1:] == bt[1:].lower())):
+            return False
     return True
 
 
@@ -1013,39 +1317,70 @@ def extract_indicators_from_text(text: str) -> dict:
 
     indicators = {}
 
-    # Backtick-quoted strings (highest confidence)
-    backtick_re = re.compile(r"`([^`]{3,120})`")
-    backticks = backtick_re.findall(text)
-    if backticks:
-        # Classify backtick content
-        for bt in backticks[:30]:
-            bt = bt.strip()
-            if len(bt) < 3 or len(bt) > 200:
-                continue
-            if not _is_plausible_indicator(bt):
-                continue
-            bt_lower = bt.lower()
-            if re.match(r"HK(?:LM|CU|CR|U|CC)\\", bt, re.IGNORECASE):
-                indicators.setdefault("reg", []).append(bt)
-            elif re.match(r"[A-Za-z]:\\", bt) or bt.startswith("\\\\") or re.match(r"/(?:etc|var|tmp|usr|home|opt|bin|proc)/", bt):
-                indicators.setdefault("paths", []).append(bt)
-            elif bt_lower.split() and bt_lower.split()[0] in _KNOWN_CMD_NAMES:
-                # First word is a known command — always cmd regardless of extensions
-                # in the arguments (e.g. `del /f /q payload.exe`, `powershell -File x.ps1`)
-                indicators.setdefault("cmd", []).append(bt)
-            elif re.search(r"\.(?:exe|dll|ps1|bat|vbs|sh|py|cmd)\b", bt_lower):
-                indicators.setdefault("software", []).append(bt)
-            elif bt_lower in _KNOWN_SOFTWARE_NAMES:
-                # Known offensive tool / malware name — no extension but still software
-                indicators.setdefault("software", []).append(bt)
-            elif len(bt.split()) >= 2 or re.search(r"[-/]", bt):
-                # Multi-word or has flags/path separators — definitely a command
-                indicators.setdefault("cmd", []).append(bt)
-            elif bt_lower in _KNOWN_CMD_NAMES:
-                # Single-word known command (e.g. date, hwclock, timedatectl, net, sc)
-                indicators.setdefault("cmd", []).append(bt)
+    # ── Collect candidate strings from multiple sources ───────────────────
+    # Citations vary widely in formatting — backticks, single/double quotes,
+    # or no quoting at all.  Scan all styles plus known-name bare-prose matches.
+    _cands: list = []
 
-    # Filter prose fragments from cmd/software backtick captures.
+    # Backtick-quoted  (e.g. `net time /set`)
+    for _m in re.finditer(r'`([^`\n]{3,120})`', text):
+        _cands.append(_m.group(1).strip())
+
+    # Single-quoted code-like content  (e.g. 'whoami /all', 'C:\Windows\...')
+    # Require ≥ 6 chars to avoid English contractions (it's, don't, …).
+    for _m in re.finditer(r"(?<!\w)'([A-Za-z][\w /\\:.@,\-]{5,100})'(?!\w)", text):
+        _cands.append(_m.group(1).strip())
+
+    # Double-quoted strings  (e.g. "cmd.exe /c whoami")
+    for _m in re.finditer(r'"([A-Za-z][\w /\\:.@,\-]{5,100})"', text):
+        _cands.append(_m.group(1).strip())
+
+    # Known commands/software in plain prose (no quoting required).
+    # Matches the tool name with optional flags/args following it.
+    if _KNOWN_CMD_NAMES or _KNOWN_SOFTWARE_NAMES:
+        _all_known = sorted(_KNOWN_CMD_NAMES | _KNOWN_SOFTWARE_NAMES, key=len, reverse=True)
+        _known_re = re.compile(
+            r'\b(' + '|'.join(re.escape(n) for n in _all_known) + r')'
+            r'(?:\.exe)?'
+            r'(?!\w)'  # must end at a word boundary (no partial match in e.g. APT29)
+            r'(?:\s+[/\-]{1,2}[\w:]{1,20}){0,4}',
+            re.IGNORECASE,
+        )
+        for _m in _known_re.finditer(text):
+            _cands.append(_m.group(0).strip())
+
+    # ── Classify each candidate ───────────────────────────────────────────
+    for bt in _cands[:80]:
+        bt = bt.strip()
+        if len(bt) < 3 or len(bt) > 200:
+            continue
+        if not _is_plausible_indicator(bt):
+            continue
+        bt_lower = bt.lower()
+        if re.match(r"HK(?:LM|CU|CR|U|CC)\\", bt, re.IGNORECASE):
+            indicators.setdefault("reg", []).append(bt)
+        elif re.match(r"[A-Za-z]:\\", bt) or bt.startswith("\\\\") or re.match(r"/(?:etc|var|tmp|usr|home|opt|bin|proc)/", bt):
+            indicators.setdefault("paths", []).append(bt)
+        elif bt_lower.split() and bt_lower.split()[0] in _KNOWN_CMD_NAMES:
+            # First word is a known command — always cmd regardless of extensions
+            # in the arguments (e.g. del /f /q payload.exe, powershell -File x.ps1)
+            indicators.setdefault("cmd", []).append(bt)
+        elif re.search(r"\.(?:exe|dll|ps1|bat|vbs|sh|py|cmd)\b", bt_lower):
+            indicators.setdefault("software", []).append(bt)
+        elif bt_lower in _KNOWN_SOFTWARE_NAMES:
+            # Known offensive tool / malware name — no extension but still software
+            indicators.setdefault("software", []).append(bt)
+        elif re.search(r"[-/]", bt):
+            # Has flags or path separators — require ≥2 chars before the first
+            # flag/separator so standalone flags like -Vz8 or i/m are excluded
+            _pre_flag = re.split(r"[\s\-/]", bt)[0]
+            if len(_pre_flag) >= 2:
+                indicators.setdefault("cmd", []).append(bt)
+        elif bt_lower in _KNOWN_CMD_NAMES:
+            # Single-word known command (e.g. date, hwclock, timedatectl, net, sc)
+            indicators.setdefault("cmd", []).append(bt)
+
+    # Filter prose fragments from cmd/software captures.
     # These are the same patterns used by extract.py but applied here to
     # citation text which has no MITRE markdown formatting to constrain scope.
     _PROSE_PHRASES = frozenset([
@@ -1084,10 +1419,44 @@ def extract_indicators_from_text(text: str) -> dict:
     if regs:
         indicators.setdefault("reg", []).extend(regs)
 
-    # Windows file paths (outside backticks)
-    win_path_re = re.compile(r"[A-Za-z]:\\[^\s\n\"'`]{4,200}")
+    # Windows file paths — allow spaces within paths (e.g. "Program Files")
+    # Stop at > (command-prompt chars), whitespace, and quotes.
+    win_path_re = re.compile(
+        r"[A-Za-z]:\\(?:[^\s\n\"'`>]+(?:\s(?=[A-Z(\\])[^\s\n\"'`>]+)*)"
+    )
     unix_path_re = re.compile(r"/(?:etc|var|tmp|usr|home|opt|bin|sbin|proc)/[^\s\n\"'`]{2,150}")
-    paths = list(set(win_path_re.findall(text) + unix_path_re.findall(text)))
+    _raw_paths = list(set(win_path_re.findall(text) + unix_path_re.findall(text)))
+
+    # Generic top-level directories that carry no threat-intel signal on their own
+    _GENERIC_WIN_PATHS = frozenset({
+        r"c:\windows", r"c:\windows\system32", r"c:\windows\syswow64",
+        r"c:\program files", r"c:\program files (x86)",
+        r"c:\users", r"c:\temp", r"c:\tmp",
+    })
+    # Registry-only path segments — reclassify as reg rather than paths
+    _REGISTRY_IN_PATH = (
+        r"\system\currentcontrolset", r"\software\microsoft",
+        r"\controlset001", r"\controlset002",
+    )
+    paths = []
+    for _p in _raw_paths:
+        _p_low = _p.lower().rstrip("\\")
+        # Skip generic system directories
+        if _p_low in _GENERIC_WIN_PATHS:
+            continue
+        # Reclassify registry-like paths (e.g. m:\system\currentcontrolset\services)
+        if any(kw in _p_low for kw in _REGISTRY_IN_PATH):
+            indicators.setdefault("reg", []).append(_p)
+            continue
+        # Validate first path component — reject garbled short segments (e.g. D:\w2Mj)
+        _after_drive = re.sub(r"^[A-Za-z]:\\", "", _p)
+        _first_seg = _after_drive.split("\\")[0] if _after_drive else ""
+        _seg_digits = sum(1 for c in _first_seg if c.isdigit())
+        if (_first_seg and len(_first_seg) <= 6 and _seg_digits == 1
+                and not _first_seg[-1].isdigit()):
+            continue  # single non-terminal digit = garbled (w2Mj, D:\w2Mj)
+        paths.append(_p)
+
     if paths:
         indicators.setdefault("paths", []).extend(paths)
 
@@ -1118,11 +1487,20 @@ def extract_indicators_from_text(text: str) -> dict:
     for _ip_match in re.findall(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", text):
         _ip_octets.update(_ip_match.split("."))
 
-    _all_ports = set()
-    _all_ports.update(_hi_port_re.findall(text))
-    _all_ports.update(_ip_port_re.findall(text))
-    _all_ports.update(_ctx_port_re.findall(text))
-    ports = [p for p in _all_ports if 1 <= int(p) <= 65535 and p not in _ip_octets]
+    _hi_ports = set(_hi_port_re.findall(text))
+    _ip_ports = set(_ip_port_re.findall(text))
+    _ctx_ports = set(_ctx_port_re.findall(text))
+    _all_ports = _hi_ports | _ip_ports | _ctx_ports
+    # Year-like numbers (1990–2030) are only accepted from high-confidence sources
+    # (explicit "port N" / "TCP/N" / "UDP/N" / IP:port) to avoid false-positives
+    # from publication years appearing in prose.
+    _hi_conf = _hi_ports | _ip_ports
+    ports = [
+        p for p in _all_ports
+        if 1 <= int(p) <= 65535
+        and p not in _ip_octets
+        and not (1990 <= int(p) <= 2030 and p not in _hi_conf)
+    ]
     if ports:
         indicators["ports"] = ports[:10]
 
@@ -1236,6 +1614,8 @@ def import_citation_files(import_dir: str) -> int:
         # Extract text based on file type
         if ext == ".pdf":
             try:
+                import logging as _logging
+                _logging.getLogger("PyPDF2").setLevel(_logging.ERROR)
                 from PyPDF2 import PdfReader
                 reader = PdfReader(str(f))
                 pages = []
@@ -1292,9 +1672,119 @@ def import_citation_files(import_dir: str) -> int:
     return imported
 
 
+def redistribute_citation_indicators(
+    citation_refs: list,
+    group_technique_mitre_indicators: dict,
+) -> list:
+    """Cross-technique indicator redistribution (Fix 1).
+
+    After all citations have been collected, this function checks whether any
+    indicator that was extracted from a citation document matches a MITRE-
+    documented indicator for a *different* technique of the same group.  If so,
+    a new synthetic citation entry is created for that technique, attributing
+    the indicator to the same source URL.
+
+    This handles two cases:
+      1. Another technique of the same group cites the same URL — it gets the
+         full indicator set even if its own relevance filter missed them.
+      2. Another technique of the same group does NOT cite the URL — but its
+         MITRE-documented indicators appear in the document, so they are added.
+
+    Parameters
+    ----------
+    citation_refs : list[dict]
+        All citation refs collected during the run.  Must include 'group',
+        'technique_id', 'url', and 'full_indicators'.
+    group_technique_mitre_indicators : dict
+        {(group_name, technique_id): set[str]} of lowercase indicator strings
+        extracted from MITRE procedure text.  Used to decide whether a full-
+        document indicator is relevant to a given technique.
+
+    Returns
+    -------
+    list[dict] : Additional synthetic refs to inject into the citation pipeline.
+                 Each has 'extracted_indicators' populated with matched values.
+    """
+    new_refs: list = []
+
+    # Build: url → set of (group, technique_id) pairs that already cited it
+    url_cited_by: dict = {}
+    for ref in citation_refs:
+        _u = ref.get("url", "")
+        if _u:
+            url_cited_by.setdefault(_u, set()).add(
+                (ref.get("group", ""), ref.get("technique_id", ""))
+            )
+
+    # For each URL whose full indicators we have cached
+    for url, full_inds in _URL_FULL_INDICATORS.items():
+        if not full_inds:
+            continue
+
+        # Flatten full-document indicators to a lowercase string set for lookup
+        doc_indicator_set: set = set()
+        for vals in full_inds.values():
+            for v in vals:
+                if isinstance(v, str):
+                    doc_indicator_set.add(v.lower())
+                elif isinstance(v, dict):
+                    doc_indicator_set.update(str(k).lower() for k in v.keys())
+
+        if not doc_indicator_set:
+            continue
+
+        citing_pairs = url_cited_by.get(url, set())
+        citing_groups = {g for g, _ in citing_pairs}
+
+        for (group, tid), mitre_inds in group_technique_mitre_indicators.items():
+            # Only redistribute within groups that already cited this URL
+            # (at least one of their techniques cited it)
+            if group not in citing_groups:
+                continue
+
+            # Skip if this (group, technique) already cited the URL — it has
+            # its own entry and the full_indicators are already available via
+            # the cache
+            if (group, tid) in citing_pairs:
+                continue
+
+            # Find indicators that appear in the document AND are MITRE-documented
+            # for this technique
+            matching_lower = doc_indicator_set & {i.lower() for i in mitre_inds}
+            if not matching_lower:
+                continue
+
+            # Build matched subset preserving original values/types
+            matched: dict = {}
+            for ind_type, vals in full_inds.items():
+                matched_vals = []
+                for v in vals:
+                    v_key = (list(v.keys())[0] if isinstance(v, dict) else str(v))
+                    if v_key.lower() in matching_lower:
+                        matched_vals.append(v)
+                if matched_vals:
+                    matched[ind_type] = matched_vals
+
+            if matched:
+                new_refs.append({
+                    "group": group,
+                    "technique_id": tid,
+                    "technique_name": "",  # filled in by caller from consolidated_techniques
+                    "url": url,
+                    "citation_name": f"[cross-technique: {url[:60]}]",
+                    "description": "",
+                    "extracted_content": "",
+                    "extracted_indicators": matched,
+                    "full_indicators": matched,
+                    "method": "redistributed",
+                    "attempts": ["redistributed"],
+                })
+
+    return new_refs
+
+
 def collect_references_parallel(
     citations: list,
-    group_name: str,
     technique_name: str,
     technique_id: str,
     indicators: list | None = None,
@@ -1313,14 +1803,14 @@ def collect_references_parallel(
     # Single citation — no need for threading overhead
     if len(citations) == 1:
         return collect_reference_content(
-            citations, group_name, technique_name, technique_id, indicators
+            citations, technique_name, technique_id, indicators
         )
 
     results = []
 
     def _fetch_one(cit):
         return collect_reference_content(
-            [cit], group_name, technique_name, technique_id, indicators
+            [cit], technique_name, technique_id, indicators
         )
 
     with ThreadPoolExecutor(max_workers=min(max_workers, len(citations))) as pool:
