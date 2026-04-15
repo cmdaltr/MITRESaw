@@ -143,6 +143,17 @@ parser.add_argument(
     default=False,
 )
 parser.add_argument(
+    "-rJ", "--retry-js",
+    help="Retry failed citations using Playwright headless rendering.\n"
+         "Reads URLs from citations_failed.yaml (pass path) or scans cache.\n"
+         "Writes recovered pages into cache for the next normal run.\n"
+         "Example: -rJ data/2026-04-15/citations_failed.yaml\n",
+    nargs="?",
+    const="",           # no path given → scan cache
+    metavar="YAML",
+    default=None,
+)
+parser.add_argument(
     "-I", "--import-citations",
     help="Import manually saved citation files (PDF/HTML) into cache.\n"
          "Default directory: data/citations/\n"
@@ -318,6 +329,12 @@ if args.retry_nocontent:
     from src.citation_collector import clear_cache_no_content
     _removed = clear_cache_no_content()
     print(f"    -> Removed {_removed} no-content cache entries (will retry on this run)")
+
+if args.retry_js is not None:
+    from src.citation_collector import retry_js_citations
+    _yaml_path = args.retry_js or None
+    _attempted, _recovered = retry_js_citations(_yaml_path)
+    print(f"    -> {_recovered}/{_attempted} URL(s) recovered via headless rendering")
 
 if args.import_citations:
     from src.citation_collector import import_citation_files

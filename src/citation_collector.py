@@ -1723,6 +1723,71 @@ def import_citation_files(import_dir: str) -> int:
     return imported
 
 
+def retry_js_citations(failed_yaml: str | None = None) -> tuple[int, int]:
+    """Re-attempt failed citations using Playwright headless rendering.
+
+    Reads URLs from a citations_failed.yaml produced by a previous run (or
+    falls back to scanning all no-content cache entries) and tries each URL
+    with the headless browser.  Successfully fetched pages are written into
+    the cache so the next normal run picks them up automatically.
+
+    Args:
+        failed_yaml: Path to citations_failed.yaml. If None, scans the cache.
+
+    Returns:
+        (attempted, recovered) counts.
+    """
+    import yaml as _yaml
+
+    urls: list[str] = []
+
+    # 1. Collect URLs to retry
+    if failed_yaml and Path(failed_yaml).exists():
+        try:
+            with open(failed_yaml) as _f:
+                _entries = _yaml.safe_load(_f) or []
+            for _e in _entries:
+                _u = (_e.get("url") or "").strip()
+                if _u:
+                    urls.append(_u)
+        except Exception:
+            pass
+
+    # Fall back to cache scan if no YAML or YAML had no URLs
+    if not urls and CACHE_DIR.exists():
+        for _cf in CACHE_DIR.glob("*.json"):
+            try:
+                _d = json.loads(_cf.read_text())
+                if not _d.get("text", ""):
+                    _u = _d.get("url", "").strip()
+                    if _u:
+                        urls.append(_u)
+            except Exception:
+                pass
+
+    urls = list(dict.fromkeys(urls))  # deduplicate, preserve order
+    if not urls:
+        print("    -> No failed URLs found to retry.")
+        return 0, 0
+
+    print(f"    -> Retrying {len(urls)} URL(s) with Playwright headless...")
+    attempted = 0
+    recovered = 0
+
+    for _url in urls:
+        attempted += 1
+        _short = _url[:70]
+        text, detail = _fetch_headless(_url)
+        if text:
+            _write_cache(_url, text, "headless")
+            recovered += 1
+            print(f"       ✅ {_short}")
+        else:
+            print(f"       ❌ {_short}  ({detail})")
+
+    return attempted, recovered
+
+
 def redistribute_citation_indicators(
     citation_refs: list,
     group_technique_mitre_indicators: dict,
