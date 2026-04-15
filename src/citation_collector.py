@@ -815,9 +815,10 @@ def _fetch_headless(url: str) -> tuple:
         # Linux servers need DISPLAY set).
         import sys as _sys
         _has_display = (
-            _sys.platform == "darwin"
-            or bool(os.environ.get("DISPLAY"))
-            or bool(os.environ.get("WAYLAND_DISPLAY"))
+            _sys.platform == "darwin"                    # macOS always has a display
+            or _sys.platform.startswith("win")           # Windows always has a display
+            or bool(os.environ.get("DISPLAY"))           # Linux X11
+            or bool(os.environ.get("WAYLAND_DISPLAY"))  # Linux Wayland
         )
         if _has_display:
             text = _run_browser(headless=False)
