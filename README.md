@@ -78,37 +78,68 @@ The diagram above shows how a raw MITRE ATT&amp;CK STIX bundle flows through MIT
 
 All arguments are optional named flags with sensible defaults. To display usage, simply run: `./MITRESaw.py -h`
 ```
-usage: MITRESaw.py [-h] [-f FRAMEWORK] [-p PLATFORMS] [-s STRINGS]
-                   [-g THREATGROUPS] [-a] [-n] [-o] [-Q] [-q] [-t]
+usage: MITRESaw.py [-h] [-l {groups,platforms,strings}]
+                   [-f FRAMEWORK] [-p PLATFORMS] [-s STRINGS]
+                   [-g THREATGROUPS] [-a] [-n] [-o] [-q]
                    [-c COLUMNS] [-D] [-x {csv,json,xml}] [-E] [-C]
-                   [-w MAX_WORKERS] [-A] [-I [DIR]]
-                   [-rS] [-rN] [--clear-cache] [-F]
+                   [-w MAX_WORKERS] [-A] [-F]
+                   [-rS] [-rN] [-rJ [YAML]] [--clear-cache]
+                   [-I [DIR]]
 
 options:
-  -h, --help                  show this help message and exit
-  -f, --framework FRAMEWORK   Specify which framework - Enterprise, ICS or Mobile (default: all three)
-  -p, --platforms PLATFORMS   Filter by platform e.g. Windows,Linux,IaaS (default: . for all)
-  -s, --strings TERMS         Filter by industry e.g. mining,technology,defense (default: . for all)
-  -g, --threatgroups GROUPS   Filter by group e.g. APT29,HAFNIUM,Turla (default: . for all)
-  -a, --asciiart              Show ASCII Art of the saw
-  -n, --navlayers             Obtain ATT&CK Navigator layers for identified Groups
-  -o, --showotherlogsources   Show log sources with less than 1% coverage
-  -Q, --queries               Build search queries for Splunk, Azure Sentinel, Elastic/Kibana
-  -q, --quiet                 Suppress per-identifier output; print only group completion
-  -t, --truncate              Truncate indicator output (still written to file)
-  -c, --columns COLUMNS       Export filtered CSV with specified columns (comma-separated)
-  -D, --default               Export key procedure columns to mitre_procedures.csv
-  -I, --import-citations      Import manually saved PDF/HTML citations (default: data/citations/)
-  -x, --export {csv,json,xml} Export format for output files (default: csv)
-  -E, --evidence-report       Generate styled XLSX evidence report (one row per indicator)
-  -C, --citations             Collect citation sources with multi-method fallback (requires -E)
-  -w, --max-workers N         Max parallel threads for fetching (1-50, default: 50)
-  -A, --auto                  Skip the pre-run ETA confirmation prompt
-  -rS, --retry-stix           Retry citations that fell back to STIX metadata
-  -rN, --retry-nocontent      Retry citations that had no content at all
-  --clear-cache               Clear the entire citation cache before running
-  -F, --fetch                 Force fresh download of ATT&CK STIX data
+  -h, --help                        show this help message and exit
+  -l, --list {groups,platforms,strings}
+                                    List available filter values and exit
+  -f, --framework FRAMEWORK         Specify which framework - Enterprise, ICS or Mobile (default: all three)
+  -p, --platforms PLATFORMS         Filter by platform e.g. Windows,Linux,IaaS (default: . for all)
+  -s, --strings TERMS               Filter by search term e.g. mining,technology,iran (default: . for all)
+  -g, --threatgroups GROUPS         Filter by group name or alias e.g. APT29,Cozy_Bear,HAFNIUM (default: . for all)
+  -a, --asciiart                    Show ASCII Art of the saw
+  -n, --navlayers                   Obtain ATT&CK Navigator layers for identified Groups
+  -o, --showotherlogsources         Show log sources with less than 1% coverage
+  -q, --quiet                       Suppress per-identifier output; print only group completion
+  -c, --columns COLUMNS             Export filtered CSV with specified columns (comma-separated)
+  -D, --default                     Export key procedure columns to mitre_procedures.csv
+  -x, --export {csv,json,xml}       Export format for output files (default: csv)
+  -E, --evidence-report             Generate styled XLSX evidence report (one row per indicator)
+  -C, --citations                   Collect citation sources with multi-method fallback (requires -E)
+  -w, --max-workers N               Max parallel threads for fetching (1-50, default: 50)
+  -A, --auto                        Skip the pre-run ETA confirmation prompt
+  -F, --fetch                       Force fresh download of ATT&CK STIX data
+  -rS, --retry-stix                 Retry citations that fell back to STIX metadata
+  -rN, --retry-nocontent            Retry citations that had no content at all
+  -rJ, --retry-js [YAML]            Retry failed citations using Playwright headed browser
+  --clear-cache                     Clear the entire citation cache before running
+  -I, --import-citations [DIR]      Import manually saved PDF/HTML citations (default: data/citations/)
 ```
+
+### Listing Available Filter Values
+
+Use `-l` to explore what values are valid before running:
+
+```bash
+# List all threat groups and their aliases
+./MITRESaw.py -l groups
+
+# List valid platform names for -p
+./MITRESaw.py -l platforms
+
+# List suggested search string keywords for -s
+./MITRESaw.py -l strings
+```
+
+### Group Alias Matching
+
+The `-g` filter matches on both canonical group names and all known aliases. You do not need to know the exact MITRE name:
+
+```bash
+# All of these find APT29
+./MITRESaw.py -g APT29
+./MITRESaw.py -g Cozy_Bear
+./MITRESaw.py -g Midnight_Blizzard
+```
+
+Use underscores instead of spaces in multi-word names.
 
 ### Quick Start — If In Doubt
 
@@ -118,7 +149,7 @@ The `-D` (default) flag is the catch-all option. It extracts all groups across a
 ./MITRESaw.py -D -E -C
 ```
 
-This gives you everything you need to get started: `mitre_procedures.csv` for lookups, `mitre_procedures.xlsx` for analysis, and citation source content from blog posts, vendor reports, and PDFs. Add `-q` for quieter output, or layer on `-g`, `-p`, `-t` filters to narrow scope.
+This gives you everything you need to get started: `mitre_procedures.csv` for lookups, `mitre_procedures.xlsx` for analysis, and citation source content from blog posts, vendor reports, and PDFs. Add `-q` for quieter output, or layer on `-g`, `-p`, `-s` filters to narrow scope.
 
 ### Examples
 
@@ -129,20 +160,19 @@ This gives you everything you need to get started: `mitre_procedures.csv` for lo
 # Quiet mode - show group completion instead of every indicator
 ./MITRESaw.py -D -q
 
-# Filter by platform and threat group
+# Filter by platform and threat group (name or alias)
 ./MITRESaw.py -p Windows -g APT29
+./MITRESaw.py -p Windows -g Cozy_Bear
+
+# Filter by search string (country, industry, motivation)
+./MITRESaw.py -s iran
+./MITRESaw.py -s ransomware,financial
 
 # Export as JSON
 ./MITRESaw.py -g APT29 -x json
 
-# Build search queries for specific groups on Windows/Linux
-./MITRESaw.py -p Windows,Linux -t mining,technology,defense -Q
-
 # Export filtered columns with industry keyword tagging
 ./MITRESaw.py -c group_sw_name,technique_id,technique_name,keywords
-
-# Evidence report with SIEM queries
-./MITRESaw.py -g APT29,APT33,OilRig -p Windows -E -Q
 
 # Evidence report with citation collection
 ./MITRESaw.py -g APT29 -p Windows -E -C
@@ -152,6 +182,10 @@ This gives you everything you need to get started: `mitre_procedures.csv` for lo
 
 # Retry only no-content failures
 ./MITRESaw.py -rN -D -E -C
+
+# Retry failed citations using Playwright headed browser (bypasses Cloudflare)
+./MITRESaw.py -rJ data/2026-04-15/citations_failed.yaml
+./MITRESaw.py -rJ   # scan all empty cache entries
 
 # Retry both stix_metadata and no-content failures
 ./MITRESaw.py -rS -rN -D -E -C
@@ -195,7 +229,7 @@ When no group/platform/term filters are provided, files are placed in the date r
 | Technique Matrix | Intersection matrix (only when 2+ groups): techniques as rows, groups as columns, `1` where a group uses that technique, sorted by group coverage descending for prioritising hunting |
 | Reference Detail | Citation sources with extracted content, collection method, and URL (only with `-C`) |
 
-**`citations_failed.yaml`** — List of citations that fell back to STIX metadata (URL fetch failed across all methods). Includes the full attempt chain for diagnostics. Only generated with `-C`.
+**`citations_failed.yaml`** — Deduplicated list of citations where fetching failed (`stix_metadata`, `no_content`, or empty). Each entry includes the full attempt chain, URL, group, and technique ID for diagnostics. Only generated with `-C`. Use `-rJ` to batch-retry these URLs with a headed browser.
 
 ## Evidence Report (-E)
 
@@ -234,21 +268,25 @@ For each `(Citation: X)` found in procedure text, technique descriptions, and de
 | Method | Description | Status Icon |
 |--------|-------------|-------------|
 | **direct** | Standard HTTP fetch with browser-like headers | ✅ |
-| **headless** | Playwright Chromium for Cloudflare/JS-protected sites | ✅ |
+| **headless** | Playwright Chromium (headless) for JS-protected sites | ✅ |
+| **headless_headed** | Playwright Chromium (headed window) — bypasses Cloudflare fingerprinting | ✅ |
 | **wayback** | Wayback Machine (web.archive.org) archived snapshot | ✅ |
 | **google_cache** | Google's cached version of the page | ✅ |
 | **pdf:PyPDF2 / pdf:pdfplumber** | PDF downloaded and text extracted via parser | ✅ |
 | **pdf:ocr** | Scanned/image-only PDFs rendered and OCR'd via `pdf2image` + `pytesseract` | ✅ |
-| **cached** | Previously fetched, loaded from `.citation_cache/` | ✅ |
+| **cached** | Previously fetched, loaded from `.citation_cache/` | 💾 |
 | **stix_metadata** | STIX description field only (author, title, date) | ⚠️ |
+
+The headless method uses `page.inner_text('body')` to extract rendered visible text directly, rather than parsing raw HTML. If headless Chromium is blocked (e.g. by Cloudflare bot detection), the collector automatically retries in headed mode (visible browser window) on systems with a display (macOS and Windows always; Linux when `DISPLAY` or `WAYLAND_DISPLAY` is set). No system Chrome is required — Playwright uses its own bundled Chromium.
 
 The OCR method is a fallback used only when a PDF yields no extractable text via the standard parsers (i.e. it is a scanned document or image-based PDF). It requires `pdf2image` (wraps poppler) and `pytesseract` (wraps Tesseract) to be installed. If absent, the collector falls back to `stix_metadata` as normal.
 
 ### URL Rewriting
 
-Known migrated URLs are automatically rewritten:
+Known migrated or SPA-rendered URLs are automatically rewritten before fetching:
 - `www.mandiant.com/resources/...` → `cloud.google.com/blog/topics/threat-intelligence/...`
 - `www.fireeye.com/blog/...` → `cloud.google.com/blog/topics/threat-intelligence/...`
+- `lolbas-project.github.io/lolbas/...` → raw YAML from the LOLBAS GitHub repo (the LOLBAS site is a Vue.js SPA that returns an empty shell to automated fetches)
 
 ### Filtered Citations
 
@@ -268,6 +306,10 @@ When a citation page is successfully fetched, MITRESaw runs its extraction patte
 | 🌐 | `ports` | Network port numbers |
 
 **Only new indicators are shown** — anything already extracted by MITRESaw's native pipeline is deduplicated. This means techniques that had no native indicators (e.g. T1621 MFA Request Generation) can still gain indicators from their citation sources.
+
+**CVE enrichment** — CVE identifiers found in citation text are automatically enriched with CVSS score, affected product, PoC/exploit references (GitHub, ExploitDB), and CISA KEV status — the same pipeline used for CVEs in MITRE procedure text.
+
+**Platform filtering** — command indicators extracted from citations are cross-checked against the technique's documented platforms. Commands only valid on Windows (e.g. `ipconfig`, `schtasks`) are dropped when the technique is Linux/macOS-only, and vice versa. Unknown tools are always kept. Disable with `PLATFORM_FILTER_ENABLED = False` in `citation_collector.py`.
 
 #### Known Commands (`data/known_commands.yaml`)
 
@@ -331,15 +373,22 @@ Fetched pages are cached locally to avoid re-downloading on subsequent runs. Fai
 
 ### Retry Options
 
-| Flag | What it removes | When to use |
-|------|----------------|-------------|
-| `-rS` / `--retry-stix` | Cache entries where fetch failed, only STIX metadata captured (⚠️) | After fixing SSL/network issues — sites that were unreachable may now work |
-| `-rN` / `--retry-nocontent` | Cache entries with completely empty text (❌) | After installing Playwright — previously unfetchable pages may now parse |
-| `--clear-cache` | Everything | Start completely fresh — re-fetches all ~5,000+ URLs |
+| Flag | What it does | When to use |
+|------|-------------|-------------|
+| `-rS` / `--retry-stix` | Removes stix_metadata cache entries and re-attempts fetch (⚠️) | After fixing SSL/network issues — sites that were unreachable may now work |
+| `-rN` / `--retry-nocontent` | Removes empty cache entries and re-attempts fetch (❌) | After installing Playwright — previously unfetchable pages may now render |
+| `-rJ [YAML]` / `--retry-js` | Retries URLs from `citations_failed.yaml` (or all empty cache entries) using Playwright headed browser — writes results into cache | For sites blocked by Cloudflare or JS fingerprinting. Pass a YAML path to target a specific run's failures, or omit to scan all empty cache entries |
+| `--clear-cache` | Deletes the entire cache directory | Start completely fresh — re-fetches all ~5,000+ URLs |
 
 Use `-rS` and `-rN` together to retry all failures while keeping successful cache:
 ```bash
 ./MITRESaw.py -rS -rN -D -E -C
+```
+
+Use `-rJ` to batch-retry JS-blocked sites with a headed browser, then run normally:
+```bash
+./MITRESaw.py -rJ data/2026-04-15/citations_failed.yaml
+./MITRESaw.py -D -E -C
 ```
 
 ### Pre-Run ETA Estimate

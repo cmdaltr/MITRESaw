@@ -18,10 +18,12 @@ This document states plainly what MITRESaw does and does not do, so analysts can
 - Produce a companion CSV suitable for SIEM ingestion as a lookup table.
 
 ### Citation enrichment (low-to-medium confidence — see limitations)
-- Fetch the content of citation URLs referenced in MITRE procedure text using a multi-method fallback chain (direct HTTP → headless browser → Wayback Machine → Google Cache → PDF extraction → STIX metadata).
+- Fetch the content of citation URLs referenced in MITRE procedure text using a multi-method fallback chain (direct HTTP → headless Playwright → headed Playwright → Wayback Machine → Google Cache → PDF extraction → STIX metadata).
 - Cache fetched content locally to avoid re-fetching on repeat runs.
 - Extract additional indicators from fetched content and label them as `Citation` source type in the XLSX so they are distinguishable from MITRE-authored indicators.
-- Rewrite known-dead domains (fireeye.com, mandiant.com) to their current locations (cloud.google.com).
+- Rewrite known-dead or SPA-rendered URLs (fireeye.com, mandiant.com → cloud.google.com; lolbas-project.github.io → raw GitHub YAML).
+- Enrich CVE identifiers found in citation text with CVSS score, affected product, PoC references, and CISA KEV status.
+- Filter command indicators extracted from citations by technique platform (e.g. Windows-only commands dropped for Linux techniques).
 
 ---
 
@@ -46,11 +48,11 @@ The current paragraph scoring checks whether technique keywords appear in a para
 Many citation URLs cannot be fetched because:
 - The page is behind a paywall or requires authentication
 - The domain no longer exists (acquired, shut down, moved)
-- The site uses JavaScript rendering that blocks automated access
+- The site uses JavaScript rendering or Cloudflare bot protection that blocks even headed Playwright
 - The PDF is scanned/image-only with no embedded text
 - The server returns 403/429 rate limits
 
-In all these cases, MITRESaw falls back to **STIX metadata only** — the bibliographic citation text (author, title, date) stored in the STIX bundle itself. This contains no technical indicators. The `citations_failed.yaml` file lists every URL that fell back to metadata.
+In all these cases, MITRESaw falls back to **STIX metadata only** — the bibliographic citation text (author, title, date) stored in the STIX bundle itself. This contains no technical indicators. The `citations_failed.yaml` file lists every URL that fell back to metadata or had no content. Use `-rJ` to batch-retry these with a headed browser, or `-I` to import manually saved PDFs/HTML.
 
 ### MITRESaw does not validate indicators
 
