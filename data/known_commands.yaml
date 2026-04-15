@@ -371,7 +371,7 @@ linux:
 
     # Misc
     - tee
-    - yes
+    - "yes"   # quoted: unquoted 'yes' is parsed by PyYAML as boolean True
 
 # ---------------------------------------------------------------------------
 # macOS

@@ -1130,7 +1130,8 @@ def mainsaw(
     _citation_url_lookup = {}  # source_name → {"url": ..., "description": ...}
     _mitre_ref_numbers = {}  # (group_name_lower, source_name) → MITRE [N] number
     _all_citation_refs = []
-    _seen_citations = set()
+    _seen_citations = set()    # (group, citation_name) — prevents same group re-fetching same URL
+    _seen_global_urls = set()  # URL — prevents same URL appearing in _all_citation_refs twice
     if collect_citations:
         for _fw, _ad in all_attack_data.items():
             _sp = getattr(_ad, "stix_filepath", None) or getattr(_ad, "src", None)
@@ -1378,6 +1379,7 @@ def mainsaw(
 
     _pb_extract = _ProgressBar()
     _cit_num = 0  # running citation counter, resets per group
+    _printed_citation_urls = set()  # URLs already printed in terminal, skip duplicates
     _rate_limited_count = 0  # 429 counter
     _active_workers = citation_workers  # adaptive worker count
     _max_workers = citation_workers
@@ -1512,7 +1514,12 @@ def mainsaw(
                         _ref["group"] = _group
                         _ref["technique_id"] = _tid
                         _ref["technique_name"] = _tname
-                        _all_citation_refs.append(_ref)
+                        # Deduplicate globally by URL — same source cited by many
+                        # groups/techniques should only appear once in _all_citation_refs
+                        _ref_url = _ref.get("url", "") or _ref.get("citation_name", "")
+                        if _ref_url not in _seen_global_urls:
+                            _seen_global_urls.add(_ref_url)
+                            _all_citation_refs.append(_ref)
                         _new_cits.append(_ref)
                         for _att in _ref.get("attempts", []):
                             if "429" in str(_att):
@@ -1564,6 +1571,11 @@ def mainsaw(
 
                 _indent = "      "
                 for _ref in _new_cits:
+                    _ref_print_url = _ref.get("url", "") or _ref.get("citation_name", "")
+                    # Skip terminal print for URLs already shown under another group/technique
+                    if _ref_print_url in _printed_citation_urls:
+                        continue
+                    _printed_citation_urls.add(_ref_print_url)
                     _cit_num += 1
                     _cn = _ref.get("citation_name", "")
                     _num_str = f"[{_cit_num}]"

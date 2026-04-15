@@ -1400,6 +1400,7 @@ def extract_indicators_from_text(text: str) -> dict:
             # short all-uppercase prefixes (e.g. PL in PL/ygP) are garbled text.
             _pre_flag = re.split(r"[\s\-/]", bt)[0]
             if (len(_pre_flag) >= 2
+                    and not any(c in _INDICATOR_NOISE_CHARS for c in _pre_flag)
                     and (_pre_flag.lower() in _KNOWN_CMD_NAMES
                          or _pre_flag == _pre_flag.lower()
                          or len(_pre_flag) >= 4)):
