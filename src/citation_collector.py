@@ -1539,7 +1539,7 @@ def extract_indicators_from_text(text: str) -> dict:
     # publication years, conference years, or CVE years — not admitted.
     ports = [
         p for p in _all_ports
-        if 1 <= int(p) <= 65535
+        if 20 <= int(p) <= 65535        # ports < 20 are unassigned/noise in threat reports
         and p not in _ip_octets
         and not (1990 <= int(p) <= 2030 and p not in _ip_ports)
     ]
