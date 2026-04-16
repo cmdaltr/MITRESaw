@@ -461,26 +461,34 @@ Output:
     ─────────────────────────────────────────────────
     🌐  Framework:   Enterprise  ICS  Mobile  (v16.1)
 
+    -> Loading Enterprise, ICS, Mobile ATT&CK data from STIX...
+    -> Using cached STIX data (1 day(s) old)
+
     📐  ATT&CK Scope
-        Groups:               147
-        Techniques:         1,418   (780 top-level + 638 sub)
-        Procedure uses:     4,751
+       👥 Groups:              147
+       💻 Techniques:        1,418
+           Top-level:          780
+           Sub:                638
+       🥷 Procedure uses:    4,751
+
+    ─────────────────────────────────────────────────
 
     💾  Citation Cache
-        Total entries:      2,341
-        ✅ With content:    1,802   ( 77.0%)
-        ⚠️  STIX only:        412   ( 17.6%)
-        ❌  No content:       127   (  5.4%)
-        🗓️  Cache dates:     2026-01-03 → 2026-04-14
+       data/2026-04-14/mitre_procedures.csv
+
+       ✅ With content:      1,802   ( 77.0%)
+       ⚠️  STIX only:          412   ( 17.6%)
+       ❌ No content:          127   (  5.4%)
+       Total entries:        2,341
+
+    ─────────────────────────────────────────────────
 
     📊  Output Coverage
-        Source:  data/2026-04-14/mitre_procedures.csv  (run 2026-04-14 09:32)
-        Groups processed:     147   (100.0% of ATT&CK)
-        Techniques seen:      614   ( 43.3% of ATT&CK)
-        With ≥1 indicator:    489   ( 79.6% of seen techs)
-        No indicators yet:    125   → candidates for -C / -rJ
-        Procedure rows:     4,751
-    ─────────────────────────────────────────────────
+       👥 Groups:              147   (100.0% of ATT&CK)
+       💻 Techniques:          614   ( 43.3% of ATT&CK)
+           ≥1 indicator:       489   ( 79.6% of seen techs)
+           No indicators:      125   → candidates for -C / -rJ
+       🥷 Procedures:        4,751
 ```
 
 The **Citation Cache** section shows how many URLs were successfully fetched vs fell back to STIX metadata vs produced no content at all. Use `-rJ` or `-I` to recover entries in the STIX-only and no-content buckets. The **Output Coverage** section reads from the most recent `mitre_procedures.csv` in your `data/` directory.
@@ -492,16 +500,16 @@ When using `-C`, MITRESaw scans the cache before starting and shows the same sco
 ```
     Pre-fetch plan
     ─────────────────────────────────────────────
-    🌐  Framework:   Enterprise
-    👥  Groups:         147  matched
-    🩻  Procedures:    4750
-    ✍️  Citations:    17451
-        🔍 1306 to fetch
-        💾 4562 cached
-    👷  Workers:          50
-    🚩  Flags:
-        • -E  Evidence Report (XLSX)
-        • -C  Citation enrichment
+    🌐 Framework:      Enterprise; ICS; Mobile
+    👥  Groups:        147  matched
+    🩻  Procedures:  4,750
+    ✍️  Citations:   17,451
+        🔍 1,306 to fetch
+        💾 4,562 cached
+    👷 Workers:      50
+    🚩 Flags:
+         -E  Evidence Report (XLSX)
+         -C  Citation enrichment
     🕰️  Est. time:   1m 18s
     ─────────────────────────────────────────────
 

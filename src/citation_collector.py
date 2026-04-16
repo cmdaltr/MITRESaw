@@ -1810,12 +1810,12 @@ def retry_js_citations(failed_yaml: str | None = None) -> tuple[int, int]:
 
     urls = list(dict.fromkeys(urls))  # deduplicate, preserve order
     if not urls:
-        print("    -> No failed URLs found to retry.")
+        print("    -rJ: No failed URLs found to retry.")
         return 0, 0
 
     import time as _time
     total = len(urls)
-    print(f"    -> Retrying {total:,} URL(s) with Playwright headless...")
+    print(f"    -rJ: Retrying {total:,} URL(s) with Playwright headless...")
     attempted = 0
     recovered = 0
     _start = _time.time()

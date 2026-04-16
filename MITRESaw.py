@@ -258,7 +258,7 @@ if args.list:
         all_groups_seen: dict = {}  # name -> sorted alias list
         for fw in attack_frameworks:
             try:
-                attack_data, _ = load_attack_data(fw, force_fetch=args.fetch)
+                attack_data, _, _cs = load_attack_data(fw, force_fetch=args.fetch)
                 for group in attack_data.get_groups(remove_revoked_deprecated=True):
                     name = group.get("name", "").strip()
                     if not name:
@@ -296,7 +296,7 @@ if args.list:
 # ---------------------------------------------------------------------------
 if args.stats:
     from src.main import show_coverage_stats
-    show_coverage_stats(attack_frameworks, attack_version, fetch=args.fetch)
+    show_coverage_stats(attack_frameworks, "16.1", fetch=args.fetch)
     import sys
     sys.exit(0)
 
@@ -348,7 +348,7 @@ if args.retry_stix:
     if not _rs_skip:
         from src.citation_collector import clear_cache_stix_metadata
         _removed = clear_cache_stix_metadata()
-        print(f"    -> Removed {_removed} stix_metadata cache entries (will retry on this run)")
+        print(f"    -rS: Removed {_removed} stix_metadata cache entries (will retry on this run)")
         os.makedirs(CACHE_DIR, exist_ok=True)
         with open(_rs_marker, "w") as _f:
             _f.write(time.strftime("%Y-%m-%d %H:%M:%S"))
@@ -356,13 +356,14 @@ if args.retry_stix:
 if args.retry_nocontent:
     from src.citation_collector import clear_cache_no_content
     _removed = clear_cache_no_content()
-    print(f"    -> Removed {_removed} no-content cache entries (will retry on this run)")
+    print(f"    -rN: Removed {_removed} no-content cache entries (will retry on this run)")
 
 if args.retry_js is not None:
     from src.citation_collector import retry_js_citations
     _yaml_path = args.retry_js or None
     _attempted, _recovered = retry_js_citations(_yaml_path)
-    print(f"    -> {_recovered}/{_attempted} URL(s) recovered via headless rendering")
+    print(f"         {_recovered}/{_attempted} URL(s) recovered via headless rendering")
+    print()
 
 if args.import_citations:
     from src.citation_collector import import_citation_files

@@ -422,9 +422,9 @@ def load_attack_data(
     """Load MITRE ATT&CK data using STIX via the mitreattack-python library.
 
     Re-downloads if the cached file is older than 7 days or if force_fetch is True (--fetch).
+    Returns (attack_data, stix_filepath, cache_status) where cache_status is one of:
+      "cached:<days>", "downloaded", "forced".
     """
-    print(f"    -> Loading {framework} ATT&CK data from STIX...")
-
     framework_map = {
         "enterprise": "enterprise-attack",
         "mobile": "mobile-attack",
@@ -441,20 +441,20 @@ def load_attack_data(
     stix_filepath = os.path.join(stix_dir, f"{stix_source}.json")
 
     need_download = False
+    cache_status = "cached:0"
     if not os.path.exists(stix_filepath):
         need_download = True
+        cache_status = "downloaded"
     elif force_fetch:
-        print(f"    -> --fetch flag set, forcing fresh download...")
         need_download = True
+        cache_status = "forced"
     else:
         file_age_days = (time.time() - os.path.getmtime(stix_filepath)) / 86400
         if file_age_days > 7:
-            print(
-                f"    -> STIX data is {int(file_age_days)} days old, re-downloading..."
-            )
             need_download = True
+            cache_status = "stale"
         else:
-            print(f"    -> Using cached STIX data ({int(file_age_days)} day(s) old)")
+            cache_status = f"cached:{int(file_age_days)}"
 
     if need_download:
         stix_url = f"https://raw.githubusercontent.com/mitre/cti/master/{stix_source}/{stix_source}.json"
@@ -466,7 +466,7 @@ def load_attack_data(
         print(f"    -> Saved to {stix_filepath}")
 
     attack_data = MitreAttackData(stix_filepath)
-    return attack_data, stix_filepath
+    return attack_data, stix_filepath, cache_status
 
 
 def process_technique_parallel(args: Tuple) -> List[Dict]:
@@ -772,9 +772,14 @@ def show_coverage_stats(attack_frameworks: list, attack_version: str, fetch: boo
     _total_subtechniques = 0
     _total_procedures = 0
 
+    _fw_names = ", ".join(fw.upper() if fw.lower() == "ics" else fw.capitalize() for fw in attack_frameworks)
+    print(f"    -> Loading {_fw_names} ATT&CK data from STIX...")
+    _cache_status_summary = None
     for fw in attack_frameworks:
         try:
-            _ad, _ = load_attack_data(fw, force_fetch=fetch)
+            _ad, _, _cs = load_attack_data(fw, force_fetch=fetch)
+            if _cache_status_summary is None:
+                _cache_status_summary = _cs
         except Exception as _e:
             print(f"    ⚠️  Could not load {fw} data: {_e}")
             continue
@@ -803,13 +808,27 @@ def show_coverage_stats(attack_frameworks: list, attack_version: str, fetch: boo
         except Exception:
             pass
 
+    if _cache_status_summary and _cache_status_summary.startswith("cached:"):
+        _days = _cache_status_summary.split(":")[1]
+        print(f"    -> Using cached STIX data ({_days} day(s) old)")
+    elif _cache_status_summary == "forced":
+        print(f"    -> --fetch flag set, using fresh download")
+
     _total_all_techs = _total_techniques + _total_subtechniques
 
-    print(f"    📐  ATT&CK Scope")
-    print(f"        Groups:             {_total_groups:>5,}")
-    print(f"        Techniques:         {_total_all_techs:>5,}   ({_total_techniques:,} top-level + {_total_subtechniques:,} sub)")
-    print(f"        Procedure uses:     {_total_procedures:>5,}")
     print()
+    print(f"    \033[1m📐  ATT&CK Scope\033[0m")
+    print(f"       👥 Groups:          {_total_groups:>7,}")
+    print(f"       💻 Techniques:      {_total_all_techs:>7,}")
+    print(f"           Top-level:      {_total_techniques:>7,}")
+    print(f"           Sub:            {_total_subtechniques:>7,}")
+    print(f"       🥷 Procedure uses:   {_total_procedures:>7,}")
+    print()
+    print(f"    {_sep}")
+    print()
+
+    def _pct(n, total):
+        return f"{n / total * 100:>5.1f}%" if total else "   n/a"
 
     # ── 2. Citation cache ─────────────────────────────────────────────────────
     _with_content = 0
@@ -845,22 +864,6 @@ def show_coverage_stats(attack_frameworks: list, attack_version: str, fetch: boo
             _oldest_ts = _timestamps[0][:10]
             _newest_ts = _timestamps[-1][:10]
 
-    def _pct(n, total):
-        return f"{n / total * 100:>5.1f}%" if total else "   n/a"
-
-    print(f"    💾  Citation Cache")
-    if _cache_total == 0:
-        print(f"        No cache found — run with -C to populate")
-    else:
-        print(f"        Total entries:      {_cache_total:>5,}")
-        print(f"        ✅ With content:    {_with_content:>5,}   ({_pct(_with_content, _cache_total)})")
-        print(f"        ⚠️  STIX only:       {_stix_only:>5,}   ({_pct(_stix_only, _cache_total)})")
-        print(f"        ❌  No content:      {_no_content:>5,}   ({_pct(_no_content, _cache_total)})")
-        if _oldest_ts and _newest_ts:
-            _range = f"{_oldest_ts} → {_newest_ts}" if _oldest_ts != _newest_ts else _newest_ts
-            print(f"        🗓️  Cache dates:     {_range}")
-    print()
-
     # ── 3. Most recent output coverage ───────────────────────────────────────
     _data_root = _Path("data")
     _best_csv = None
@@ -872,12 +875,25 @@ def show_coverage_stats(attack_frameworks: list, attack_version: str, fetch: boo
                 _best_mtime = _mt
                 _best_csv = _csv
 
-    print(f"    📊  Output Coverage")
-    if _best_csv is None:
-        print(f"        No output CSV found — run extraction first")
+    print(f"    \033[1m💾  Citation Cache\033[0m")
+    if _cache_total == 0:
+        print(f"       No cache found — run with -C to populate")
     else:
-        _run_date = _dt.fromtimestamp(_best_mtime).strftime("%Y-%m-%d %H:%M")
-        print(f"        Source:  {_best_csv}  (run {_run_date})")
+        if _best_csv is not None:
+            print(f"       {_best_csv}")
+        print()
+        print(f"       ✅ With content:      {_with_content:>5,}   ({_pct(_with_content, _cache_total)})")
+        print(f"       ⚠️  STIX only:         {_stix_only:>5,}   ({_pct(_stix_only, _cache_total)})")
+        print(f"       ❌ No content:        {_no_content:>5,}   ({_pct(_no_content, _cache_total)})")
+        print(f"       Total entries:        {_cache_total:>5,}")
+    print()
+    print(f"    {_sep}")
+    print()
+
+    print(f"    \033[1m📊  Output Coverage\033[0m")
+    if _best_csv is None:
+        print(f"       No output CSV found — run extraction first")
+    else:
         try:
             import csv as _csv_mod
             _run_groups: set = set()
@@ -899,17 +915,15 @@ def show_coverage_stats(attack_frameworks: list, attack_version: str, fetch: boo
                             _run_techs_with_indicators.add(_tid)
 
             _techs_no_ind = _run_techs - _run_techs_with_indicators
-            print(f"        Groups processed:   {len(_run_groups):>5,}   ({_pct(len(_run_groups), _total_groups)} of ATT&CK)")
-            print(f"        Techniques seen:    {len(_run_techs):>5,}   ({_pct(len(_run_techs), _total_all_techs)} of ATT&CK)")
-            print(f"        With ≥1 indicator:  {len(_run_techs_with_indicators):>5,}   ({_pct(len(_run_techs_with_indicators), len(_run_techs))} of seen techs)")
+            print(f"       👥 Groups:            {len(_run_groups):>5,}   ({_pct(len(_run_groups), _total_groups)} of ATT&CK)")
+            print(f"       💻 Techniques:        {len(_run_techs):>5,}   ({_pct(len(_run_techs), _total_all_techs)} of ATT&CK)")
+            print(f"           ≥1 indicator:     {len(_run_techs_with_indicators):>5,}   ({_pct(len(_run_techs_with_indicators), len(_run_techs))} of seen techs)")
             if _techs_no_ind:
-                print(f"        No indicators yet: {len(_techs_no_ind):>5,}   → candidates for -C / -rJ")
-            print(f"        Procedure rows:     {_run_rows:>5,}")
+                print(f"           No indicators:    {len(_techs_no_ind):>5,}   → candidates for -C / -rJ")
+            print(f"       🥷 Procedures:         {_run_rows:>5,}")
         except Exception as _exc:
-            print(f"        Could not parse CSV: {_exc}")
+            print(f"       Could not parse CSV: {_exc}")
 
-    print()
-    print(f"    {_sep}")
     print()
 
 
@@ -949,12 +963,22 @@ def mainsaw(
         # Load STIX data for all requested frameworks
         all_attack_data = {}
         technique_datasource_map = {}
+        _fw_names = ", ".join(fw.upper() if fw.lower() == "ics" else fw.capitalize() for fw in attack_frameworks)
+        print(f"    -> Loading {_fw_names} ATT&CK data from STIX...")
+        _cache_status_summary = None
         for fw in attack_frameworks:
-            attack_data, stix_filepath = load_attack_data(fw, force_fetch=fetch)
+            attack_data, stix_filepath, _cs = load_attack_data(fw, force_fetch=fetch)
+            if _cache_status_summary is None:
+                _cache_status_summary = _cs
             all_attack_data[fw] = attack_data
             technique_datasource_map.update(
                 build_technique_datasource_map(stix_filepath)
             )
+        if _cache_status_summary and _cache_status_summary.startswith("cached:"):
+            _days = _cache_status_summary.split(":")[1]
+            print(f"    -> Using cached STIX data ({_days} day(s) old)")
+        elif _cache_status_summary == "forced":
+            print(f"    -> --fetch flag set, using fresh download")
 
     except requests.exceptions.ConnectionError:
         print("\n\n\tUnable to connect to the Internet. Please try again.\n\n\n")
@@ -1428,13 +1452,14 @@ def mainsaw(
         _plan_label = "Dry-run scope preview" if dry_run else "Pre-fetch plan"
         print(f"    \033[1m{_plan_label}\033[0m")
         print(f"    {_sep_pf}")
-        print(f"    🌐 Framework:      {'  '.join(attack_frameworks)}")
+        _fw_display = "; ".join(fw.upper() if fw.lower() == "ics" else fw.capitalize() for fw in attack_frameworks)
+        print(f"    🌐 Framework:      {_fw_display}")
         _groups_filtered = [g.strip() for g in groups if g.strip() and g.strip() != "."]
         if _groups_filtered:
             _groups_display = ", ".join(g.replace("_", " ") for g in _groups_filtered)
-            print(f"    👥  Groups:      {_matched_groups:>6,}  matched  ({_groups_display})")
+            print(f"    👥  Groups:     {_matched_groups:>6,}  matched  ({_groups_display})")
         else:
-            print(f"    👥  Groups:      {_matched_groups:>6,}  matched")
+            print(f"    👥  Groups:     {_matched_groups:>6,}  matched")
         print(f"    🩻  Procedures:  {_total_procedures:>6,}")
         if collect_citations:
             _total_cit = _cached_count + _uncached_count
@@ -1443,11 +1468,11 @@ def mainsaw(
                 print(f"        🔍 {_uncached_count:,} to fetch")
             if _cached_count:
                 print(f"        💾 {_cached_count:,} cached")
-            print(f"    👷  Workers:    {citation_workers:>6,}")
+            print(f"    👷  Workers: {citation_workers:>6,}")
         if _active_flags:
-            print(f"    🚩  Flags:")
+            print(f"    🚩 Flags:")
             for _fl in _active_flags:
-                print(f"        {_fl}")
+                print(f"         {_fl}")
         if collect_citations:
             print(f"    🕰️  Est. time:  {_est_str:>7}")
         print(f"    {_sep_pf}")
