@@ -702,29 +702,36 @@ def _fetch_pdf_ocr(pdf_bytes: bytes) -> tuple:
 # ---------------------------------------------------------------------------
 
 def _ensure_playwright_browsers():
-    """Check if Playwright Chromium is installed, install if missing."""
+    """Check if Playwright Chromium is installed, install if missing.
+
+    Returns True if Chromium is available (or was just installed).
+    Returns False if it cannot be installed — caller should fall back
+    to system Chrome/Edge via channel= parameter.
+    """
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
-            # Try to get the executable path — fails if not installed
             p.chromium.executable_path
+        return True
     except Exception:
-        import subprocess
+        pass
+
+    # Not installed — try to install it
+    import subprocess
+    for cmd in (
+        ["playwright", "install", "chromium"],
+        [sys.executable, "-m", "playwright", "install", "chromium"],
+    ):
         try:
-            subprocess.run(
-                ["playwright", "install", "chromium"],
-                check=True, capture_output=True, timeout=120,
-            )
+            result = subprocess.run(cmd, capture_output=True, timeout=120)
+            if result.returncode == 0:
+                return True
         except Exception:
-            # Try via python -m
-            try:
-                subprocess.run(
-                    [sys.executable, "-m", "playwright", "install", "chromium"],
-                    check=True, capture_output=True, timeout=120,
-                )
-            except Exception:
-                return False
-    return True
+            pass
+
+    print("    ⚠️  Playwright Chromium could not be installed (corporate policy or no internet access).")
+    print("       Falling back to system Chrome / Edge if available.")
+    return False
 
 _playwright_checked = False
 
@@ -766,7 +773,7 @@ def _fetch_headless(url: str) -> tuple:
 
     import random
 
-    def _run_browser(headless: bool) -> tuple:
+    def _run_browser(headless: bool, channel: str = None) -> tuple:
         """Launch browser, navigate, return (inner_text, error_str)."""
         try:
             with sync_playwright() as p:
@@ -775,7 +782,10 @@ def _fetch_headless(url: str) -> tuple:
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
                 ]
-                browser = p.chromium.launch(headless=headless, args=launch_args)
+                launch_kwargs = {"headless": headless, "args": launch_args}
+                if channel:
+                    launch_kwargs["channel"] = channel
+                browser = p.chromium.launch(**launch_kwargs)
                 context = browser.new_context(
                     user_agent=random.choice(_USER_AGENTS),
                     viewport={"width": 1920, "height": 1080},
@@ -803,28 +813,38 @@ def _fetch_headless(url: str) -> tuple:
         except Exception as e:
             return "", str(e).splitlines()[0]
 
+    import sys as _sys
+    _has_display = (
+        _sys.platform == "darwin"
+        or _sys.platform.startswith("win")
+        or bool(os.environ.get("DISPLAY"))
+        or bool(os.environ.get("WAYLAND_DISPLAY"))
+    )
+
+    # Ordered list of browser configurations to try
+    _attempts = [
+        (True,  None),       # Pass 1: Playwright Chromium headless
+        (False, None),       # Pass 2: Playwright Chromium headed (display required)
+        (True,  "chrome"),   # Pass 3: System Chrome headless (corporate fallback)
+        (False, "chrome"),   # Pass 4: System Chrome headed
+        (True,  "msedge"),   # Pass 5: System Edge headless (common on corporate Windows)
+        (False, "msedge"),   # Pass 6: System Edge headed
+    ]
+
+    last_err = ""
     try:
-        # Pass 1 — headless (fast, no display required)
-        text, err = _run_browser(headless=True)
-        if text and len(text) > 200:
-            return text, "headless"
-
-        # Pass 2 — headed (bypasses Cloudflare fingerprinting; requires display)
-        # Only attempt when a display is available (macOS always has one;
-        # Linux servers need DISPLAY set).
-        import sys as _sys
-        _has_display = (
-            _sys.platform == "darwin"                    # macOS always has a display
-            or _sys.platform.startswith("win")           # Windows always has a display
-            or bool(os.environ.get("DISPLAY"))           # Linux X11
-            or bool(os.environ.get("WAYLAND_DISPLAY"))  # Linux Wayland
-        )
-        if _has_display:
-            text, err = _run_browser(headless=False)
+        for _headless, _channel in _attempts:
+            if not _headless and not _has_display:
+                continue
+            text, err = _run_browser(headless=_headless, channel=_channel)
             if text and len(text) > 200:
-                return text, "headless_headed"
+                _label = _channel or "chromium"
+                _mode = "headless" if _headless else "headed"
+                return text, f"{_label}:{_mode}"
+            if err:
+                last_err = err
 
-        detail = f"headless:no_content  {err}" if err else "headless:no_content"
+        detail = f"headless:no_content  {last_err}" if last_err else "headless:no_content"
         return "", detail
     except Exception as e:
         return "", f"headless:{type(e).__name__}: {str(e).splitlines()[0]}"
