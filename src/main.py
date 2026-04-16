@@ -1493,9 +1493,9 @@ def mainsaw(
         _groups_filtered = [g.strip() for g in groups if g.strip() and g.strip() != "."]
         if _groups_filtered:
             _groups_display = ", ".join(g.replace("_", " ") for g in _groups_filtered)
-            print(f"    👥  Groups:     {_matched_groups:>6,}  matched  ({_groups_display})")
+            print(f"    👥 Groups:      {_matched_groups:>6,}  matched  ({_groups_display})")
         else:
-            print(f"    👥  Groups:     {_matched_groups:>6,}  matched")
+            print(f"    👥 Groups:      {_matched_groups:>6,}  matched")
         print(f"    🩻  Procedures:  {_total_procedures:>6,}")
         if collect_citations:
             _total_cit = _cached_count + _uncached_count
@@ -1504,7 +1504,7 @@ def mainsaw(
                 print(f"        🔍 {_uncached_count:,} to fetch")
             if _cached_count:
                 print(f"        💾 {_cached_count:,} cached")
-            print(f"    👷  Workers: {citation_workers:>6,}")
+            print(f"    👷 Workers:     {citation_workers:>6,}")
         if _active_flags:
             print(f"    🚩 Flags:")
             for _fl in _active_flags:

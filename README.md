@@ -409,15 +409,21 @@ Use `-rS` and `-rN` together to retry all failures while keeping successful cach
 ./MITRESaw.py -rS -rN -D -E -C
 ```
 
-All retry operations show live progress:
-- **`-rS` / `-rN`**: scanning progress with count removed and ETA (e.g. `Scanning cache: 3200/5234  (143 removed)  ETA: 8s`)
-- **`-rJ`**: per-URL result with rolling ETA (e.g. `✅ [12/87  ✔ 4  ⏱ 3m 20s remaining  elapsed 34s]  Report Title  [https://...]`)
-
 Use `-rJ` to batch-retry JS-blocked sites with a headed browser, then run normally:
 ```bash
 ./MITRESaw.py -rJ data/2026-04-15/citations_failed.yaml
 ./MITRESaw.py -D -E -C
 ```
+
+All retry operations show live progress:
+- **`-rS` / `-rN`**: scanning progress with count removed and ETA (e.g. `Scanning cache: 3200/5234  (143 removed)  ETA: 8s`)
+- **`-rJ`**: per-URL result with rolling ETA (e.g. `✅ [12/87  ✔ 4  ⏱ 3m 20s remaining  elapsed 34s]  Report Title  [https://...]`)
+
+> **Redundant combinations** — MITRESaw will warn if you use incompatible flags together:
+> - `--clear-cache` + `-rS` / `-rN` / `-rJ`: the cache is wiped first, so the retry flags find nothing to act on
+> - `-rN` + `-rJ`: `-rN` removes no-content entries before `-rJ` scans for them, so `-rJ` finds nothing
+>
+> `-rS` + `-rJ` is **not** redundant — they target different entry types (stix-metadata vs no-content).
 
 ### Pre-Run Scope Preview (`--dry-run`)
 

@@ -327,6 +327,19 @@ evidence_report = args.evidence_report
 collect_citations = args.citations
 args.max_workers = max(1, min(50, args.max_workers))
 
+# ---------------------------------------------------------------------------
+# Flag compatibility warnings
+# ---------------------------------------------------------------------------
+if args.clear_cache:
+    if args.retry_stix:
+        print("    ⚠️  Warning: --clear-cache + -rS is redundant — cache is wiped before -rS runs, so it will find nothing to remove.")
+    if args.retry_nocontent:
+        print("    ⚠️  Warning: --clear-cache + -rN is redundant — cache is wiped before -rN runs, so it will find nothing to remove.")
+    if args.retry_js is not None:
+        print("    ⚠️  Warning: --clear-cache + -rJ is redundant — cache is wiped before -rJ runs, so it will find no failed URLs to retry.")
+if args.retry_nocontent and args.retry_js is not None:
+    print("    ⚠️  Warning: -rN + -rJ is redundant — -rN removes no-content entries before -rJ runs, so -rJ will find nothing to retry.")
+
 if args.clear_cache:
     import shutil
     cache_dir = "data/.citation_cache"
