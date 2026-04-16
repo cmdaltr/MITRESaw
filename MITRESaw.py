@@ -198,7 +198,15 @@ parser.add_argument(
     "--stats",
     help="Show ATT&CK coverage summary and exit — total groups/techniques/procedures in\n"
          "the framework, citation cache coverage (fetched vs STIX-only vs no-content),\n"
-         "and indicator coverage from the most recent output CSV.\n",
+         "and aggregate indicator coverage across all output runs.\n",
+    action="store_const",
+    const=True,
+    default=False,
+)
+parser.add_argument(
+    "--stats-history",
+    help="Like --stats but shows a separate Output Coverage section for each past run,\n"
+         "labelled by date/invocation folder (e.g. 2026-04-15/_Iran_).\n",
     action="store_const",
     const=True,
     default=False,
@@ -292,11 +300,11 @@ if args.list:
 
 
 # ---------------------------------------------------------------------------
-# --stats: ATT&CK coverage dashboard
+# --stats / --stats-history: ATT&CK coverage dashboard
 # ---------------------------------------------------------------------------
-if args.stats:
+if args.stats or args.stats_history:
     from src.main import show_coverage_stats
-    show_coverage_stats(attack_frameworks, "16.1", fetch=args.fetch)
+    show_coverage_stats(attack_frameworks, "16.1", fetch=args.fetch, history=args.stats_history)
     import sys
     sys.exit(0)
 

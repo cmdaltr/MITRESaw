@@ -94,7 +94,7 @@ usage: MITRESaw.py [-h] [-l {groups,platforms,strings}]
                    [-g THREATGROUPS] [-a] [-n] [-o] [-q]
                    [-c COLUMNS] [-D] [-x {csv,json,xml}] [-E] [-C]
                    [-w MAX_WORKERS] [-A] [-F] [--dry-run] [--stats]
-                   [-rS] [-rN] [-rJ [YAML]] [--clear-cache]
+                   [--stats-history] [-rS] [-rN] [-rJ [YAML]] [--clear-cache]
                    [-I [DIR]]
 
 options:
@@ -120,9 +120,11 @@ options:
   --dry-run                         Preview scope and exit — shows groups matched, procedures,
                                     citation counts, cache status, and estimated time without
                                     fetching content or writing output files
-  --stats                           Show ATT&CK coverage summary and exit — total groups,
-                                    techniques, procedures, citation cache coverage, and
-                                    indicator coverage from the most recent output CSV
+  --stats                           Show ATT&CK coverage summary and exit — ATT&CK scope,
+                                    citation cache coverage, and aggregate indicator coverage
+                                    across all past output runs
+  --stats-history                   Like --stats but shows a separate Output Coverage section
+                                    per past run, labelled by date/invocation folder
   -rS, --retry-stix                 Retry citations that fell back to STIX metadata
   -rN, --retry-nocontent            Retry citations that had no content at all
   -rJ, --retry-js [YAML]            Retry failed citations using Playwright headed browser
@@ -448,7 +450,7 @@ Works with or without `-C` — without it, shows groups, procedures, active flag
 
 ### ATT&CK Coverage Summary (`--stats`)
 
-Use `--stats` to see how much of the ATT&CK framework you have coverage for — across STIX scope, citation cache, and your most recent output:
+Use `--stats` to see how much of the ATT&CK framework you have coverage for — across STIX scope, citation cache, and aggregate indicator coverage across all past runs:
 
 ```bash
 ./MITRESaw.py --stats
@@ -474,7 +476,6 @@ Output:
     ─────────────────────────────────────────────────
 
     💾  Citation Cache
-       data/2026-04-14/mitre_procedures.csv
 
        ✅ With content:      1,802   ( 77.0%)
        ⚠️  STIX only:          412   ( 17.6%)
@@ -483,7 +484,7 @@ Output:
 
     ─────────────────────────────────────────────────
 
-    📊  Output Coverage
+    📊  Output Coverage  (4 run(s))
        👥 Groups:              147   (100.0% of ATT&CK)
        💻 Techniques:          614   ( 43.3% of ATT&CK)
            ≥1 indicator:       489   ( 79.6% of seen techs)
@@ -491,7 +492,27 @@ Output:
        🥷 Procedures:        4,751
 ```
 
-The **Citation Cache** section shows how many URLs were successfully fetched vs fell back to STIX metadata vs produced no content at all. Use `-rJ` or `-I` to recover entries in the STIX-only and no-content buckets. The **Output Coverage** section reads from the most recent `mitre_procedures.csv` in your `data/` directory.
+The **Citation Cache** section shows how many URLs were successfully fetched vs fell back to STIX metadata vs produced no content at all. Use `-rJ` or `-I` to recover entries in the STIX-only and no-content buckets. The **Output Coverage** section aggregates across all `mitre_procedures.csv` files found under `data/`, giving a unified view of total coverage across all past runs.
+
+Use `--stats-history` to see a separate breakdown per run:
+
+```bash
+./MITRESaw.py --stats-history
+```
+
+```
+    📊  Output Coverage  2026-04-15/_Iran_
+       👥 Groups:               14   (  6.9% of ATT&CK)
+       ...
+
+    ─────────────────────────────────────────────────
+
+    📊  Output Coverage  2026-04-15/Windows_China-Finance_
+       👥 Groups:               60   ( 29.6% of ATT&CK)
+       ...
+```
+
+Each section is labelled with the date and invocation subfolder (e.g. `2026-04-15/_Iran_`), sorted newest first.
 
 ### Pre-Run ETA Estimate
 

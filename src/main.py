@@ -750,7 +750,7 @@ def _write_reference_sheet(xlsx_path, all_refs):
     wb.save(xlsx_path)
 
 
-def show_coverage_stats(attack_frameworks: list, attack_version: str, fetch: bool = False):
+def show_coverage_stats(attack_frameworks: list, attack_version: str, fetch: bool = False, history: bool = False):
     """Print a coverage dashboard: ATT&CK scope, citation cache, and output coverage."""
     import json as _json
     from pathlib import Path as _Path
@@ -864,23 +864,18 @@ def show_coverage_stats(attack_frameworks: list, attack_version: str, fetch: boo
             _oldest_ts = _timestamps[0][:10]
             _newest_ts = _timestamps[-1][:10]
 
-    # ── 3. Most recent output coverage ───────────────────────────────────────
+    # ── 3. Collect all output CSVs, sorted newest first ──────────────────────
     _data_root = _Path("data")
-    _best_csv = None
-    _best_mtime = 0.0
+    _all_csvs = []
     if _data_root.exists():
         for _csv in _data_root.rglob("mitre_procedures.csv"):
-            _mt = _csv.stat().st_mtime
-            if _mt > _best_mtime:
-                _best_mtime = _mt
-                _best_csv = _csv
+            _all_csvs.append((_csv.stat().st_mtime, _csv))
+    _all_csvs.sort(reverse=True)  # newest first
 
     print(f"    \033[1m💾  Citation Cache\033[0m")
     if _cache_total == 0:
         print(f"       No cache found — run with -C to populate")
     else:
-        if _best_csv is not None:
-            print(f"       {_best_csv}")
         print()
         print(f"       ✅ With content:      {_with_content:>5,}   ({_pct(_with_content, _cache_total)})")
         print(f"       ⚠️  STIX only:         {_stix_only:>5,}   ({_pct(_stix_only, _cache_total)})")
@@ -890,41 +885,82 @@ def show_coverage_stats(attack_frameworks: list, attack_version: str, fetch: boo
     print(f"    {_sep}")
     print()
 
-    print(f"    \033[1m📊  Output Coverage\033[0m")
-    if _best_csv is None:
-        print(f"       No output CSV found — run extraction first")
-    else:
+    import csv as _csv_mod
+
+    def _read_csv(csv_path):
+        """Return (groups, techs, techs_with_indicators, row_count) sets/int."""
+        _groups: set = set()
+        _techs: set = set()
+        _techs_ind: set = set()
+        _rows = 0
+        with open(csv_path, newline="", encoding="utf-8") as _fh:
+            for _row in _csv_mod.DictReader(_fh):
+                _rows += 1
+                _g = _row.get("group_sw_name", "").strip()
+                _tid = _row.get("technique_id", "").strip()
+                _ev = _row.get("evidence", "").strip()
+                if _g:
+                    _groups.add(_g)
+                if _tid:
+                    _techs.add(_tid)
+                    if _ev and _ev not in ("{}", "[]", ""):
+                        _techs_ind.add(_tid)
+        return _groups, _techs, _techs_ind, _rows
+
+    def _print_coverage_stats(groups, techs, techs_ind, rows):
+        _no_ind = techs - techs_ind
+        print(f"       👥 Groups:            {len(groups):>5,}   ({_pct(len(groups), _total_groups)} of ATT&CK)")
+        print(f"       💻 Techniques:        {len(techs):>5,}   ({_pct(len(techs), _total_all_techs)} of ATT&CK)")
+        print(f"           ≥1 indicator:     {len(techs_ind):>5,}   ({_pct(len(techs_ind), len(techs))} of seen techs)")
+        if _no_ind:
+            print(f"           No indicators:    {len(_no_ind):>5,}   → candidates for -C / -rJ")
+        print(f"       🥷 Procedures:         {rows:>5,}")
+
+    # Filter out CSVs sitting directly in data/ root
+    _valid_csvs = []
+    for _mtime, _csv_path in _all_csvs:
         try:
-            import csv as _csv_mod
-            _run_groups: set = set()
-            _run_techs: set = set()
-            _run_techs_with_indicators: set = set()
-            _run_rows = 0
-            with open(_best_csv, newline="", encoding="utf-8") as _fh:
-                _reader = _csv_mod.DictReader(_fh)
-                for _row in _reader:
-                    _run_rows += 1
-                    _g = _row.get("group_sw_name", "").strip()
-                    _tid = _row.get("technique_id", "").strip()
-                    _ev = _row.get("evidence", "").strip()
-                    if _g:
-                        _run_groups.add(_g)
-                    if _tid:
-                        _run_techs.add(_tid)
-                        if _ev and _ev not in ("{}", "[]", ""):
-                            _run_techs_with_indicators.add(_tid)
+            _label = str(_csv_path.parent.relative_to(_data_root))
+        except ValueError:
+            _label = str(_csv_path.parent)
+        if _label != ".":
+            _valid_csvs.append((_mtime, _csv_path, _label))
 
-            _techs_no_ind = _run_techs - _run_techs_with_indicators
-            print(f"       👥 Groups:            {len(_run_groups):>5,}   ({_pct(len(_run_groups), _total_groups)} of ATT&CK)")
-            print(f"       💻 Techniques:        {len(_run_techs):>5,}   ({_pct(len(_run_techs), _total_all_techs)} of ATT&CK)")
-            print(f"           ≥1 indicator:     {len(_run_techs_with_indicators):>5,}   ({_pct(len(_run_techs_with_indicators), len(_run_techs))} of seen techs)")
-            if _techs_no_ind:
-                print(f"           No indicators:    {len(_techs_no_ind):>5,}   → candidates for -C / -rJ")
-            print(f"       🥷 Procedures:         {_run_rows:>5,}")
-        except Exception as _exc:
-            print(f"       Could not parse CSV: {_exc}")
-
-    print()
+    if not _valid_csvs:
+        print(f"    \033[1m📊  Output Coverage\033[0m")
+        print(f"       No output CSV found — run extraction first")
+        print()
+    elif history:
+        # Per-invocation breakdown
+        for _i, (_mtime, _csv_path, _label) in enumerate(_valid_csvs):
+            print(f"    \033[1m📊  Output Coverage\033[0m  \033[90m{_label}\033[0m")
+            try:
+                _g, _t, _ti, _r = _read_csv(_csv_path)
+                _print_coverage_stats(_g, _t, _ti, _r)
+            except Exception as _exc:
+                print(f"       Could not parse CSV: {_exc}")
+            print()
+            if _i < len(_valid_csvs) - 1:
+                print(f"    {_sep}")
+                print()
+    else:
+        # Aggregate across all CSVs
+        _agg_groups: set = set()
+        _agg_techs: set = set()
+        _agg_techs_ind: set = set()
+        _agg_rows = 0
+        for _, _csv_path, _ in _valid_csvs:
+            try:
+                _g, _t, _ti, _r = _read_csv(_csv_path)
+                _agg_groups |= _g
+                _agg_techs |= _t
+                _agg_techs_ind |= _ti
+                _agg_rows += _r
+            except Exception:
+                pass
+        print(f"    \033[1m📊  Output Coverage\033[0m  \033[90m({len(_valid_csvs)} run(s))\033[0m")
+        _print_coverage_stats(_agg_groups, _agg_techs, _agg_techs_ind, _agg_rows)
+        print()
 
 
 def mainsaw(
