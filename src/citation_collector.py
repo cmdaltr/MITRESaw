@@ -766,8 +766,8 @@ def _fetch_headless(url: str) -> tuple:
 
     import random
 
-    def _run_browser(headless: bool) -> str:
-        """Launch browser, navigate, return inner_text or ''."""
+    def _run_browser(headless: bool) -> tuple:
+        """Launch browser, navigate, return (inner_text, error_str)."""
         try:
             with sync_playwright() as p:
                 launch_args = [
@@ -788,25 +788,24 @@ def _fetch_headless(url: str) -> tuple:
                 page = context.new_page()
                 try:
                     page.goto(url, wait_until="domcontentloaded", timeout=15000)
-                except Exception:
+                except Exception as e:
                     browser.close()
-                    return ""
+                    return "", str(e).splitlines()[0]
                 page.wait_for_timeout(3000)
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                 page.wait_for_timeout(1000)
-                # inner_text gives rendered visible text directly — no html_to_text needed
                 try:
                     text = page.inner_text("body")
-                except Exception:
+                except Exception as e:
                     text = ""
                 browser.close()
-                return text[:MAX_CONTENT_CHARS] if text else ""
-        except Exception:
-            return ""
+                return text[:MAX_CONTENT_CHARS] if text else "", ""
+        except Exception as e:
+            return "", str(e).splitlines()[0]
 
     try:
         # Pass 1 — headless (fast, no display required)
-        text = _run_browser(headless=True)
+        text, err = _run_browser(headless=True)
         if text and len(text) > 200:
             return text, "headless"
 
@@ -821,13 +820,14 @@ def _fetch_headless(url: str) -> tuple:
             or bool(os.environ.get("WAYLAND_DISPLAY"))  # Linux Wayland
         )
         if _has_display:
-            text = _run_browser(headless=False)
+            text, err = _run_browser(headless=False)
             if text and len(text) > 200:
                 return text, "headless_headed"
 
-        return "", "headless:no_content"
+        detail = f"headless:no_content  {err}" if err else "headless:no_content"
+        return "", detail
     except Exception as e:
-        return "", f"headless:{type(e).__name__}"
+        return "", f"headless:{type(e).__name__}: {str(e).splitlines()[0]}"
 
 
 # ---------------------------------------------------------------------------
