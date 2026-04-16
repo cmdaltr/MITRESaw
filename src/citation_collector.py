@@ -716,20 +716,25 @@ def _ensure_playwright_browsers():
     except Exception:
         pass
 
-    # Not installed — try to install it
+    # Not installed — try to install it.
+    # On corporate networks with SSL inspection, set NODE_TLS_REJECT_UNAUTHORIZED=0
+    # so the Node.js download doesn't reject the proxy's self-signed certificate.
     import subprocess
+    _env = os.environ.copy()
+    _env["NODE_TLS_REJECT_UNAUTHORIZED"] = "0"
+
     for cmd in (
         ["playwright", "install", "chromium"],
         [sys.executable, "-m", "playwright", "install", "chromium"],
     ):
         try:
-            result = subprocess.run(cmd, capture_output=True, timeout=120)
+            result = subprocess.run(cmd, capture_output=True, timeout=120, env=_env)
             if result.returncode == 0:
                 return True
         except Exception:
             pass
 
-    print("    ⚠️  Playwright Chromium could not be installed (corporate policy or no internet access).")
+    print("    ⚠️  Playwright Chromium could not be installed (corporate SSL / firewall).")
     print("       Falling back to system Chrome / Edge if available.")
     return False
 
@@ -755,8 +760,7 @@ def _fetch_headless(url: str) -> tuple:
 
     if not _playwright_checked:
         _playwright_checked = True
-        if not _ensure_playwright_browsers():
-            return "", "headless:chromium_install_failed"
+        _ensure_playwright_browsers()  # best-effort; fall through to system Chrome if it fails
 
     # JavaScript to mask headless browser fingerprint
     _STEALTH_JS = """
