@@ -717,18 +717,20 @@ def _ensure_playwright_browsers():
         pass
 
     # Not installed — try to install it.
-    # On corporate networks with SSL inspection, set NODE_TLS_REJECT_UNAUTHORIZED=0
-    # so the Node.js download doesn't reject the proxy's self-signed certificate.
     import subprocess
-    _env = os.environ.copy()
-    _env["NODE_TLS_REJECT_UNAUTHORIZED"] = "0"
+    _env_normal = os.environ.copy()
+    _env_nossl = os.environ.copy()
+    _env_nossl["NODE_TLS_REJECT_UNAUTHORIZED"] = "0"
 
-    for cmd in (
-        ["playwright", "install", "chromium"],
-        [sys.executable, "-m", "playwright", "install", "chromium"],
-    ):
+    _install_attempts = [
+        (["playwright", "install", "chromium"],                              _env_normal),
+        ([sys.executable, "-m", "playwright", "install", "chromium"],        _env_normal),
+        (["playwright", "install", "chromium"],                              _env_nossl),
+        ([sys.executable, "-m", "playwright", "install", "chromium"],        _env_nossl),
+    ]
+    for cmd, env in _install_attempts:
         try:
-            result = subprocess.run(cmd, capture_output=True, timeout=120, env=_env)
+            result = subprocess.run(cmd, capture_output=True, timeout=120, env=env)
             if result.returncode == 0:
                 return True
         except Exception:
