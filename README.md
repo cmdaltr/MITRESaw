@@ -93,7 +93,7 @@ usage: MITRESaw.py [-h] [-l {groups,platforms,strings}]
                    [-f FRAMEWORK] [-p PLATFORMS] [-s STRINGS]
                    [-g THREATGROUPS] [-a] [-n] [-o] [-q]
                    [-c COLUMNS] [-D] [-x {csv,json,xml}] [-E] [-C]
-                   [-w MAX_WORKERS] [-A] [-F] [--dry-run]
+                   [-w MAX_WORKERS] [-A] [-F] [--dry-run] [--stats]
                    [-rS] [-rN] [-rJ [YAML]] [--clear-cache]
                    [-I [DIR]]
 
@@ -120,6 +120,9 @@ options:
   --dry-run                         Preview scope and exit — shows groups matched, procedures,
                                     citation counts, cache status, and estimated time without
                                     fetching content or writing output files
+  --stats                           Show ATT&CK coverage summary and exit — total groups,
+                                    techniques, procedures, citation cache coverage, and
+                                    indicator coverage from the most recent output CSV
   -rS, --retry-stix                 Retry citations that fell back to STIX metadata
   -rN, --retry-nocontent            Retry citations that had no content at all
   -rJ, --retry-js [YAML]            Retry failed citations using Playwright headed browser
@@ -442,6 +445,45 @@ Output:
 ```
 
 Works with or without `-C` — without it, shows groups, procedures, active flags, and extraction-only time estimate.
+
+### ATT&CK Coverage Summary (`--stats`)
+
+Use `--stats` to see how much of the ATT&CK framework you have coverage for — across STIX scope, citation cache, and your most recent output:
+
+```bash
+./MITRESaw.py --stats
+```
+
+Output:
+
+```
+    ATT&CK Coverage Summary
+    ─────────────────────────────────────────────────
+    🌐  Framework:   Enterprise  ICS  Mobile  (v16.1)
+
+    📐  ATT&CK Scope
+        Groups:               147
+        Techniques:         1,418   (780 top-level + 638 sub)
+        Procedure uses:     4,751
+
+    💾  Citation Cache
+        Total entries:      2,341
+        ✅ With content:    1,802   ( 77.0%)
+        ⚠️  STIX only:        412   ( 17.6%)
+        ❌  No content:       127   (  5.4%)
+        🗓️  Cache dates:     2026-01-03 → 2026-04-14
+
+    📊  Output Coverage
+        Source:  data/2026-04-14/mitre_procedures.csv  (run 2026-04-14 09:32)
+        Groups processed:     147   (100.0% of ATT&CK)
+        Techniques seen:      614   ( 43.3% of ATT&CK)
+        With ≥1 indicator:    489   ( 79.6% of seen techs)
+        No indicators yet:    125   → candidates for -C / -rJ
+        Procedure rows:     4,751
+    ─────────────────────────────────────────────────
+```
+
+The **Citation Cache** section shows how many URLs were successfully fetched vs fell back to STIX metadata vs produced no content at all. Use `-rJ` or `-I` to recover entries in the STIX-only and no-content buckets. The **Output Coverage** section reads from the most recent `mitre_procedures.csv` in your `data/` directory.
 
 ### Pre-Run ETA Estimate
 

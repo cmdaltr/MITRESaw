@@ -1,0 +1,182 @@
+# MITRESaw — Blocked Citation Domains
+# =====================================
+# Domains listed here are skipped before any fetch is attempted during
+# citation collection. Add entries to prevent wasted time against sites
+# that are known to block automated requests, require authentication,
+# serve paywalled content, or carry no actionable threat intelligence.
+#
+# Three sections:
+#
+#   blocked_domains      — exact hostname match (www. prefix is ignored).
+#                          Use for sites that outright block bots or require login.
+#
+#   blocked_url_prefixes — hostname prefix/subdomain match.
+#                          Use for documentation portals and tool homepages
+#                          where the content has no threat-intel value.
+#
+#   blocked_url_paths    — substring match against the URL path.
+#                          Use for specific documentation sub-trees on
+#                          otherwise useful domains.
+#
+# Format: plain strings, one per list entry.  www. prefix is optional.
+# Restart MITRESaw after editing this file — it is loaded once at startup.
+# -------------------------------------------------------------------------
+
+blocked_domains:
+
+  # --- Social media: require login or actively fingerprint/block scrapers ---
+  - domain: twitter.com
+    reason: Requires login; returns login-wall or bot-detection page to automated clients
+
+  - domain: x.com
+    reason: Same infrastructure as twitter.com; identical bot-blocking behaviour
+
+  - domain: linkedin.com
+    reason: Hard login wall; no public article content accessible without an account
+
+  - domain: facebook.com
+    reason: All content behind authentication; returns empty or redirect pages
+
+  - domain: youtube.com
+    reason: Video platform; no extractable text content relevant to threat intelligence
+
+  - domain: vimeo.com
+    reason: Video platform; no extractable text content
+
+  # --- Paywalled / auth-walled security vendors ---
+  - domain: mandiant.com
+    reason: Most research reports require a Mandiant account or are behind a paywall
+
+  - domain: fireeye.com
+    reason: Redirects to mandiant.com; same paywall restrictions apply
+
+  - domain: recordedfuture.com
+    reason: Intelligence platform; all report content requires a paid subscription
+
+  - domain: crowdstrike.com
+    reason: Cloudflare-protected; returns challenge/403 to headless automated requests
+
+  - domain: medium.com
+    reason: Metered paywall after a small number of free reads; automation triggers it immediately
+
+
+blocked_url_prefixes:
+
+  # --- Microsoft documentation: generic OS/product docs, no threat intel value ---
+  - prefix: docs.microsoft.com
+    reason: Microsoft documentation portal; content describes product features, not adversary behaviour
+
+  - prefix: learn.microsoft.com
+    reason: Replaced docs.microsoft.com; same documentation content, same reasoning
+
+  - prefix: support.microsoft.com
+    reason: Microsoft support KB articles; describes fixes, not attack techniques
+
+  - prefix: technet.microsoft.com
+    reason: Legacy Microsoft TechNet; general IT administration documentation
+
+  - prefix: msdn.microsoft.com
+    reason: Microsoft developer documentation; API references with no threat intel value
+
+  # --- Google Cloud documentation ---
+  - prefix: docs.cloud.google.com
+    reason: GCP product documentation; no threat intelligence content
+
+  # --- Apple developer documentation ---
+  - prefix: developer.apple.com
+    reason: Apple API and platform documentation; no threat intelligence content
+
+  # --- Linux manual pages ---
+  - prefix: man7.org
+    reason: Linux man pages; describes standard system commands, not adversary usage
+
+  - prefix: linux.die.net
+    reason: Legacy Linux man page mirror; same reasoning as man7.org
+
+  # --- Wikipedia ---
+  - prefix: en.wikipedia.org
+    reason: Encyclopaedia articles; too generic to yield actionable threat indicators
+
+  - prefix: wikipedia.org
+    reason: Root domain catch-all for Wikipedia; same reasoning
+
+  # --- Tool homepages (describe the tool itself, not how adversaries use it) ---
+  - prefix: www.7-zip.org
+    reason: Official 7-Zip homepage; no adversary usage context
+
+  - prefix: www.rarlab.com
+    reason: WinRAR homepage; no adversary usage context
+
+  - prefix: www.winzip.com
+    reason: WinZip homepage; no adversary usage context
+
+  - prefix: www.gnu.org
+    reason: GNU project homepage; generic open-source tool descriptions
+
+  - prefix: www.perl.org
+    reason: Perl language homepage; no adversary usage context
+
+  - prefix: www.python.org
+    reason: Python language homepage; no adversary usage context
+
+  - prefix: www.ruby-lang.org
+    reason: Ruby language homepage; no adversary usage context
+
+  - prefix: www.openssl.org
+    reason: OpenSSL homepage; cryptographic library documentation, not threat intel
+
+  - prefix: curl.se
+    reason: curl homepage; tool documentation with no threat-actor-specific content
+
+  - prefix: nmap.org
+    reason: Nmap homepage; scanner documentation with no threat-actor-specific content
+
+  - prefix: www.wireshark.org
+    reason: Wireshark homepage; packet analyser documentation, not threat intel
+
+  # --- Container / infrastructure documentation ---
+  - prefix: docs.docker.com
+    reason: Docker documentation; infrastructure tooling, no threat intel value
+
+  - prefix: kubernetes.io
+    reason: Kubernetes documentation; infrastructure tooling, no threat intel value
+
+  # --- MITRE ATT&CK itself (already fully ingested via STIX) ---
+  - prefix: attack.mitre.org
+    reason: Already available in full via STIX bundle; fetching HTML would be redundant
+
+  # --- Specific GitHub repositories (tool repos, not threat intel reports) ---
+  - prefix: github.com/PowerShellMafia
+    reason: PowerSploit repository; code only, no narrative threat intelligence text
+
+  - prefix: github.com/gentilkiwi
+    reason: Mimikatz repository; code only, no narrative threat intelligence text
+
+
+blocked_url_paths:
+
+  # --- Google Cloud sub-tree documentation paths ---
+  - path: /vpc/docs/
+    reason: GCP VPC product documentation sub-tree
+
+  - path: /compute/docs/
+    reason: GCP Compute Engine documentation sub-tree
+
+  - path: /iam/docs/
+    reason: GCP IAM documentation sub-tree
+
+  - path: /storage/docs/
+    reason: GCP Storage documentation sub-tree
+
+  - path: /sdk/docs/
+    reason: GCP SDK documentation sub-tree
+
+  - path: /kubernetes/docs/
+    reason: Kubernetes documentation sub-tree hosted on Google domains
+
+  - path: /docs/reference/
+    reason: Generic API reference documentation sub-tree
+
+  # --- Cisco product documentation ---
+  - path: /c/en/us/td/docs/
+    reason: Cisco technical documentation path pattern; product manuals, not threat intel

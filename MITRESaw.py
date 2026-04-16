@@ -194,6 +194,15 @@ parser.add_argument(
     const=True,
     default=False,
 )
+parser.add_argument(
+    "--stats",
+    help="Show ATT&CK coverage summary and exit — total groups/techniques/procedures in\n"
+         "the framework, citation cache coverage (fetched vs STIX-only vs no-content),\n"
+         "and indicator coverage from the most recent output CSV.\n",
+    action="store_const",
+    const=True,
+    default=False,
+)
 
 
 args = parser.parse_args()
@@ -278,6 +287,16 @@ if args.list:
             print(f"  {name:<28}  {alias_str}")
         print(f"\n  {len(all_groups_seen)} groups listed\n")
 
+    import sys
+    sys.exit(0)
+
+
+# ---------------------------------------------------------------------------
+# --stats: ATT&CK coverage dashboard
+# ---------------------------------------------------------------------------
+if args.stats:
+    from src.main import show_coverage_stats
+    show_coverage_stats(attack_frameworks, attack_version, fetch=args.fetch)
     import sys
     sys.exit(0)
 

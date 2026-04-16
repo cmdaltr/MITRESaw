@@ -750,6 +750,169 @@ def _write_reference_sheet(xlsx_path, all_refs):
     wb.save(xlsx_path)
 
 
+def show_coverage_stats(attack_frameworks: list, attack_version: str, fetch: bool = False):
+    """Print a coverage dashboard: ATT&CK scope, citation cache, and output coverage."""
+    import json as _json
+    from pathlib import Path as _Path
+    from datetime import datetime as _dt
+    from src.citation_collector import CACHE_DIR
+
+    _sep = "\033[90m" + "─" * 49 + "\033[0m"
+    print()
+    print(f"    \033[1mATT&CK Coverage Summary\033[0m")
+    print(f"    {_sep}")
+
+    # ── 1. STIX scope ────────────────────────────────────────────────────────
+    _fw_label = "  ".join(attack_frameworks)
+    print(f"    🌐  Framework:   \033[1m{_fw_label}\033[0m  (v{attack_version})")
+    print()
+
+    _total_groups = 0
+    _total_techniques = 0
+    _total_subtechniques = 0
+    _total_procedures = 0
+
+    for fw in attack_frameworks:
+        try:
+            _ad, _ = load_attack_data(fw, force_fetch=fetch)
+        except Exception as _e:
+            print(f"    ⚠️  Could not load {fw} data: {_e}")
+            continue
+
+        _groups = _ad.get_groups(remove_revoked_deprecated=True)
+        _total_groups += len(_groups)
+
+        _techs = _ad.get_techniques(remove_revoked_deprecated=True)
+        _total_techniques += len(_techs)
+
+        try:
+            _subs = _ad.get_subtechniques(remove_revoked_deprecated=True)
+            _total_subtechniques += len(_subs)
+        except Exception:
+            pass
+
+        # Count procedure (uses) relationships
+        try:
+            _rels = _ad.get_all_relationships()
+            _uses = [r for r in _rels
+                     if getattr(r, "relationship_type", "") == "uses"
+                     and any(str(getattr(r, "source_ref", "")).startswith(p)
+                             for p in ("intrusion-set--", "campaign--", "malware--", "tool--"))
+                     and str(getattr(r, "target_ref", "")).startswith("attack-pattern--")]
+            _total_procedures += len(_uses)
+        except Exception:
+            pass
+
+    _total_all_techs = _total_techniques + _total_subtechniques
+
+    print(f"    📐  ATT&CK Scope")
+    print(f"        Groups:             {_total_groups:>5,}")
+    print(f"        Techniques:         {_total_all_techs:>5,}   ({_total_techniques:,} top-level + {_total_subtechniques:,} sub)")
+    print(f"        Procedure uses:     {_total_procedures:>5,}")
+    print()
+
+    # ── 2. Citation cache ─────────────────────────────────────────────────────
+    _with_content = 0
+    _stix_only = 0
+    _no_content = 0
+    _cache_total = 0
+    _newest_ts = ""
+    _oldest_ts = ""
+
+    if CACHE_DIR.exists():
+        _cache_files = list(CACHE_DIR.glob("*.json"))
+        _cache_total = len(_cache_files)
+        _timestamps = []
+        for _cf in _cache_files:
+            try:
+                _d = _json.loads(_cf.read_text())
+                _m = _d.get("method", "")
+                _t = _d.get("text", "")
+                if _m == "stix_metadata":
+                    _stix_only += 1
+                elif not _t:
+                    _no_content += 1
+                else:
+                    _with_content += 1
+                _ts = _d.get("fetched", "")
+                if _ts:
+                    _timestamps.append(_ts)
+            except Exception:
+                _no_content += 1
+
+        if _timestamps:
+            _timestamps.sort()
+            _oldest_ts = _timestamps[0][:10]
+            _newest_ts = _timestamps[-1][:10]
+
+    def _pct(n, total):
+        return f"{n / total * 100:>5.1f}%" if total else "   n/a"
+
+    print(f"    💾  Citation Cache")
+    if _cache_total == 0:
+        print(f"        No cache found — run with -C to populate")
+    else:
+        print(f"        Total entries:      {_cache_total:>5,}")
+        print(f"        ✅ With content:    {_with_content:>5,}   ({_pct(_with_content, _cache_total)})")
+        print(f"        ⚠️  STIX only:       {_stix_only:>5,}   ({_pct(_stix_only, _cache_total)})")
+        print(f"        ❌  No content:      {_no_content:>5,}   ({_pct(_no_content, _cache_total)})")
+        if _oldest_ts and _newest_ts:
+            _range = f"{_oldest_ts} → {_newest_ts}" if _oldest_ts != _newest_ts else _newest_ts
+            print(f"        🗓️  Cache dates:     {_range}")
+    print()
+
+    # ── 3. Most recent output coverage ───────────────────────────────────────
+    _data_root = _Path("data")
+    _best_csv = None
+    _best_mtime = 0.0
+    if _data_root.exists():
+        for _csv in _data_root.rglob("mitre_procedures.csv"):
+            _mt = _csv.stat().st_mtime
+            if _mt > _best_mtime:
+                _best_mtime = _mt
+                _best_csv = _csv
+
+    print(f"    📊  Output Coverage")
+    if _best_csv is None:
+        print(f"        No output CSV found — run extraction first")
+    else:
+        _run_date = _dt.fromtimestamp(_best_mtime).strftime("%Y-%m-%d %H:%M")
+        print(f"        Source:  {_best_csv}  (run {_run_date})")
+        try:
+            import csv as _csv_mod
+            _run_groups: set = set()
+            _run_techs: set = set()
+            _run_techs_with_indicators: set = set()
+            _run_rows = 0
+            with open(_best_csv, newline="", encoding="utf-8") as _fh:
+                _reader = _csv_mod.DictReader(_fh)
+                for _row in _reader:
+                    _run_rows += 1
+                    _g = _row.get("group_sw_name", "").strip()
+                    _tid = _row.get("technique_id", "").strip()
+                    _ev = _row.get("evidence", "").strip()
+                    if _g:
+                        _run_groups.add(_g)
+                    if _tid:
+                        _run_techs.add(_tid)
+                        if _ev and _ev not in ("{}", "[]", ""):
+                            _run_techs_with_indicators.add(_tid)
+
+            _techs_no_ind = _run_techs - _run_techs_with_indicators
+            print(f"        Groups processed:   {len(_run_groups):>5,}   ({_pct(len(_run_groups), _total_groups)} of ATT&CK)")
+            print(f"        Techniques seen:    {len(_run_techs):>5,}   ({_pct(len(_run_techs), _total_all_techs)} of ATT&CK)")
+            print(f"        With ≥1 indicator:  {len(_run_techs_with_indicators):>5,}   ({_pct(len(_run_techs_with_indicators), len(_run_techs))} of seen techs)")
+            if _techs_no_ind:
+                print(f"        No indicators yet: {len(_techs_no_ind):>5,}   → candidates for -C / -rJ")
+            print(f"        Procedure rows:     {_run_rows:>5,}")
+        except Exception as _exc:
+            print(f"        Could not parse CSV: {_exc}")
+
+    print()
+    print(f"    {_sep}")
+    print()
+
+
 def mainsaw(
     operating_platforms,
     search_terms,
