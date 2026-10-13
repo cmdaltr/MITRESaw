@@ -283,32 +283,25 @@ from src.tools.read_files import collect_files
 from src.tools.print_saw import print_saw
 
 
-def get_latest_attack_version() -> str:
-    """Fetch the latest MITRE ATT&CK version from STIX data."""
+# MITRE's current, versioned ATT&CK feed (STIX 2.1). mitre/cti is the older STIX 2.0
+# copy: it carries no release number, and new releases reach attack-stix-data first.
+STIX_BASE_URL = "https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master"
+STIX_INDEX_URL = f"{STIX_BASE_URL}/index.json"
+
+
+def get_latest_attack_version(framework: str = "Enterprise") -> str:
+    """The latest ATT&CK release for a framework, from attack-stix-data's index.json
+    (about 30 KB), else the ATT&CK website's versions page."""
     try:
-        # Use the TAXII server to get the latest version
-        try:
-            server = Server("https://cti-taxii.mitre.org/taxii/")
-            api_root = server.api_roots[0]
-            collections = api_root.collections
-        except requests.exceptions.SSLError:
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-            server = Server("https://cti-taxii.mitre.org/taxii/", verify=False)
-            api_root = server.api_roots[0]
-            collections = api_root.collections
+        index = _fetch(STIX_INDEX_URL, timeout=15)
+        index.raise_for_status()
+        for collection in index.json().get("collections", []):
+            if collection.get("name", "").lower().startswith(framework.lower()):
+                versions = collection.get("versions") or []
+                if versions:
+                    return versions[0].get("version", "Unknown")
 
-        for collection in collections:
-            if "Enterprise ATT&CK" in collection.title:
-                # Get collection source
-                collection_source = TAXIICollectionSource(collection)
-                # Get the x-mitre-collection object to find version
-                filters = [Filter("type", "=", "x-mitre-collection")]
-                collections_data = collection_source.query(filters)
-                if collections_data:
-                    version = collections_data[0].get("x_mitre_version", "Unknown")
-                    return version
-
-        # Fallback to web scraping if STIX method fails
+        # Fallback to web scraping if the index has no answer
         version_history = _fetch(
             "https://attack.mitre.org/resources/versions/", timeout=10
         )
@@ -322,6 +315,20 @@ def get_latest_attack_version() -> str:
     except Exception as e:
         print(f"\n\n\tWarning: Could not determine latest version: {e}")
         return "Unknown"
+
+
+def stix_file_version(stix_filepath: str) -> str:
+    """The ATT&CK release a local STIX file holds (its x-mitre-collection's
+    x_mitre_version), or "" for a file without one (mitre/cti's STIX 2.0 copies)."""
+    try:
+        with open(stix_filepath, encoding="utf-8") as f:
+            objects = json.load(f).get("objects", [])
+        for obj in objects:
+            if obj.get("type") == "x-mitre-collection":
+                return obj.get("x_mitre_version", "")
+    except (OSError, ValueError):
+        pass
+    return ""
 
 
 def build_technique_datasource_map(stix_filepath: str) -> Dict[str, str]:
@@ -432,8 +439,9 @@ def load_attack_data(
     }
 
     stix_source = framework_map.get(framework.lower(), "enterprise-attack")
+    # MITRESaw's own data/stix (this file is src/main.py)
     stix_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "data",
         "stix",
     )
@@ -457,7 +465,7 @@ def load_attack_data(
             cache_status = f"cached:{int(file_age_days)}"
 
     if need_download:
-        stix_url = f"https://raw.githubusercontent.com/mitre/cti/master/{stix_source}/{stix_source}.json"
+        stix_url = f"{STIX_BASE_URL}/{stix_source}/{stix_source}.json"
         print(f"    -> Downloading {stix_source} STIX data...")
         resp = _fetch(stix_url, timeout=60)
         resp.raise_for_status()
@@ -465,6 +473,22 @@ def load_attack_data(
             f.write(resp.text)
         print(f"    -> Saved to {stix_filepath}")
 
+        # If force-fetching enterprise data, also update the git-tracked test cache
+        # so it stays current across ATT&CK releases without manual intervention.
+        if force_fetch and stix_source == "enterprise-attack":
+            import shutil
+            _cache_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "scripts",
+                ".cache_enterprise_attack.json",
+            )
+            if os.path.exists(os.path.dirname(_cache_path)):
+                shutil.copy2(stix_filepath, _cache_path)
+                print(f"    -> Updated test cache: {_cache_path}")
+
+    _version = stix_file_version(stix_filepath)
+    if _version:
+        print(f"    -> {stix_source}: ATT&CK v{_version}")
     attack_data = MitreAttackData(stix_filepath)
     return attack_data, stix_filepath, cache_status
 
@@ -1010,6 +1034,8 @@ def mainsaw(
             technique_datasource_map.update(
                 build_technique_datasource_map(stix_filepath)
             )
+            # The release actually loaded, when the file says (attack-stix-data does)
+            attack_version = stix_file_version(stix_filepath) or attack_version
         if _cache_status_summary and _cache_status_summary.startswith("cached:"):
             _days = _cache_status_summary.split(":")[1]
             print(f"    -> Using cached STIX data ({_days} day(s) old)")
@@ -1035,7 +1061,7 @@ def mainsaw(
     if not os.path.exists(mitre_files):
         os.makedirs(mitre_files)
 
-    print(f"    -> Using STIX data from TAXII server (cached locally)...")
+    print(f"    -> Using ATT&CK v{attack_version} STIX data (attack-stix-data, cached locally)...")
 
     time.sleep(0.1)
     saw = """
