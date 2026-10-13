@@ -556,13 +556,27 @@ def process_technique_parallel(args: Tuple) -> List[Dict]:
     return results
 
 
+def _external_id(obj) -> str:
+    """The ATT&CK ID (T1059.001) of a STIX object."""
+    for ref in obj.get("external_references", []) or []:
+        if ref.get("source_name", "").startswith("mitre") and ref.get("external_id"):
+            return ref["external_id"]
+    return ""
+
+
+def _retired(obj) -> bool:
+    return bool(obj.get("revoked", False) or obj.get("x_mitre_deprecated", False))
+
+
 def get_group_techniques_parallel(
     attack_data: MitreAttackData,
     groups: List[str],
     platforms: List[str],
     max_workers: int = 10,
+    include_software: bool = False,
 ) -> Tuple[Dict, Dict, List]:
-    """Get techniques used by groups using parallel processing."""
+    """Get techniques used by groups using parallel processing: the group's own, its
+    campaigns' and, with include_software, those of the software it uses."""
 
     group_techniques = {}
     group_info = {}
@@ -607,49 +621,48 @@ def get_group_techniques_parallel(
             # Get techniques used by this group
             techniques = attack_data.get_techniques_used_by_group(group.get("id"))
 
-            # Also get techniques from campaigns attributed to this group
-            campaign_techniques = []
+            # Then techniques from the group's campaigns and, with include_software, from
+            # the software it uses: only those the group isn't already linked to, labelled
+            # with where they came from
+            seen_technique_ids = {_external_id(t.get("object", t)) for t in techniques}
+            extra_techniques = []
+            sources = []
             try:
-                campaigns = attack_data.get_campaigns_attributed_to_group(
-                    group.get("id")
-                )
-                if campaigns:
-                    seen_technique_ids = set()
-                    for t in techniques:
-                        tobj = t.get("object", t)
-                        tid = tobj.get("external_references", [{}])[0].get(
-                            "external_id", ""
-                        )
-                        seen_technique_ids.add(tid)
-                    for campaign_entry in campaigns:
-                        campaign_obj = campaign_entry.get("object", campaign_entry)
-                        campaign_name = campaign_obj.get("name", "")
-                        campaign_id = campaign_obj.get("id", "")
-                        try:
-                            camp_techs = attack_data.get_techniques_used_by_campaign(
-                                campaign_id
-                            )
-                            for ct in camp_techs:
-                                ct_obj = ct.get("object", ct)
-                                ct_id = ct_obj.get("external_references", [{}])[0].get(
-                                    "external_id", ""
-                                )
-                                if ct_id not in seen_technique_ids:
-                                    seen_technique_ids.add(ct_id)
-                                    # Prepend campaign name to usage for context
-                                    ct_rels = ct.get("relationships", [])
-                                    if ct_rels:
-                                        orig_desc = ct_rels[0].get("description", "")
-                                        ct_rels[0][
-                                            "description"
-                                        ] = f"[Campaign: {campaign_name}] {orig_desc}"
-                                    campaign_techniques.append(ct)
-                        except Exception:
-                            pass
-            except Exception:
-                pass
+                for entry in attack_data.get_campaigns_attributed_to_group(group.get("id")) or []:
+                    obj = entry.get("object", entry)
+                    sources.append(("Campaign", obj.get("name", ""),
+                                    attack_data.get_techniques_used_by_campaign, obj.get("id", "")))
+            except Exception as e:
+                print(f"    Warning: campaigns for {group_name}: {e}")
+            if include_software:
+                try:
+                    for entry in attack_data.get_software_used_by_group(group.get("id")) or []:
+                        obj = entry.get("object", entry)
+                        sources.append(("Software", obj.get("name", ""),
+                                        attack_data.get_techniques_used_by_software, obj.get("id", "")))
+                except Exception as e:
+                    print(f"    Warning: software for {group_name}: {e}")
+            for label, name, lookup, stix_id in sources:
+                try:
+                    used = lookup(stix_id)
+                except Exception as e:
+                    print(f"    Warning: techniques for {label.lower()} {name}: {e}")
+                    continue
+                for entry in used:
+                    obj = entry.get("object", entry)
+                    tid = _external_id(obj)
+                    if not tid or tid in seen_technique_ids or _retired(obj):
+                        continue
+                    seen_technique_ids.add(tid)
+                    # STIX relationships are immutable: carry the labelled usage in a copy
+                    rels = entry.get("relationships") or []
+                    usage = rels[0].get("description", "") if rels else ""
+                    extra_techniques.append({
+                        "object": obj,
+                        "relationships": [{"description": f"[{label}: {name}] {usage}".strip()}],
+                    })
 
-            all_group_techniques = list(techniques) + campaign_techniques
+            all_group_techniques = list(techniques) + extra_techniques
             group_techniques[group_id] = []
 
             # Process techniques in parallel
@@ -1009,6 +1022,7 @@ def mainsaw(
     citation_workers=10,
     auto_confirm=False,
     dry_run=False,
+    include_software=False,
 ):
 
     # Load STIX data (only check version if -F is used)
@@ -1243,7 +1257,8 @@ def mainsaw(
     all_group_info_data = {}
     for fw, attack_data in all_attack_data.items():
         group_techniques_data, group_info_data, _ = get_group_techniques_parallel(
-            attack_data, groups, platforms, max_workers=citation_workers
+            attack_data, groups, platforms, max_workers=citation_workers,
+            include_software=include_software,
         )
         for gid, techs in group_techniques_data.items():
             for tech in techs:

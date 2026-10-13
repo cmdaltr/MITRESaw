@@ -186,6 +186,16 @@ parser.add_argument(
     default=False,
 )
 parser.add_argument(
+    "-S",
+    "--software",
+    help="Also attribute to each group the techniques of the software it uses (malware and\n"
+         "tools), where the group isn't already linked to them directly or by a campaign.\n"
+         "Their procedure examples are labelled [Software: <name>].\n",
+    action="store_const",
+    const=True,
+    default=False,
+)
+parser.add_argument(
     "--dry-run",
     help="Preview scope and exit — loads STIX data, applies all filters, prints the pre-run\n"
          "summary (groups matched, procedures, citations, cache status, estimated time)\n"
@@ -436,6 +446,7 @@ def main():
         citation_workers=args.max_workers,
         auto_confirm=args.auto,
         dry_run=args.dry_run,
+        include_software=args.software,
     )
 
 
