@@ -592,8 +592,8 @@ def get_group_techniques_parallel(
             group_name = group.get("name", "")
             # Guard against None — STIX objects may return None for optional fields
             group_aliases = list(group.get("aliases") or [])
-            # All candidate strings to match against (name + all aliases), lowercased
-            _candidates = [n.strip().lower() for n in [group_name] + group_aliases if n]
+            # All candidate strings to match against (ATT&CK ID + name + all aliases), lowercased
+            _candidates = [n.strip().lower() for n in [_external_id(group), group_name] + group_aliases if n]
             # Match if any user-supplied term is a substring of any candidate name/alias.
             # Substring matching lets users enter partial names ("Cozy Bear" → APT29,
             # "APT" → all APT groups) without requiring exact full-name spelling.
@@ -1192,6 +1192,9 @@ def mainsaw(
             all_insert = "all "
         else:
             groups_filename_insert = "{}".format(str(groups)[2:-2].replace("', '", "-"))
+            # Many groups (e.g. a list of ATT&CK IDs) would exceed the 255-character folder name
+            if len(groups_filename_insert) > 80:
+                groups_filename_insert = "{}-and-{}-more".format("-".join(groups[:3]), len(groups) - 3)
             groups_insert = "{}".format(str(groups)[2:-2])
             all_insert = ""
         mitresaw_output_directory = os.path.join(

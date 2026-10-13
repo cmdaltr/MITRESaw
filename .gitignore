@@ -16,3 +16,5 @@ data/mitre_procedures.*
 data/citations/*
 !data/citations/.gitkeep
 data/.citation_cache/
+data/.cve_cache.json
+data/.cve_cache.json.tmp

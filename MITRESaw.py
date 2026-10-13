@@ -36,7 +36,7 @@ parser.add_argument(
 parser.add_argument(
     "-g", "--threatgroups",
     default=".",
-    help="Filter Threat Actor results based on specific group names or aliases e.g. APT29,Cozy_Bear,HAFNIUM,Turla (use _ instead of spaces)\n Use . to not filter i.e. obtain all Threat Actors (default: .)\n",
+    help="Filter Threat Actor results based on specific group names, aliases or ATT&CK IDs e.g. APT29,Cozy_Bear,HAFNIUM,Turla,G0016 (use _ instead of spaces)\n Use . to not filter i.e. obtain all Threat Actors (default: .)\n",
 )
 parser.add_argument(
     "-a",

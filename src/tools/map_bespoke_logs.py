@@ -1,5 +1,7 @@
 #!/usr/bin/env python3 -tt
+import atexit
 import json
+import os
 import re
 import requests
 import time
@@ -21,6 +23,69 @@ _cve_evidence_cache = {}
 _cves_no_evidence = []
 # Collect CVE fetch failures for end-of-run reporting
 _cve_fetch_failures = []
+
+# Both CVE caches persist between runs: each CVE costs several rate-limited requests
+# (cvelistV5, GitHub/ExploitDB PoC searches, NVD), so a rerun needn't repeat them.
+# Results are kept for 30 days; failures for a day, so a passing outage is retried.
+_CVE_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data", ".cve_cache.json")
+_CVE_CACHE_DAYS = 30
+_CVE_FAILURE_DAYS = 1
+_cve_cached_at = {}       # CVE ID -> when its result was fetched (epoch seconds)
+_cve_unsaved = 0
+
+
+def _load_cve_cache():
+    try:
+        with open(_CVE_CACHE_FILE, encoding="utf-8") as fh:
+            entries = json.load(fh).get("entries", {})
+    except (OSError, ValueError):
+        return
+    now = time.time()
+    for cve, e in entries.items():
+        failed = e.get("evidence") is None and e.get("detail") is None
+        if now - e.get("at", 0) > (_CVE_FAILURE_DAYS if failed else _CVE_CACHE_DAYS) * 86400:
+            continue
+        _cve_cached_at[cve] = e["at"]
+        if "detail" in e:
+            _cve_cache[cve] = e["detail"]
+        if "evidence" in e:
+            _cve_evidence_cache[cve] = e["evidence"]
+
+
+def save_cve_cache():
+    """Write both CVE caches to disk (atomically). Runs at exit and every few new CVEs."""
+    global _cve_unsaved
+    now = time.time()
+    detail, evidence = dict(_cve_cache), dict(_cve_evidence_cache)
+    entries = {}
+    for cve in set(detail) | set(evidence):
+        e = {"at": _cve_cached_at.setdefault(cve, now)}
+        if cve in detail:
+            e["detail"] = detail[cve]
+        if cve in evidence:
+            e["evidence"] = evidence[cve]
+        entries[cve] = e
+    try:
+        os.makedirs(os.path.dirname(_CVE_CACHE_FILE), exist_ok=True)
+        tmp = _CVE_CACHE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"version": 1, "entries": entries}, fh)
+        os.replace(tmp, _CVE_CACHE_FILE)
+        _cve_unsaved = 0
+    except OSError:
+        pass
+
+
+def _cve_fetched():
+    """Count a newly fetched CVE; save every 10 so a killed run keeps most of its work."""
+    global _cve_unsaved
+    _cve_unsaved += 1
+    if _cve_unsaved >= 10:
+        save_cve_cache()
+
+
+_load_cve_cache()
+atexit.register(save_cve_cache)
 
 
 def report_cve_summary():
@@ -495,6 +560,7 @@ def obtain_cve_details(evidence):
 
         cve_result = f"{cve},{vendor},{versions},{enriched_desc}"
         _cve_cache[cve] = cve_result
+        _cve_fetched()
         cves.append(cve_result)
 
     return cves
@@ -655,6 +721,7 @@ def enrich_cves_for_evidence(cve_ids):
             enriched_desc = description
         _cve_cache[cve] = f"{cve},{vendor},{versions},{enriched_desc}"
         _cve_evidence_cache[cve] = value
+        _cve_fetched()
 
         enriched.append({cve: value})
 
