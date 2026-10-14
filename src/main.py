@@ -618,49 +618,70 @@ def get_group_techniques_parallel(
                 "aliases": group.get("aliases", []),
             }
 
-            # Get techniques used by this group
-            techniques = attack_data.get_techniques_used_by_group(group.get("id"))
+            # The group's techniques. mitreattack-python includes those of campaigns
+            # attributed to the group here; the relationship's source says which, so
+            # campaign ones are labelled [Campaign: <name>] and the group's own aren't
+            group_stix_id = group.get("id")
+            names = {}
 
-            # Then techniques from the group's campaigns and, with include_software, from
-            # the software it uses: only those the group isn't already linked to, labelled
-            # with where they came from
-            seen_technique_ids = {_external_id(t.get("object", t)) for t in techniques}
+            def _name_of(stix_id):
+                if stix_id not in names:
+                    try:
+                        names[stix_id] = attack_data.get_object_by_stix_id(stix_id).get("name", "")
+                    except Exception:
+                        names[stix_id] = ""
+                return names[stix_id]
+
+            def _labelled(obj, rels, label):
+                # STIX relationships are immutable: carry the labelled usage in a copy
+                usage = rels[0].get("description", "") if rels else ""
+                return {"object": obj,
+                        "relationships": [{"description": f"{label} {usage}".strip() if label else usage}]}
+
+            techniques = []
+            seen_technique_ids = set()
+            for entry in attack_data.get_techniques_used_by_group(group_stix_id) or []:
+                obj = entry.get("object", entry)
+                tid = _external_id(obj)
+                if not tid or tid in seen_technique_ids or _retired(obj):
+                    continue
+                seen_technique_ids.add(tid)
+                rels = list(entry.get("relationships") or [])
+                own = [r for r in rels if r.get("source_ref") == group_stix_id]
+                if own:
+                    techniques.append(_labelled(obj, own, ""))
+                else:
+                    techniques.append(_labelled(obj, rels, f"[Campaign: {_name_of(rels[0].get('source_ref'))}]"
+                                                if rels else ""))
+
+            # With include_software, the techniques of the software the group (or one of
+            # its campaigns) uses, where the group isn't already linked to them:
+            # [Software: <name>] or [Software: <name> via <campaign>]
             extra_techniques = []
-            sources = []
-            try:
-                for entry in attack_data.get_campaigns_attributed_to_group(group.get("id")) or []:
-                    obj = entry.get("object", entry)
-                    sources.append(("Campaign", obj.get("name", ""),
-                                    attack_data.get_techniques_used_by_campaign, obj.get("id", "")))
-            except Exception as e:
-                print(f"    Warning: campaigns for {group_name}: {e}")
             if include_software:
                 try:
-                    for entry in attack_data.get_software_used_by_group(group.get("id")) or []:
-                        obj = entry.get("object", entry)
-                        sources.append(("Software", obj.get("name", ""),
-                                        attack_data.get_techniques_used_by_software, obj.get("id", "")))
+                    software = attack_data.get_software_used_by_group(group_stix_id) or []
                 except Exception as e:
                     print(f"    Warning: software for {group_name}: {e}")
-            for label, name, lookup, stix_id in sources:
-                try:
-                    used = lookup(stix_id)
-                except Exception as e:
-                    print(f"    Warning: techniques for {label.lower()} {name}: {e}")
-                    continue
-                for entry in used:
-                    obj = entry.get("object", entry)
-                    tid = _external_id(obj)
-                    if not tid or tid in seen_technique_ids or _retired(obj):
+                    software = []
+                for sw in software:
+                    sw_obj = sw.get("object", sw)
+                    sw_rels = list(sw.get("relationships") or [])
+                    via = "" if any(r.get("source_ref") == group_stix_id for r in sw_rels) or not sw_rels \
+                        else f" via {_name_of(sw_rels[0].get('source_ref'))}"
+                    try:
+                        used = attack_data.get_techniques_used_by_software(sw_obj.get("id", ""))
+                    except Exception as e:
+                        print(f"    Warning: techniques for software {sw_obj.get('name', '')}: {e}")
                         continue
-                    seen_technique_ids.add(tid)
-                    # STIX relationships are immutable: carry the labelled usage in a copy
-                    rels = entry.get("relationships") or []
-                    usage = rels[0].get("description", "") if rels else ""
-                    extra_techniques.append({
-                        "object": obj,
-                        "relationships": [{"description": f"[{label}: {name}] {usage}".strip()}],
-                    })
+                    for entry in used:
+                        obj = entry.get("object", entry)
+                        tid = _external_id(obj)
+                        if not tid or tid in seen_technique_ids or _retired(obj):
+                            continue
+                        seen_technique_ids.add(tid)
+                        extra_techniques.append(_labelled(obj, list(entry.get("relationships") or []),
+                                                          f"[Software: {sw_obj.get('name', '')}{via}]"))
 
             all_group_techniques = list(techniques) + extra_techniques
             group_techniques[group_id] = []
